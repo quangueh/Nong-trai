@@ -13,10 +13,49 @@
  */
 import { chromium } from "playwright-core";
 import { mkdirSync } from "node:fs";
+import { spawn } from "node:child_process";
 
 mkdirSync("shots", { recursive: true });
 
 const URL = process.argv[2] ?? "http://localhost:4173";
+
+/**
+ * Is anything already serving on the preview port?
+ *
+ * Starts its own preview server if not, because a verification step that needs a
+ * second terminal running first is one that quietly does not happen.
+ */
+async function reachable(url: string): Promise<boolean> {
+  try {
+    await fetch(url, { signal: AbortSignal.timeout(1500) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let server: ReturnType<typeof spawn> | null = null;
+if (!(await reachable(URL))) {
+  console.log("starting vite preview...");
+  server = spawn("npx", ["vite", "preview", "--port", "4173"], {
+    stdio: "ignore",
+    shell: true,
+  });
+  const up = await (async () => {
+    for (let i = 0; i < 30; i++) {
+      if (await reachable(URL)) return true;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    return false;
+  })();
+  if (!up) {
+    console.error("preview server never came up");
+    if (server) server.kill();
+    process.exit(1);
+  }
+  console.log("preview is up");
+}
+
 const b = await chromium.launch();
 const page = await b.newPage({ viewport: { width: 1180, height: 900 } });
 
@@ -87,4 +126,5 @@ console.log("failed requests:", failedRequests.length ? failedRequests.join(" | 
 console.log("errors:", errs.length ? errs.join(" | ") : "none");
 
 await b.close();
+if (server) server.kill();
 process.exit(errs.length || failedRequests.length || handleLeaked ? 1 : 0);

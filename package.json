@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4173",
+    "verify:prod": "tsx tools/verify-prod.ts",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:core && npm run test:species && npm run test:planting && npm run test:juice && npm run test:morph && npm run test:journey && npm run test:quests && npm run test:art && npm run test:ui && npm run test:room",
     "test:core": "tsx tools/test-determinism.ts",

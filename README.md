@@ -6,6 +6,61 @@ Mỗi cây là một cá thể sống có gene riêng: chỉ số, ngoại hình
 
 ---
 
+## Triển khai
+
+Repo đã cấu hình sẵn cho cả Vercel lẫn Cloudflare Pages. **Không cần cài thêm
+gì** — chỉ chọn nền tảng và import repo là chạy.
+
+| | |
+|---|---|
+| Build command | `npm run build` (đã khai trong `vercel.json`; Cloudflare tự nhận Vite) |
+| Output directory | `dist` |
+| Node | 20 trở lên |
+| Cài dependency | `npm ci --include=dev` |
+
+Game **không có dependency lúc chạy** — toàn bộ chạy trong trình duyệt, không có
+API, không có server. `vite` và `typescript` là công cụ build nên nằm ở
+`devDependencies`, và vì vậy lệnh cài phải có `--include=dev`: nếu ai đó đặt
+`NODE_ENV=production` cho project thì `npm ci` sẽ bỏ devDependencies và build hỏng.
+
+### Vercel
+
+1. Vercel dashboard → **Add New… → Project** → import `quangueh/Nong-trai`.
+2. Framework chọn **Vite**. Bấm **Deploy**.
+
+`vercel.json` đã khai sẵn `buildCommand`, `outputDirectory`, `installCommand` và
+header cache, nên không cần chỉnh gì thêm.
+
+### Cloudflare Pages
+
+1. Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to Git**.
+2. Chọn repo `quangueh/Nong-trai`, framework preset **Vite**.
+3. Build command `npm run build`, output directory `dist`.
+
+`public/_headers` và `public/_redirects` được Vite copy thẳng vào `dist`, nên
+Cloudflare đọc lấy ngay — không cấu hình trong dashboard.
+
+### Trước khi deploy: kiểm tra bundle thật
+
+Mọi ảnh chụp trong quá trình phát triển đều đến từ dev server, nên "chạy được ở
+localhost" không nói được gì về "chạy được khi deploy" — bundle production rút
+gọn tên biến, gộp thành một file và bỏ nhánh dev. Lệnh này nạp `dist/` qua
+`vite preview` (cùng hình dạng static server như CDN) rồi đi từng màn hình:
+
+```bash
+npm run build
+npm run verify:prod    # tự bật preview, đi từng màn hình, tắt server khi xong
+```
+
+Nó báo lỗi nếu có màn hình nào không render, request nào 404, console có lỗi,
+hoặc handle `__game` (chỉ dùng lúc dev) bị lọt vào bản production.
+
+> Cloudflare Pages: nhớ đặt **Node version 20+** trong Settings → Builds &
+> Environment, và build command `npm ci --include=dev && npm run build` — Pages mặc
+> định có thể bỏ devDependencies.
+
+---
+
 ## Chạy game
 
 ```bash
