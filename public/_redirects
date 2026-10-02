@@ -1,0 +1,9 @@
+# Cloudflare Pages redirects.
+#
+# The game has no URL routing — every screen is a tab inside one page — so this
+# exists only so a hard refresh on an unknown path lands on the game rather than
+# on a 404. The `200` rewrite is the SPA fallback: the path is not rewritten in
+# the address bar, which is correct here because the game never reads it.
+
+/*
+  /index.html  200

@@ -1,0 +1,36 @@
+{
+  "name": "dai-chien-cay-dot-bien",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Đại Chiến Cây Đột Biến - game trồng, lai tạo gene và đấu cây bằng mã phòng.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test:core && npm run test:species && npm run test:planting && npm run test:juice && npm run test:morph && npm run test:journey && npm run test:quests && npm run test:art && npm run test:ui && npm run test:room",
+    "test:core": "tsx tools/test-determinism.ts",
+    "diag:registry": "tsx tools/diag-registry.ts",
+    "test:species": "tsx tools/test-species.ts",
+    "test:planting": "tsx tools/test-planting.ts",
+    "test:juice": "tsx tools/test-juice.ts",
+    "test:morph": "tsx tools/test-morph.ts",
+    "test:journey": "tsx tools/test-journey.ts",
+    "test:quests": "tsx tools/test-quests.ts",
+    "test:art": "tsx tools/test-art.ts",
+    "test:ui": "tsx tools/test-ui.ts",
+    "test:room": "tsx tools/test-room.ts",
+    "balance": "tsx tools/balance-report.ts",
+    "balance:deep": "tsx tools/balance-report.ts 2000 12",
+    "verify": "npm run typecheck && npm run test && npm run balance && npm run build"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^26.6.3",
+    "jsdom": "^30.1.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}

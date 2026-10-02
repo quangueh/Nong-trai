@@ -1,0 +1,4688 @@
+:root {
+  --bg: #dcefc8;
+  --bg-2: #b9dd9c;
+  --panel: #fff7df;
+  --panel-2: #f2dfae;
+  --line: #8fbd73;
+  --text: #26351d;
+  --soil: #8a5837;
+  --sky: #8fd0ff;
+  --shadow: 0 14px 28px rgba(80, 104, 53, 0.18);
+  --r: 16px;
+  /* Motion curves. --ease settles; --spring overshoots, which is what makes a
+     leaf or a bloom feel like it has mass. */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  color-scheme: light;
+
+  /* Colour roles.
+     Each hue ships in three depths because the UI is light-on-light, and one
+     value cannot serve both jobs: as TEXT it must clear 4.5:1 against the
+     lightest surface, and as a FILL it must clear 4.5:1 against white text.
+     Every value below was solved numerically against bg/bg-2/panel/panel-2.
+       *-ink   text on a light surface      *-fill  solid, white text on top
+       *-soft  tinted background, dark text */
+  --muted: #435636;
+
+  --accent: #1b5b38; /* ink */
+  --accent-fill: #26794f; /* solid + white text (5.23:1) */
+  --accent-bright: #39ab70; /* solid + dark text (primary buttons) */
+  --accent-lift: #5fd68f; /* gradient start for dark-text buttons */
+  --accent-soft: #cde7d4;
+
+  --accent-2: #6e4912; /* ink */
+  --accent-2-fill: #9f691a; /* solid + white text (4.56:1) */
+  --accent-2-mid: #c98f1e; /* solid + dark text (gold buttons) */
+  --accent-2-soft: #f7e3b0;
+
+  --danger: #a8231b; /* ink */
+  --danger-fill: #cf3f4f; /* solid + white text */
+  --danger-soft: #ffdcd9;
+
+  --info: #1e6086; /* ink */
+  --info-fill: #267cab; /* solid + white text (4.52:1) */
+  --info-soft: #d3ecf8;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Be Vietnam Pro", system-ui, -apple-system, sans-serif;
+  overscroll-behavior: none;
+}
+
+/* The sky gradient lives on `html`, not `body`.
+   `body { height: 100% }` capped the painted area at one viewport, so on a long
+   screen the sky stopped partway down and left a hard horizontal edge where the
+   flat `--bg` took over. On the root element the background covers the canvas. */
+html {
+  min-height: 100%;
+  background: var(--bg);
+  background-image:
+    radial-gradient(1100px 520px at 50% -14%, rgba(143, 208, 255, 0.8), transparent 64%),
+    radial-gradient(560px 340px at 6% 6%, rgba(255, 225, 108, 0.42), transparent 58%),
+    linear-gradient(180deg, #d8f2ff 0%, #dcefc8 46%, #b9dd9c 100%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-size: cover;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+#app {
+  display: flex;
+  justify-content: center;
+  min-height: 100dvh;
+}
+
+.shell {
+  /* Wide enough to use a desktop. At 480px the whole game sat in a narrow ribbon
+     with half the window empty on both sides. */
+  width: min(760px, 100vw);
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background:
+    linear-gradient(90deg, rgba(38, 53, 29, 0.035) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(180deg, rgba(255, 251, 231, 0.92), rgba(220, 239, 200, 0.96));
+  border-left: 1px solid rgba(38, 53, 29, 0.08);
+  border-right: 1px solid rgba(38, 53, 29, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 248, 226, 0.88);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-size: 15px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* The title is a single line at any width. Wrapping it is what produced a
+   four-line header on a 390px phone; clipping an ellipsis is better than that.
+   The markup is a bare <div> holding the title and the subtitle, so this matches
+   on structure rather than on a tag name. */
+.brand > :not(.logo) {
+  min-width: 0;
+}
+
+.brand > :not(.logo) > div {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brand .logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: linear-gradient(140deg, #ffdf62, var(--accent-bright));
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  box-shadow: 0 5px 14px rgba(217, 143, 36, 0.24);
+  flex: none;
+}
+
+.brand small {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pill.coin {
+  color: var(--accent-2);
+}
+.pill.crystal {
+  color: #9ad6ff;
+}
+
+.screen {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 14px 96px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.garden-pulse {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  padding: 18px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(71, 123, 55, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.12)),
+    radial-gradient(100% 80% at 88% 0%, rgba(255, 217, 92, 0.34), transparent 62%),
+    linear-gradient(180deg, #bde6ff, #dff3b9 65%, #b8df8b);
+  box-shadow: var(--shadow);
+  isolation: isolate;
+}
+
+.garden-pulse::before {
+  content: "";
+  position: absolute;
+  inset: auto -10% -34px -10%;
+  height: 88px;
+  background:
+    repeating-linear-gradient(90deg, rgba(77, 145, 50, 0.18) 0 4px, transparent 4px 18px),
+    radial-gradient(80% 90% at 50% 100%, rgba(47, 159, 98, 0.22), transparent 70%);
+  transform: skewY(-3deg);
+  z-index: -1;
+}
+
+.garden-pulse.weather-sun {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.12)),
+    radial-gradient(100% 80% at 90% 0%, rgba(255, 203, 64, 0.42), transparent 60%),
+    linear-gradient(180deg, #aee0ff, #e9f3ae 68%, #b7df87);
+}
+
+.garden-pulse.weather-storm {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.1)),
+    radial-gradient(100% 80% at 90% 0%, rgba(77, 140, 214, 0.34), transparent 60%),
+    linear-gradient(180deg, #9ec9df, #c8dba5 68%, #96c66e);
+}
+
+.garden-pulse.weather-moon {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0.08)),
+    radial-gradient(100% 80% at 90% 0%, rgba(155, 114, 217, 0.3), transparent 60%),
+    linear-gradient(180deg, #b8c8f0, #d6dea9 68%, #9cca77);
+}
+
+.pulse-copy h1 {
+  font-size: 28px;
+  line-height: 1;
+  margin-top: 8px;
+  letter-spacing: -0.04em;
+}
+
+.pulse-copy p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 31ch;
+}
+
+.weather-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fffdf1;
+  background: #26351d;
+}
+
+.pulse-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.pulse-stat {
+  min-height: 58px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 9px 10px;
+  border-radius: 14px;
+  background: rgba(255, 253, 241, 0.7);
+  border: 1px solid rgba(71, 123, 55, 0.14);
+}
+
+.pulse-stat span {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.pulse-stat strong {
+  font-size: 18px;
+}
+
+.goal-stack {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.goal-row {
+  appearance: none;
+  border: 1px solid rgba(71, 123, 55, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 253, 241, 0.72);
+  color: var(--text);
+  font-family: inherit;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.goal-row.done {
+  border-color: rgba(47, 159, 98, 0.45);
+  background: rgba(47, 159, 98, 0.13);
+}
+
+.goal-row.claimed {
+  opacity: 0.58;
+  cursor: default;
+}
+
+.goal-main {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.goal-main b {
+  font-size: 12.5px;
+}
+
+.goal-main small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.goal-cta {
+  flex: none;
+  min-width: 48px;
+  text-align: center;
+  padding: 7px 8px;
+  border-radius: 999px;
+  background: rgba(47, 159, 98, 0.12);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.seed-belt {
+  margin-bottom: 16px;
+}
+
+.roadmap-card {
+  margin-bottom: 16px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(71, 123, 55, 0.18);
+  background: rgba(255, 253, 241, 0.78);
+  box-shadow: 0 8px 18px rgba(80, 104, 53, 0.1);
+}
+
+.roadmap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.roadmap-head b {
+  display: block;
+  font-size: 14px;
+}
+
+.roadmap-head small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.roadmap-action {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-fill);
+  color: #fffdf1;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+
+.roadmap-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.roadmap-step {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.roadmap-step span {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(38, 53, 29, 0.08);
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.roadmap-step.current {
+  color: var(--text);
+}
+
+.roadmap-step.current span {
+  background: var(--accent-2-fill);
+  color: #fffdf1;
+}
+
+.roadmap-step.done span {
+  background: var(--accent-fill);
+  color: #fffdf1;
+}
+
+.discovery-card {
+  margin-bottom: 16px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(71, 123, 55, 0.18);
+  background:
+    linear-gradient(135deg, rgba(255, 253, 241, 0.9), rgba(255, 242, 188, 0.72)),
+    radial-gradient(90% 90% at 100% 0%, rgba(155, 114, 217, 0.12), transparent 62%);
+  box-shadow: 0 8px 18px rgba(80, 104, 53, 0.1);
+}
+
+.discovery-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.discovery-head b {
+  display: block;
+  font-size: 14px;
+}
+
+.discovery-head small,
+.discovery-traits {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.discovery-action {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: #26351d;
+  color: #fffdf1;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+
+.discovery-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.discovery-row {
+  appearance: none;
+  border: 1px solid rgba(71, 123, 55, 0.14);
+  border-radius: 13px;
+  background: rgba(255, 253, 241, 0.72);
+  color: var(--text);
+  font-family: inherit;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.discovery-row.done {
+  border-color: rgba(47, 159, 98, 0.42);
+  background: rgba(47, 159, 98, 0.12);
+}
+
+.discovery-row.claimed {
+  opacity: 0.62;
+}
+
+.discovery-main {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.discovery-main b {
+  font-size: 12px;
+}
+
+.discovery-main small {
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
+.discovery-progress {
+  flex: none;
+  min-width: 42px;
+  text-align: center;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.seed-belt-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+.seed-belt-head b {
+  display: block;
+  font-size: 15px;
+}
+
+.seed-belt-head small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.seed-shop-link {
+  appearance: none;
+  border: 1px solid rgba(71, 123, 55, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 253, 241, 0.78);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 8px 10px;
+}
+
+.seed-rail {
+  display: flex;
+  gap: 9px;
+  overflow-x: auto;
+  padding: 1px 1px 6px;
+  scrollbar-width: none;
+}
+
+.seed-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.seed-card {
+  flex: 0 0 154px;
+  appearance: none;
+  min-height: 70px;
+  border: 1px solid rgba(71, 123, 55, 0.16);
+  border-radius: 18px;
+  background: rgba(255, 253, 241, 0.82);
+  color: var(--text);
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  text-align: left;
+  box-shadow: 0 8px 18px rgba(80, 104, 53, 0.1);
+}
+
+.seed-card.active {
+  border-color: rgba(38, 53, 29, 0.34);
+  background: #fff7df;
+  box-shadow: 0 0 0 2px rgba(47, 159, 98, 0.18), 0 10px 22px rgba(80, 104, 53, 0.16);
+}
+
+.seed-card.empty-seed {
+  opacity: 0.72;
+}
+
+.seed-orb {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 50% 50% 46% 54%;
+  display: grid;
+  place-items: center;
+  color: #fffdf1;
+  font-weight: 900;
+  /* The orb keeps the element hue for identity, but is mixed well down so the
+     white label on top always clears 4.5:1 — a light orb made the text vanish. */
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.2), transparent 24%),
+    linear-gradient(145deg, color-mix(in srgb, var(--seed), #10230f 76%), color-mix(in srgb, var(--seed), #0b1a0c 86%));
+  box-shadow: inset 0 -5px 10px rgba(11, 26, 12, 0.4), 0 6px 12px rgba(80, 104, 53, 0.18);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.seed-info {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.seed-info b {
+  font-size: 12.5px;
+}
+
+.seed-info small {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.screen::-webkit-scrollbar {
+  width: 5px;
+}
+.screen::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+
+.bottomnav {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+  padding: 8px 8px calc(env(safe-area-inset-bottom) + 8px);
+  background: rgba(255, 248, 226, 0.94);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line);
+  z-index: 30;
+}
+
+.navitem {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 6px 2px;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.16s ease;
+}
+
+.navitem .ico {
+  font-size: 19px;
+  line-height: 1;
+  filter: grayscale(0.6);
+  transition: filter 0.16s;
+}
+
+.navitem.active {
+  color: var(--accent);
+  background: rgba(47, 159, 98, 0.12);
+}
+.navitem.active .ico {
+  filter: none;
+  transform: translateY(-1px);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.sec-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.card {
+  background: linear-gradient(165deg, rgba(255, 251, 231, 0.96), rgba(242, 223, 174, 0.72));
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+
+.btn {
+  appearance: none;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease, opacity 0.12s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn:active {
+  transform: scale(0.975);
+}
+.btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.btn.primary {
+  background: linear-gradient(140deg, var(--accent-lift), var(--accent-bright));
+  border-color: transparent;
+  color: #04150d;
+  box-shadow: 0 6px 20px rgba(110, 231, 160, 0.22);
+}
+.btn.gold {
+  background: linear-gradient(140deg, #ffd95c, var(--accent-2-mid));
+  border-color: transparent;
+  color: #1c1300;
+}
+.btn.danger {
+  background: var(--danger-fill);
+  border-color: transparent;
+  color: #fffdf1;
+}
+.btn.ghost {
+  background: transparent;
+}
+.btn.sm {
+  padding: 8px 12px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+.btn.block {
+  width: 100%;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.row.between {
+  justify-content: space-between;
+}
+.row.wrap {
+  flex-wrap: wrap;
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+.tiny {
+  font-size: 11px;
+}
+.small {
+  font-size: 12px;
+}
+.mono {
+  font-family: "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.grid4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: rgba(255, 253, 241, 0.76);
+  border: 1px solid rgba(71, 123, 55, 0.18);
+}
+
+.bar {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(38, 53, 29, 0.1);
+  overflow: hidden;
+}
+/* The fill is scaled rather than resized: `width` would relayout the bar every
+   frame, and the garden alone carries 20 of them. `transform` stays on the
+   compositor, so progress updates cost no layout. */
+.bar > i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: linear-gradient(90deg, var(--accent-bright), var(--accent-lift));
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.bar.hp > i {
+  background: linear-gradient(90deg, #5ce08a, #2ea86a);
+}
+.bar.hp.low > i {
+  background: linear-gradient(90deg, #ffb457, #ff6b6b);
+}
+.bar.energy > i {
+  background: linear-gradient(90deg, #7fd8ff, #4c8dff);
+}
+
+/* --- battle arena -------------------------------------------------------- */
+/* Layered depth: sky, far haze, arena floor, then the two fighters. The plants
+   are the biggest thing on screen because that is what the fight is about. */
+/* A face-off, not a stack. The previous layout was a vertical flex, so one
+   fighter sat top-right, the other bottom-left, and a third of the arena was
+   empty space with the clock floating in it. The two plants now stand opposite
+   each other with the clock between them. */
+.battlefield {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px;
+  min-height: 0;
+  isolation: isolate;
+  background:
+    radial-gradient(130% 60% at 50% 118%, rgba(110, 231, 160, 0.16), transparent 62%),
+    linear-gradient(180deg, #0a1a20 0%, #0b1d18 38%, #081310 74%, #060e0c 100%);
+  box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.55);
+}
+
+.battlefield::before {
+  /* sun / moon glow behind the far fighter */
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 16%;
+  width: 190px;
+  height: 190px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  /* Tinted by whichever element each fighter is, so the arena belongs to
+     the two plants standing in it. --a-el and --b-el are set by battleView. */
+  background:
+    radial-gradient(circle at 34% 50%, color-mix(in srgb, var(--b-el) 26%, transparent), transparent 68%),
+    radial-gradient(circle at 66% 50%, color-mix(in srgb, var(--a-el) 26%, transparent), transparent 68%),
+    radial-gradient(circle, rgba(255, 209, 102, 0.14), transparent 66%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.battlefield::after {
+  /* Ground plane. Starts at 72% rather than 54% because a fighter's portrait
+     fills the top 60% of the arena — at 54% the horizon ran across their chest
+     and both fighters looked like they were standing behind it. */
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 28%;
+  background:
+    linear-gradient(180deg, rgba(20, 48, 38, 0) 0%, rgba(18, 44, 34, 0.8) 34%, rgba(9, 24, 18, 0.96) 100%);
+  border-top: 1px solid rgba(140, 226, 168, 0.22);
+  /* A wider strip toward the viewer, so the plane has perspective. */
+  clip-path: polygon(0% 0%, 100% 0%, 112% 100%, -12% 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.battler {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* The enemy is mirrored so the two plants face each other across the clock. */
+.battler.enemy .avatar .plantart {
+  transform: scaleX(-1);
+}
+
+.battler .avatar {
+  width: 112px;
+  height: 112px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: radial-gradient(circle at 50% 74%, rgba(255, 255, 255, 0.07), transparent 70%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 0 24px rgba(0, 0, 0, 0.35);
+  transition: box-shadow 0.2s;
+}
+.battler .avatar svg {
+  width: 104px;
+  height: 104px;
+  /* The art is drawn on a transparent stage, so it needs no drop-shadow here —
+     the scene already provides depth. */
+}
+/* Hit flash lives on the row now that the reaction animates the SVG itself. */
+.battler.hit .avatar,
+.battler.hit-enemy .avatar {
+  box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.65), 0 10px 24px rgba(0, 0, 0, 0.5);
+}
+.battler.attack .avatar {
+  box-shadow: 0 0 0 1px rgba(255, 214, 102, 0.5), 0 12px 28px rgba(0, 0, 0, 0.5);
+}
+.battler.dead {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+.battler.dead .plantart {
+  animation: none;
+}
+
+.hpblock {
+  width: 100%;
+  max-width: 190px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+  align-items: center;
+}
+
+.battler .pname {
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hpstack {
+  position: relative;
+  /* The block is centred now, so the bar needs its own width or it collapses to
+     the zero-width of its empty children and no HP is visible at all. */
+  width: 100%;
+  height: 13px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+/* HP and shield both scale from the left instead of resizing, so the bars keep
+   up with the 10-ticks-per-second simulation without forcing layout each tick. */
+.hpstack > i {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: 999px;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: linear-gradient(90deg, #3ddc84, #6ee7a0);
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.hpstack > i.low {
+  background: linear-gradient(90deg, #ff7a5c, #ffb457);
+}
+.hpstack > u {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: 999px;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.5) 0 5px, rgba(255, 255, 255, 0.22) 5px 10px);
+  transition: transform 0.32s ease;
+}
+
+.battler .statusline {
+  font-size: 10.5px;
+  color: #ff9ad6;
+  min-height: 13px;
+  font-weight: 600;
+}
+
+.battle-arena {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* Ground plane the plants stand on, so they are not floating in a void. */
+.battlefield::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 34%;
+  background: linear-gradient(180deg, rgba(110, 231, 160, 0) 0%, rgba(110, 231, 160, 0.07) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.clock {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+}
+.clock.critical {
+  color: #ff7a5c;
+}
+
+.phase {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.battlefield.hit {
+  animation: shakeScreen 0.26s;
+}
+
+@keyframes shakeScreen {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-4px, 2px);
+  }
+  60% {
+    transform: translate(4px, -2px);
+  }
+  85% {
+    transform: translate(-2px, -1px);
+  }
+}
+
+/* action bar */
+.actionbar {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+/* A fighter with one skill left a single lonely button in the middle of the
+   bar, which read as a broken control. Filling the row keeps it anchored. */
+.actionbar:has(> :only-child) {
+  justify-content: flex-start;
+}
+
+.skillbtn {
+  position: relative;
+  /* Wide enough for a generated skill name. At 84px the names were clipped to
+     two characters ("Xích Lá Đâm" rendered as an unreadable smudge). */
+  width: 118px;
+  min-height: 84px;
+  padding: 8px 8px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: linear-gradient(170deg, #fff9e6, #e4f1c8);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  line-height: 1.25;
+  /* Generated names have no spaces, so they must be allowed to break. */
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  transition: transform 0.12s, border-color 0.16s, box-shadow 0.16s;
+}
+
+.skillbtn > span:not(.ico):not(.cd) {
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.skillbtn .ico {
+  font-size: 24px;
+  line-height: 1;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
+}
+.skillbtn.ready {
+  border-color: rgba(110, 231, 160, 0.55);
+  box-shadow: 0 0 0 1px rgba(110, 231, 160, 0.14), 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.skillbtn.ready:active {
+  transform: scale(0.95);
+}
+.skillbtn:disabled {
+  cursor: default;
+}
+/* Cooldown veil. It was 0.78 opaque, which hid the skill name entirely — the
+   player could not tell which skill was cooling down. */
+.skillbtn .cd {
+  /* A tint, not a curtain. The button carries three lines of text now and the
+     player reads them to decide what to press next; greying them out removes the
+     only information the cooldown state has to offer. */
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(46, 60, 40, 0.22);
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  font-family: "JetBrains Mono", monospace;
+  color: #123047;
+}
+
+.skillbtn .cd::after {
+  /* The number sits in a chip in the corner, so it never lands on the name. */
+  content: attr(data-cd);
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #f2f8ef;
+  background: rgba(28, 44, 26, 0.82);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* Cooling but not disabled-forever: still readable, just not pressable. */
+.skillbtn.cooling {
+  border-color: rgba(120, 140, 118, 0.4);
+  cursor: default;
+}
+
+/* segmented stance control */
+.segmented {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  margin-top: 10px;
+  border-radius: 12px;
+  background: rgba(38, 53, 29, 0.1);
+  border: 1px solid var(--line);
+}
+.stancebtn {
+  flex: 1;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.16s;
+}
+.stancebtn.on {
+  background: linear-gradient(160deg, var(--accent-bright), #2f9e6a);
+  color: #04150d;
+  box-shadow: 0 3px 10px rgba(110, 231, 160, 0.28);
+}
+
+/* battle log as a ticker */
+.battlelog {
+  max-height: 116px;
+  overflow-y: auto;
+  font-size: 11.5px;
+  line-height: 1.6;
+  background: rgba(255, 253, 241, 0.82);
+  border-radius: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  margin-top: 12px;
+  scrollbar-width: thin;
+}
+.battlelog .l {
+  padding: 1px 0;
+  color: var(--muted);
+}
+.battlelog .l.hi {
+  color: var(--accent-2);
+  font-weight: 600;
+}
+.battlelog .l.bad {
+  color: #ff9a9a;
+  font-weight: 600;
+}
+
+.float-num {
+  position: fixed;
+  font-weight: 900;
+  font-size: 22px;
+  /* Anchored bottom-left of the point rather than centred, so a number raised
+     over a fighter's head cannot clip past the top of the arena. */
+  transform: translate(-50%, -100%);
+  padding-bottom: 6px;
+  pointer-events: none;
+  animation: floatUp 0.95s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+  z-index: 70;
+}
+.float-num.dmg {
+  color: #ff8a7a;
+}
+.float-num.heal {
+  color: #6ee7a0;
+}
+.float-num.crit {
+  color: #ffd166;
+  font-size: 30px;
+}
+
+
+@keyframes pop {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* --- quest / discovery surfaces ----------------------------------------- */
+.discovery-list.scrollable {
+  max-height: 210px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+.discovery-list.scrollable::-webkit-scrollbar {
+  width: 4px;
+}
+.discovery-list.scrollable::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+
+.discovery-bar,
+.goal-bar {
+  display: block;
+  margin-top: 4px;
+}
+.discovery-bar .bar,
+.goal-bar .bar {
+  height: 4px;
+}
+
+.discovery-action.pulse {
+  color: #1c1300;
+  background: linear-gradient(140deg, var(--accent-2-mid), #e0a93c);
+  border-color: transparent;
+  animation: breathe 1.8s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 209, 102, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 209, 102, 0);
+  }
+}
+
+.goal-hint {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  opacity: 0.85;
+  line-height: 1.35;
+}
+.goal-count {
+  font-weight: 700;
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --- garden plots ------------------------------------------------------- */
+
+/* A plot is a small patch of soil, not a generic card: the plant sits in the
+   bed, and state lives in a chip rather than a wall of tiny text. */
+.plots {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+/* On a wide window the two-column grid left very large cells with a lot of dead
+   space around each plant, so a third column appears and the plots get denser. */
+@media (min-width: 680px) {
+  .plots {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.plot {
+  position: relative;
+  border-radius: 18px;
+  padding: 11px 11px 12px;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid rgba(97, 126, 61, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.28), transparent 44%),
+    radial-gradient(120% 70% at 50% 0%, rgba(112, 187, 80, 0.18), transparent 70%),
+    linear-gradient(180deg, #cbeaa0 0%, #a9d178 52%, #8fbd62 100%);
+  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.16s, box-shadow 0.16s;
+}
+
+.plot::after {
+  /* soil bed */
+  content: "";
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  bottom: 46px;
+  height: 26px;
+  background: linear-gradient(180deg, rgba(138, 88, 55, 0) 0%, rgba(138, 88, 55, 0.52) 55%, rgba(92, 57, 35, 0.76) 100%);
+  border-radius: 50% / 100% 100% 0 0;
+  pointer-events: none;
+}
+
+.plot:active {
+  transform: scale(0.975);
+}
+
+.plot:hover {
+  border-color: rgba(47, 159, 98, 0.44);
+}
+
+.plot.ready {
+  border-color: rgba(47, 159, 98, 0.5);
+  box-shadow: 0 0 0 1px rgba(47, 159, 98, 0.16), 0 10px 24px rgba(80, 104, 53, 0.2);
+}
+.plot.bred {
+  border-color: rgba(217, 143, 36, 0.48);
+}
+
+.plot .bed {
+  position: relative;
+  z-index: 1;
+  aspect-ratio: 1 / 0.92;
+  display: grid;
+  place-items: center;
+  margin: -2px 0 2px;
+}
+
+.plot .bed svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45));
+  /* `transform-box` matters: without it the SVG's own origin (0 0) is used for
+     transform-origin percentages, and a sway would orbit the whole art. */
+  transform-box: fill-box;
+  animation: sway 5.5s ease-in-out infinite;
+  transform-origin: 50% 92%;
+}
+
+.plot:nth-child(2n) .bed svg {
+  animation-duration: 6.4s;
+  animation-delay: -1.4s;
+}
+.plot:nth-child(3n) .bed svg {
+  animation-duration: 4.9s;
+  animation-delay: -2.6s;
+}
+
+@keyframes sway {
+  0%,
+  100% {
+    transform: rotate(-1.4deg);
+  }
+  50% {
+    transform: rotate(1.4deg);
+  }
+}
+
+/* --- plant animation ---------------------------------------------------
+   `.plantart.is-anim` opts in. The renderer emits the same geometry either
+   way; only these class-driven keyframes differ, so a static context (grid,
+   exports) never pays for motion it cannot show.
+
+   Every layer animates transform/opacity/clip only. Animating `d` or `width`
+   would relayout on every frame, which is exactly the jank the rest of the UI
+   was cleaned up to avoid. */
+.plantart.is-anim .l-stem,
+.plantart.is-anim .l-roots,
+.plantart.is-anim .l-petioles,
+.plantart.is-anim .l-leaves,
+.plantart.is-anim .l-thorns,
+.plantart.is-anim .l-fungus,
+.plantart.is-anim .l-fruit,
+.plantart.is-anim .l-bloom,
+.plantart.is-anim .l-marking,
+.plantart.is-anim .l-eyes {
+  animation-delay: var(--d, 0s);
+}
+
+/* Stem and roots draw themselves upward, like they are actually growing. */
+.plantart.is-anim .l-stem,
+.plantart.is-anim .l-roots {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: growUp 0.9s var(--ease) both;
+}
+@keyframes growUp {
+  from {
+    transform: scaleY(0.04);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* Leaves unfurl from the stem outward: scale up along their own axis, and let
+   the rotation settle last so the leaf appears to swing open. */
+/* The leaf path is authored from its own origin along +x, so it unfurls out
+   from the petiole tip with no rotation needed — the outer group's placement
+   transform already handles the splay. */
+.plantart.is-anim .leaf {
+  transform-origin: 0 0;
+  animation: unfurl 0.75s var(--spring) both;
+  animation-delay: calc(var(--d, 0s) + 0.28s);
+}
+@keyframes unfurl {
+  from {
+    transform: scaleX(0.02) scaleY(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: scaleX(1) scaleY(1);
+    opacity: 1;
+  }
+}
+
+.plantart.is-anim .l-bloom {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: bloom 0.7s var(--spring) both;
+  animation-delay: calc(var(--d, 0s) + 0.6s);
+}
+@keyframes bloom {
+  from {
+    transform: scale(0.1) rotate(-24deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.12) rotate(4deg);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+/* Fruit and fungus pop, offsets staggered so they do not all land together. */
+.plantart.is-anim .l-fruit,
+.plantart.is-anim .l-thorns {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: pop 0.5s var(--spring) both;
+  animation-delay: calc(var(--d, 0s) + 0.45s);
+}
+@keyframes pop {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Markings and eyes fade last: they read as detail settling onto a form. */
+.plantart.is-anim .l-marking,
+.plantart.is-anim .l-eyes,
+.plantart.is-anim .l-fungus {
+  animation: fadeIn 0.6s ease both;
+  animation-delay: calc(var(--d, 0s) + 0.55s);
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Ambient life: a slow breath on the aura and a gentle drift on the ground
+   shadow, both infinitely looping so a resting garden still feels alive. */
+.plantart.is-anim .l-aura {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: breathe 4.2s ease-in-out infinite;
+}
+.plantart.is-anim .l-ground {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: breathe 4.2s ease-in-out infinite;
+}
+
+/* Battle avatar: the plant itself should not sway while it is fighting, but it
+   should carry weight. A slow idle bob keeps it alive without implying motion. */
+.avatar .plantart {
+  transform-box: fill-box;
+  transform-origin: 50% 92%;
+  animation: battleIdle 2.6s ease-in-out infinite;
+}
+@keyframes battleIdle {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-0.6deg);
+  }
+  50% {
+    transform: translateY(-2px) rotate(0.6deg);
+  }
+}
+
+/* Hit reaction: the attacker flinches back along its own axis. Applied by
+   battleView via a class on the avatar wrapper, not baked into the art. */
+.battler.hit .plantart {
+  animation: flinch 0.34s ease-out;
+}
+@keyframes flinch {
+  0% {
+    transform: translateX(0);
+  }
+  22% {
+    transform: translateX(9px) scaleX(0.96);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+.battler.hit-enemy .plantart {
+  animation-name: flinch-back;
+}
+@keyframes flinch-back {
+  0% {
+    transform: translateX(0);
+  }
+  22% {
+    transform: translateX(-9px) scaleX(0.96);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* Attacking plants lunge forward. */
+.battler.attack .plantart {
+  animation: lunge 0.42s var(--ease);
+}
+@keyframes lunge {
+  0% {
+    transform: translateX(0) scale(1);
+  }
+  38% {
+    transform: translateX(-14px) scale(1.06);
+  }
+  100% {
+    transform: translateX(0) scale(1);
+  }
+}
+.battler.b-enemy.attack .plantart {
+  animation-name: lunge-back;
+}
+@keyframes lunge-back {
+  0% {
+    transform: translateX(0) scale(1);
+  }
+  38% {
+    transform: translateX(14px) scale(1.06);
+  }
+  100% {
+    transform: translateX(0) scale(1);
+  }
+}
+
+.plot .ribbon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 2;
+}
+
+.plot .pname {
+  position: relative;
+  z-index: 1;
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 1.25;
+  min-height: 2.5em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.plot .prow {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 10.5px;
+}
+
+.plot .rarity {
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
+.plot .flags {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  font-size: 11px;
+}
+
+/* growth ring around the plot bed */
+.ring {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 26px;
+  height: 26px;
+  z-index: 2;
+}
+.ring circle {
+  fill: none;
+  stroke-width: 3;
+}
+.ring .track {
+  stroke: rgba(255, 255, 255, 0.12);
+}
+.ring .fill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset 0.5s ease;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+.chip.ok {
+  color: #fffdf1;
+  background: var(--accent-fill);
+}
+
+.grow-timer {
+  position: relative;
+  z-index: 2;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.grow-timer-text {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.chip.gold {
+  color: #5a3d08;
+  background: var(--accent-2-soft);
+  border-color: var(--accent-2-fill);
+}
+.chip.info {
+  color: #123f5c;
+  background: var(--info-soft);
+  border-color: var(--info-fill);
+}
+.chip.dim {
+  color: var(--muted);
+  background: rgba(255, 253, 241, 0.48);
+  border-color: var(--line);
+}
+
+.empty-plot {
+  min-height: 188px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  border-style: dashed;
+  color: var(--text);
+  text-align: center;
+}
+
+.empty-plot::after {
+  bottom: 34px;
+}
+
+.empty-plot .soil-mark {
+  width: 74px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.13) 0 2px, transparent 2px 7px),
+    linear-gradient(180deg, #9a6540, #704629);
+  color: rgba(255, 253, 241, 0.74);
+  font-weight: 900;
+  font-size: 20px;
+  box-shadow: inset 0 4px 12px rgba(38, 24, 14, 0.2);
+}
+
+.empty-plot strong {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+}
+
+.empty-plot small {
+  position: relative;
+  z-index: 1;
+  color: var(--muted);
+  max-width: 15ch;
+  line-height: 1.35;
+}
+
+.strategy-card {
+  box-shadow: none;
+}
+
+.combo-list {
+  display: grid;
+  gap: 8px;
+}
+
+.simple-loop {
+  display: grid;
+  gap: 8px;
+}
+
+.loop-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(255, 253, 241, 0.55);
+  border: 1px solid rgba(71, 123, 55, 0.1);
+}
+
+.loop-step span {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-fill);
+  color: #fffdf1;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.loop-step b {
+  font-size: 12px;
+}
+
+.combo-line {
+  display: grid;
+  grid-template-columns: auto auto auto auto auto 1fr;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.combo-line span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(91, 240, 143, 0.1);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.combo-line i {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 11px;
+}
+
+.combo-line small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.wallet-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.wallet-row span {
+  padding: 7px 6px;
+  border-radius: 10px;
+  background: rgba(47, 159, 98, 0.1);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+
+
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, #fff9e6, #e4f1c8);
+  border-top: 1px solid var(--line);
+  border-radius: 22px 22px 0 0;
+  padding: 8px 16px calc(env(safe-area-inset-bottom) + 16px);
+  z-index: 60;
+  box-shadow: 0 -20px 50px rgba(80, 104, 53, 0.28);
+  max-height: 86%;
+  overflow-y: auto;
+  animation: slideUp 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.sheet .handle {
+  width: 38px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  margin: 4px auto 12px;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(68, 82, 48, 0.42);
+  backdrop-filter: blur(3px);
+  z-index: 50;
+  animation: fade 0.2s;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 92px;
+  transform: translateX(-50%);
+  background: rgba(255, 249, 230, 0.98);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 80;
+  box-shadow: var(--shadow);
+  max-width: 88%;
+  text-align: center;
+  animation: slideUp 0.22s;
+}
+
+.statrow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+}
+.statrow:last-child {
+  border-bottom: 0;
+}
+
+.float-up {
+  position: fixed;
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--accent);
+  pointer-events: none;
+  z-index: 70;
+  animation: floatUp 1.05s ease-out forwards;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+/* The base offset lives inside the keyframes too: a later @keyframes overrides
+   the element's own `transform`, which would drop the -50%/-100% anchoring and
+   send every damage number off to the right. */
+@keyframes floatUp {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -100%) translateY(6px) scale(0.78);
+  }
+  22% {
+    opacity: 1;
+    transform: translate(-50%, -100%) translateY(-12px) scale(1.12);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -100%) translateY(-52px) scale(1);
+  }
+}
+
+.pop {
+  animation: pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.radar {
+  display: block;
+  margin: 0 auto;
+  /* The radar draws white 8% gridlines and vivid element hues, so it needs its
+     own dark instrument panel — on the light garden background it vanished. */
+  padding: 6px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 38%, #162b24 0%, #0b1714 70%),
+    #0b1714;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    inset 0 2px 14px rgba(0, 0, 0, 0.5);
+}
+
+.traitchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 253, 241, 0.5);
+  border: 1px solid var(--line);
+}
+.codebox {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-align: center;
+  padding: 16px;
+  background: rgba(255, 253, 241, 0.72);
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+  color: var(--accent-2);
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 14px;
+  background: rgba(255, 253, 241, 0.9);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 11px;
+  padding: 11px 13px;
+  width: 100%;
+  outline: none;
+}
+input:focus,
+select:focus {
+  border-color: var(--accent);
+}
+input::placeholder {
+  color: #738760;
+}
+
+.odds {
+  display: flex;
+  height: 22px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.odds > div {
+  display: grid;
+  place-items: center;
+  font-size: 9.5px;
+  font-weight: 800;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.empty {
+  text-align: center;
+  padding: 44px 20px;
+  color: var(--muted);
+}
+.empty .big {
+  font-size: 40px;
+  margin-bottom: 10px;
+  opacity: 0.7;
+}
+
+.probbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 5px 0;
+}
+.probbar .lbl {
+  width: 42px;
+  font-weight: 800;
+}
+.probbar .track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(38, 53, 29, 0.1);
+  overflow: hidden;
+}
+.probbar .track > i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+.probbar .val {
+  width: 54px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.notice {
+  padding: 10px 12px;
+  border-radius: 11px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: rgba(44, 143, 198, 0.12);
+  border: 1px solid rgba(44, 143, 198, 0.26);
+  color: #17445d;
+}
+.notice.warn {
+  background: rgba(217, 143, 36, 0.14);
+  border-color: rgba(217, 143, 36, 0.3);
+  color: #5a3a0e;
+}
+.notice.bad {
+  background: rgba(214, 75, 75, 0.12);
+  border-color: rgba(214, 75, 75, 0.28);
+  color: #762626;
+}
+
+.slot {
+  border: 1.5px dashed var(--line);
+  border-radius: var(--r);
+  padding: 14px;
+  text-align: center;
+  /* Was 120px, which forced a short plant into a box too small to read and left
+     the breeding screen mostly empty. */
+  min-height: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  background: rgba(255, 253, 241, 0.58);
+  transition: all 0.16s;
+}
+.slot.filled {
+  border-style: solid;
+  border-color: var(--accent);
+  background: rgba(47, 159, 98, 0.12);
+}
+
+
+.fadein {
+  animation: fadein 0.3s ease;
+}
+@keyframes fadein {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.scrollx {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.scrollx::-webkit-scrollbar {
+  display: none;
+}
+
+/* A horizontal scroller must never let its children shrink to fit, or long
+   labels wrap to one word per line inside a 40px-wide chip. */
+.scrollx > * {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.divider {
+  height: 1px;
+  background: var(--line);
+  margin: 12px 0;
+}
+
+
+/* Shop catalogue. Auto-fill so one column on a phone, two or three on a
+   desktop, without a breakpoint. The card was designed for a full-width
+   row, so the icon and text keep their place and only the buy buttons
+   stack vertically. */
+.seed-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+}
+
+.seed-grid > .card {
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+}
+
+.seed-grid .col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: none;
+}
+/* ==========================================================================
+   Planting ceremony (src/ui/screens/planting.ts)
+   ========================================================================== */
+
+/* The ritual is a full-screen stage. Backdrop blur rather than a flat scrim so
+   the garden is still readable underneath — the player should see the plot they
+   just filled, not a black box. */
+.plant-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  display: grid;
+  place-items: center;
+  /* Light enough that the garden stays readable behind the stage. A heavy
+     scrim hides the plot the player just filled, which is the one thing they
+     want to check. */
+  background: radial-gradient(130% 95% at 50% 42%, rgba(22, 36, 18, 0.16), rgba(10, 20, 8, 0.56));
+  backdrop-filter: blur(2.5px) saturate(0.94);
+  -webkit-backdrop-filter: blur(2.5px) saturate(0.94);
+  opacity: 1;
+  transition: opacity 0.26s ease;
+}
+
+.plant-overlay--leaving {
+  opacity: 0;
+}
+
+.plant-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(360px, 86vw);
+}
+
+/* Once the reveal is up it must be the only thing that decides the layout.
+   Appending it to a grid overlay made it a second implicit row, so the panel was
+   centred *below* the stage and its footer landed off the bottom of the screen
+   (measured: footer top 925px in a 900px viewport). Taking the stage out of flow
+   keeps the panel centred and leaves the sprout floating softly behind it. */
+.plant-overlay--reveal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.plant-overlay--reveal .plant-stage {
+  position: absolute;
+  opacity: 0.38;
+}
+
+/* A warm pool of light under the stage so the soil is not a shape floating in a
+   flat screen. Radial, so it falls off before the edges become visible. */
+.plant-stage::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 320px;
+  height: 320px;
+  margin: -160px 0 0 -160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 246, 206, 0.5), rgba(255, 240, 190, 0.16) 45%, transparent 70%);
+  pointer-events: none;
+}
+
+.plant-skip {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  right: max(14px, env(safe-area-inset-right));
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(16, 26, 12, 0.42);
+  color: #f3f7e8;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 13px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.plant-skip:active {
+  transform: scale(0.96);
+}
+
+/* --- the soil ------------------------------------------------------------ */
+
+.plant-pot {
+  position: relative;
+  width: 264px;
+  height: 264px;
+  isolation: isolate;
+}
+
+/* A shallow bowl of soil. Two stacked ellipses: the top face opens, the front
+   wall compresses, so the ground reads as something with depth. */
+/* Two stacked ellipses rather than one: the near edge is a darker band that
+   gives the soil a front face, so it reads as a mound with volume instead of a
+   flat disc. The rim highlight sells the "just opened" read. */
+.plant-dirt {
+  position: absolute;
+  left: 50%;
+  bottom: 26px;
+  width: 196px;
+  height: 88px;
+  margin-left: -98px;
+  border-radius: 50%;
+  background:
+    radial-gradient(70% 60% at 46% 26%, rgba(255, 236, 190, 0.28), transparent 62%),
+    radial-gradient(64% 74% at 50% 28%, #8a6136, #5d3d1f 62%, #3b2512 88%);
+  box-shadow:
+    inset 0 -16px 26px rgba(0, 0, 0, 0.46),
+    inset 0 10px 16px rgba(255, 220, 160, 0.16),
+    0 22px 34px rgba(8, 18, 6, 0.46);
+  transform: scaleY(0.62);
+  transition: transform 0.42s var(--spring);
+}
+
+/* Loose grit sitting on the surface, so the bed is not a smooth vector shape. */
+.plant-dirt::before {
+  content: "";
+  position: absolute;
+  inset: 14% 12% 34% 12%;
+  border-radius: 50%;
+  background-image:
+    radial-gradient(circle at 22% 40%, rgba(0, 0, 0, 0.34) 0 2px, transparent 2px),
+    radial-gradient(circle at 58% 26%, rgba(0, 0, 0, 0.26) 0 2px, transparent 2px),
+    radial-gradient(circle at 78% 56%, rgba(0, 0, 0, 0.3) 0 2px, transparent 2px),
+    radial-gradient(circle at 38% 66%, rgba(255, 226, 172, 0.22) 0 2px, transparent 2px),
+    radial-gradient(circle at 68% 40%, rgba(255, 226, 172, 0.16) 0 2px, transparent 2px);
+  opacity: 0.85;
+}
+
+.plant-dirt {
+  z-index: 2;
+}
+
+.plant-seedviz {
+  z-index: 3;
+}
+
+.plant-pot.is-open .plant-dirt {
+  transform: scaleY(1);
+}
+
+/* Closing over the seed: the mound squashes down and goes slightly darker, so
+   the seed reads as buried rather than merely hidden. */
+.plant-pot.is-closed .plant-dirt {
+  transform: scaleY(0.58);
+  filter: brightness(0.86);
+}
+
+/* The hole the seed drops into. Sits above the soil, revealed by the opening. */
+.plant-pot.is-open::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 52px;
+  width: 54px;
+  height: 23px;
+  margin-left: -27px;
+  border-radius: 50%;
+  background: radial-gradient(60% 70% at 50% 40%, #241505, #150b03);
+  box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.7);
+  animation: plantHoleOpen 0.4s var(--spring) both;
+}
+
+@keyframes plantHoleOpen {
+  from {
+    transform: scaleX(0.2) scaleY(0.3);
+    opacity: 0;
+  }
+  to {
+    transform: scaleX(1) scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* --- the seed ------------------------------------------------------------ */
+
+.plant-seedviz {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  width: 38px;
+  height: 38px;
+  margin-left: -19px;
+  border-radius: 52% 48% 54% 46% / 48% 52% 48% 52%;
+  background: radial-gradient(60% 60% at 34% 28%, #f0dfb0, #c39a5c 62%, #8d6634);
+  box-shadow: 0 4px 10px rgba(10, 18, 6, 0.45);
+  transform: translateY(0) rotate(0deg);
+}
+
+.plant-seedviz::after {
+  content: "";
+  position: absolute;
+  inset: 32% 22% 26% 22%;
+  border-radius: 50%;
+  background: rgba(90, 58, 22, 0.42);
+}
+
+/* A soft halo that pulses while the seed is still in the air. */
+.plant-seedglow {
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 236, 168, 0.5), transparent 68%);
+  opacity: 0;
+  animation: plantSeedPulse 1.05s ease-in-out infinite;
+}
+
+@keyframes plantSeedPulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.06);
+  }
+}
+
+/* The drop: a short fall with a squash on landing, then the soil swallows it. */
+.plant-seedviz.is-dropped {
+  animation: plantSeedDrop 0.74s cubic-bezier(0.4, 0.75, 0.5, 1) both;
+}
+
+@keyframes plantSeedDrop {
+  0% {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+  30% {
+    transform: translateY(16px) rotate(14deg) scale(1.05, 0.97);
+  }
+  /* Held at full opacity until it is actually entering the hole, so the seed
+     never fades out in mid-air — that read as the seed evaporating. */
+  72% {
+    transform: translateY(64px) rotate(70deg) scale(1);
+    opacity: 1;
+  }
+  88% {
+    transform: translateY(84px) rotate(94deg) scaleY(0.7) scaleX(1.24);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(94px) rotate(108deg) scale(0.16);
+    opacity: 0;
+  }
+}
+
+/* --- dust ---------------------------------------------------------------- */
+
+.plant-dust {
+  position: absolute;
+  left: 50%;
+  bottom: 38px;
+  width: 220px;
+  height: 96px;
+  margin-left: -110px;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.plant-dust span {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 9px;
+  height: 9px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: rgba(214, 176, 118, 0.9);
+  opacity: 0;
+}
+
+/* Puffs only on the bury beat, so the dust explains the soil closing rather
+   than floating around during the whole ritual.
+
+   The class is set from the ceremony on the dust element itself. A sibling
+   selector could not be used here: .plant-dust is inserted before .plant-pot, so
+   ".plant-pot.is-closed ~ .plant-dust" never matched and the puff never ran —
+   found by capturing a filmstrip of the ritual. */
+.plant-dust.is-puff span {
+  animation: plantPuff 0.7s ease-out both;
+  animation-delay: calc(var(--i) * 0.04s);
+}
+
+.plant-dust span:nth-child(1) { --dx: -70px; --dy: 2px; }
+.plant-dust span:nth-child(2) { --dx: -49px; --dy: -9px; }
+.plant-dust span:nth-child(3) { --dx: -27px; --dy: 8px; }
+.plant-dust span:nth-child(4) { --dx: -7px;  --dy: -12px; }
+.plant-dust span:nth-child(5) { --dx: 14px;  --dy: 7px; }
+.plant-dust span:nth-child(6) { --dx: 37px;  --dy: -7px; }
+.plant-dust span:nth-child(7) { --dx: 64px;  --dy: 4px; }
+
+@keyframes plantPuff {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.4);
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(1.5);
+  }
+}
+
+/* --- the sprout ---------------------------------------------------------- */
+
+/* Holds the real plant art. Empty until the grow beat, then the SVG is injected
+   by the ceremony so the plant appears out of the soil rather than fading in as
+   a finished picture. */
+/* Sits behind the soil in stacking order (see .plant-pot) so the plant
+   emerges *from* the bed rather than being pasted on top of it. */
+.plant-sprout {
+  position: absolute;
+  left: 50%;
+  /* Baseline sits just under the mound's top edge, so the visible stem starts
+     at the soil rather than hovering above it. */
+  bottom: 58px;
+  width: 240px;
+  height: 240px;
+  margin-left: -120px;
+  z-index: -1;
+  display: grid;
+  place-items: end center;
+  overflow: visible;
+}
+
+.plant-sprout .plantart {
+  /* Rendered at its natural size. The frame is padded for a mature plant, so a
+     seed-stage render is about a quarter of its box — that is correct, and
+     scaling it up further just made the proportions lie. */
+  transform-origin: 50% 90%;
+}
+
+.plant-sprout.is-growing .plantart {
+  animation: plantSproutRise 0.95s var(--spring) both;
+}
+
+@keyframes plantSproutRise {
+  0% {
+    transform: translateY(16px) scale(0.2);
+    opacity: 0;
+  }
+  55% {
+    transform: translateY(-4px) scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+/* A ring of light that expands once as the plant settles — the "it took" beat. */
+.plant-sprout.is-growing::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  width: 46px;
+  height: 15px;
+  margin-left: -23px;
+  border-radius: 50%;
+  border: 2px solid rgba(232, 250, 178, 0.95);
+  animation: plantSettle 1s ease-out 0.4s both;
+}
+
+@keyframes plantSettle {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.3, 0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(3.4, 2.2);
+  }
+}
+
+/* ==========================================================================
+   Planting reveal
+   ========================================================================== */
+
+.plant-reveal {
+  display: flex;
+  flex-direction: column;
+  width: min(430px, 92vw);
+  max-height: 88vh;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #fffdf3, #f6f9ea);
+  border: 1px solid rgba(71, 123, 55, 0.22);
+  box-shadow: 0 26px 60px rgba(10, 22, 8, 0.4);
+  color: var(--text);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: opacity 0.24s ease, transform 0.24s var(--spring);
+}
+
+/* Only the readout scrolls. The confirm button stays put. */
+.plant-reveal-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 15px 16px 4px;
+  min-height: 0;
+}
+
+.plant-reveal-foot {
+  flex: none;
+  padding: 10px 16px 15px;
+  border-top: 1px solid rgba(71, 123, 55, 0.16);
+  background: linear-gradient(180deg, rgba(246, 249, 234, 0.4), #f6f9ea 40%);
+  border-radius: 0 0 21px 21px;
+}
+
+/* The reveal was previously held offscreen and then revealed in place. Now it
+   is appended to the stage when the ritual ends, and animates up from below. */
+.plant-reveal--enter {
+  animation: plantRevealIn 0.34s var(--spring) both;
+}
+
+@keyframes plantRevealIn {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.plant-reveal-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 10px;
+  margin-bottom: 11px;
+  border-bottom: 1px solid rgba(71, 123, 55, 0.16);
+}
+
+.plant-reveal-art {
+  width: 92px;
+  height: 92px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 14px;
+  background: radial-gradient(circle at 50% 62%, rgba(255, 255, 255, 0.9), rgba(226, 240, 205, 0.5));
+}
+
+.plant-reveal-name {
+  font-size: 19px;
+  font-weight: 850;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+/* --- the hidden roll ----------------------------------------------------- */
+
+.plant-roll {
+  padding: 11px;
+  border-radius: 16px;
+  background: rgba(47, 159, 98, 0.08);
+  border: 1px solid rgba(47, 159, 98, 0.2);
+}
+
+.plant-roll-title {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #2f7a4a;
+  margin-bottom: 9px;
+}
+
+.plant-gene-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px 12px;
+}
+
+.plant-gene-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.plant-gene-bar {
+  height: 6px;
+  margin: 4px 0 3px;
+  border-radius: 999px;
+  background: rgba(47, 159, 98, 0.16);
+  overflow: hidden;
+}
+
+.plant-gene-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4aa86a, #2f7a4a);
+}
+
+.plant-gene small {
+  display: block;
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--muted);
+}
+
+.plant-roll-foot {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed rgba(47, 159, 98, 0.28);
+  font-size: 11.5px;
+  color: #3c5f45;
+}
+
+/* --- facts --------------------------------------------------------------- */
+
+.plant-facts {
+  margin-top: 11px;
+}
+
+.plant-fact-title {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+
+.plant-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 6px;
+}
+
+.plant-stat {
+  padding: 6px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(71, 123, 55, 0.14);
+  text-align: center;
+}
+
+.plant-stat small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.plant-stat b {
+  display: block;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.plant-stat i {
+  display: block;
+  font-size: 10.5px;
+  font-style: normal;
+  color: #2f7a4a;
+  font-weight: 700;
+}
+
+/* --- build + next -------------------------------------------------------- */
+
+.plant-build {
+  margin-top: 11px;
+  padding: 9px 10px;
+  border-radius: 13px;
+  background: rgba(224, 108, 61, 0.07);
+  border: 1px solid rgba(224, 108, 61, 0.18);
+  display: grid;
+  gap: 4px;
+}
+
+.plant-next {
+  margin-top: 11px;
+  padding-bottom: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+/* While the ceremony owns the screen, stop the page behind it from scrolling. */
+body.planting {
+  overflow: hidden;
+}
+
+@media (max-width: 420px) {
+  .plant-gene-grid {
+    grid-template-columns: 1fr;
+  }
+  .plant-pot {
+    width: 230px;
+    height: 230px;
+  }
+  .plant-dirt {
+    width: 176px;
+    margin-left: -88px;
+  }
+  .plant-sprout {
+    width: 200px;
+    height: 200px;
+    margin-left: -100px;
+  }
+}
+
+/* A player who has asked for less motion gets the outcome, not the theatre.
+   The reveal is what carries the information; the ritual is decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .plant-seedviz,
+  .plant-seedglow,
+  .plant-dust span,
+  .plant-pot::after,
+  .plant-sprout .plantart,
+  .plant-sprout.is-growing::after {
+    animation: none !important;
+  }
+  .plant-dirt,
+  .plant-reveal {
+    transition: none !important;
+  }
+  .plant-reveal--enter {
+    animation: none !important;
+  }
+}
+
+/* ==========================================================================
+   Battle arena (src/battle/battleFx.ts)
+   ========================================================================== */
+
+
+/* Sky: dark at the top, warming toward the horizon, and tinted toward each
+   fighter's element so the arena belongs to the two plants in it. */
+
+/* Ground plane: a perspective trapezoid under the fighters, brightest along the
+   horizon so the two read as standing on something. */
+
+/* Haze at the seam, so the ground does not start with a hard edge. */
+
+
+.fx-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.fx-layer.is-shaking {
+  animation: fxShake 0.24s ease-out;
+}
+
+@keyframes fxShake {
+  0% { transform: translate(0, 0); }
+  22% { transform: translate(-4px, 2px); }
+  46% { transform: translate(4px, -2px); }
+  70% { transform: translate(-2px, 1px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* --- travel: each delivery has its own motion ---------------------------- */
+
+.fx-bolt {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  margin: -6.5px 0 0 -6.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, var(--c) 58%, transparent 72%);
+  box-shadow: 0 0 12px var(--c);
+  animation: fxFly 0.34s cubic-bezier(0.4, 0, 0.7, 1) both;
+}
+
+.fx-bolt.is-crit {
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+}
+
+/* A trail behind the bolt, drawn as a second element on the same element. */
+.fx-bolt::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  width: 26px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--c), transparent);
+  opacity: 0.8;
+}
+
+@keyframes fxFly {
+  from { transform: translate(0, 0) scale(0.6); }
+  to { transform: translate(var(--dx), var(--dy)) scale(1); }
+}
+
+.fx-tether {
+  position: absolute;
+  height: 3px;
+  margin-top: -1.5px;
+  border-radius: 999px;
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, transparent, var(--c) 30%, #fff 52%, var(--c) 70%, transparent);
+  box-shadow: 0 0 10px var(--c);
+  animation: fxTether 0.5s ease-out both;
+}
+
+@keyframes fxTether {
+  from { transform: rotate(var(--tilt)) scaleX(0); opacity: 0; }
+  30% { opacity: 1; }
+  to { transform: rotate(var(--tilt)) scaleX(1); opacity: 0; }
+}
+
+.fx-slash {
+  position: absolute;
+  width: 96px;
+  height: 96px;
+  margin: -48px 0 0 -48px;
+  border-radius: 50%;
+  border: 3px solid var(--c);
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  transform: scale(0.6) rotate(var(--flip) * -18deg);
+  opacity: 0.9;
+  animation: fxSlash 0.34s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+.fx-slash.is-crit {
+  border-width: 5px;
+  box-shadow: 0 0 16px var(--c);
+}
+
+@keyframes fxSlash {
+  from { transform: scale(0.5) rotate(calc(var(--flip) * -40deg)); opacity: 0; }
+  40% { opacity: 1; }
+  to { transform: scale(1.25) rotate(calc(var(--flip) * 40deg)); opacity: 0; }
+}
+
+.fx-ring {
+  position: absolute;
+  width: calc(var(--r) * 2);
+  height: calc(var(--r) * 2);
+  margin-left: calc(var(--r) * -1);
+  margin-top: calc(var(--r) * -1);
+  border-radius: 50%;
+  border: 2px solid var(--c);
+  box-shadow: 0 0 18px var(--c), inset 0 0 18px var(--c);
+  animation: fxRing 0.5s ease-out both;
+}
+
+@keyframes fxRing {
+  from { transform: scale(0.2); opacity: 0.95; }
+  to { transform: scale(1.15); opacity: 0; }
+}
+
+.fx-spike {
+  position: absolute;
+  width: 16px;
+  height: 52px;
+  margin-left: calc(var(--flip) * -8px);
+  margin-top: -46px;
+  background: linear-gradient(180deg, var(--c), color-mix(in srgb, var(--c) 30%, #16281b));
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  transform-origin: 50% 100%;
+  animation: fxSpike 0.4s cubic-bezier(0.2, 1.2, 0.4, 1) both;
+}
+
+.fx-spike.is-crit {
+  height: 66px;
+  box-shadow: 0 0 16px var(--c);
+}
+
+@keyframes fxSpike {
+  from { transform: scaleY(0.1); opacity: 0; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+
+.fx-minion {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50% 50% 44% 56%;
+  background: radial-gradient(circle at 36% 30%, #fff, var(--c) 60%, transparent 74%);
+  box-shadow: 0 0 14px var(--c);
+  animation: fxMinion 0.58s ease-in-out both;
+}
+
+@keyframes fxMinion {
+  from { transform: translate(0, 0) scale(0.3); opacity: 0; }
+  35% { opacity: 1; }
+  to { transform: translate(var(--dx), var(--dy)) scale(1.1); opacity: 0; }
+}
+
+.fx-mote {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff, var(--c) 60%, transparent 76%);
+  animation: fxGather 0.5s ease-in both;
+}
+
+@keyframes fxGather {
+  from { transform: translate(0, 0) scale(1); opacity: 0.9; }
+  to { transform: translate(0, 0) scale(0.2) translateY(-14px); opacity: 0; }
+}
+
+.fx-trap {
+  position: absolute;
+  width: 26px;
+  height: 12px;
+  margin: -6px 0 0 -13px;
+  border-radius: 50%;
+  border: 2px solid var(--c);
+  opacity: 0.9;
+  animation: fxTrap 0.6s ease-out both;
+}
+
+@keyframes fxTrap {
+  from { transform: scale(0.2); opacity: 0; }
+  40% { transform: scale(1.1); opacity: 1; }
+  to { transform: scale(1); opacity: 0.5; }
+}
+
+.fx-spirit {
+  position: absolute;
+  width: 16px;
+  height: 26px;
+  margin: -13px 0 0 -8px;
+  border-radius: 50% 50% 40% 40%;
+  background: linear-gradient(180deg, var(--c), transparent);
+  opacity: 0;
+  animation: fxSpirit 0.65s ease-out both;
+}
+
+@keyframes fxSpirit {
+  from { transform: translateY(16px) scale(0.4); opacity: 0; }
+  40% { opacity: 0.95; }
+  to { transform: translateY(-16px) scale(1); opacity: 0; }
+}
+
+.fx-charge {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 50%;
+  border: 2px solid var(--c);
+  animation: fxCharge 0.4s ease-out both;
+}
+
+@keyframes fxCharge {
+  from { transform: scale(1.5); opacity: 0; }
+  35% { opacity: 0.9; }
+  to { transform: scale(0.3); opacity: 0; }
+}
+
+/* --- impacts ------------------------------------------------------------ */
+
+.fx-burst {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 26%, rgba(255, 214, 150, 0.9) 40%, transparent 70%);
+  animation: fxBurst 0.34s ease-out both;
+}
+
+.fx-burst.is-crit {
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  background: radial-gradient(circle, #fff 0 22%, #ffd166 38%, rgba(255, 122, 61, 0.7) 58%, transparent 74%);
+}
+
+@keyframes fxBurst {
+  from { transform: scale(0.3); opacity: 1; }
+  to { transform: scale(3.4); opacity: 0; }
+}
+
+.fx-shield {
+  position: absolute;
+  width: calc(var(--r) * 2);
+  height: calc(var(--r) * 2.4);
+  margin-left: calc(var(--r) * -1);
+  margin-top: calc(var(--r) * -1.2);
+  border-radius: 50%;
+  border: 2px solid #9ad6ff;
+  box-shadow: 0 0 20px #9ad6ff, inset 0 0 26px rgba(154, 214, 255, 0.4);
+  animation: fxShield 0.6s ease-out both;
+}
+
+@keyframes fxShield {
+  from { transform: scale(0.7); opacity: 0; }
+  30% { opacity: 0.95; }
+  to { transform: scale(1.1); opacity: 0; }
+}
+
+.fx-heal {
+  position: absolute;
+  width: 6px;
+  height: 9px;
+  margin-left: -3px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: linear-gradient(180deg, #b6f0a0, #4fae62);
+  box-shadow: 0 0 8px rgba(140, 230, 140, 0.8);
+  animation: fxHeal 0.85s ease-out both;
+}
+
+@keyframes fxHeal {
+  from { transform: translateY(0) scale(0.5); opacity: 0; }
+  25% { opacity: 1; }
+  to { transform: translateY(-56px) scale(1); opacity: 0; }
+}
+
+.fx-drop {
+  position: absolute;
+  width: 6px;
+  height: 8px;
+  margin-left: -3px;
+  border-radius: 50% 50% 60% 60%;
+  background: var(--p, #9ee06a);
+  animation: fxDrop 0.65s ease-in both;
+}
+
+@keyframes fxDrop {
+  from { transform: translateY(-6px) scale(0.6); opacity: 0.9; }
+  to { transform: translateY(30px) scale(1.1); opacity: 0; }
+}
+
+.fx-word,
+.fx-status {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  animation: fxWord 0.85s ease-out both;
+}
+
+.fx-word {
+  color: #cfd8c8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.fx-status {
+  font-size: 15px;
+  color: #ffe9a8;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+@keyframes fxWord {
+  from { transform: translate(-50%, -50%) scale(0.7); opacity: 0; }
+  30% { opacity: 1; }
+  to { transform: translate(-50%, -160%) scale(1); opacity: 0; }
+}
+
+/* --- floating numbers --------------------------------------------------- */
+
+.fx-num {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 19px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+  animation: fxNum 0.95s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+.fx-num.is-dmg { color: #ffd9c0; }
+.fx-num.is-crit { color: #ffc233; font-size: 27px; }
+.fx-num.is-heal { color: #b6f0a0; }
+.fx-num.is-shield { color: #9ad6ff; }
+
+@keyframes fxNum {
+  0% { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
+  16% { transform: translate(-50%, -70%) scale(1.18); opacity: 1; }
+  30% { transform: translate(-50%, -76%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -160%) scale(0.94); opacity: 0; }
+}
+
+/* --- cast banner -------------------------------------------------------- */
+
+.fx-banner {
+  position: absolute;
+  left: 50%;
+  top: 16%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  color: #f4f8ec;
+  background: rgba(14, 24, 16, 0.72);
+  border: 1px solid var(--c);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 18px color-mix(in srgb, var(--c) 40%, transparent);
+  animation: fxBanner 1s ease-out both;
+}
+
+.fx-banner-ico {
+  color: var(--c);
+  font-size: 14px;
+}
+
+@keyframes fxBanner {
+  0% { transform: translateX(-50%) translateY(12px) scale(0.85); opacity: 0; }
+  14% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+  76% { opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-10px) scale(0.97); opacity: 0; }
+}
+
+/* --- HP ghost bar ------------------------------------------------------- */
+
+.hpstack {
+  position: relative;
+  overflow: hidden;
+}
+
+.hpstack > b {
+  /* The pale slab behind the real bar. It holds the old width for 420ms after a
+     hit, so damage reads as something being taken rather than a shorter bar. */
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 50%;
+  background: rgba(255, 168, 150, 0.55);
+  transition: transform 0.42s cubic-bezier(0.3, 0.8, 0.3, 1) 0.12s;
+  border-radius: inherit;
+}
+
+.battler.is-chipping .hpstack > b {
+  transition: transform 0.42s cubic-bezier(0.3, 0.8, 0.3, 1) 0.12s;
+}
+
+/* --- action bar --------------------------------------------------------- */
+
+
+.skillbtn .nm {
+  font-size: 12.5px;
+  font-weight: 750;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.skillbtn .dl {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+/* Ready reads as raised and lit; on cooldown it sinks and greys out. The
+   difference has to be obvious at a glance — the old buttons all looked
+   disabled because the ready state had no styling at all. */
+
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-layer.is-shaking,
+  .fx-bolt, .fx-tether, .fx-slash, .fx-ring, .fx-spike, .fx-minion,
+  .fx-mote, .fx-trap, .fx-spirit, .fx-charge,
+  .fx-burst, .fx-shield, .fx-heal, .fx-drop,
+  .fx-word, .fx-status, .fx-num, .fx-banner {
+    animation: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Added after the arena was looked at in a screenshot.
+   -------------------------------------------------------------------------- */
+
+/* Fighters and the centre panel sit above the ground plane. */
+.battlefield > .battler,
+.battlefield > .battle-arena {
+  position: relative;
+  z-index: 2;
+}
+
+/* The skill's delivery and effect, as text. The button already shows a glyph;
+   a glyph alone does not say whether a skill hits once hard or three times
+   slowly, and that is the decision the player is making. */
+.skillbtn .nm {
+  font-size: 11.5px;
+  font-weight: 750;
+  line-height: 1.16;
+  text-align: center;
+}
+
+.skillbtn .dl {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #4a6b4c;
+  margin-top: auto;
+}
+
+.skillbtn.ready .dl {
+  color: #2f7a4a;
+}
+
+/* Fighter names and HP sit on the ground plane's top edge, which is now a
+   light band — without a scrim the name lost contrast against it. */
+.battler .pname,
+.battler .hpblock {
+  position: relative;
+}
+
+.battler .hpblock::before {
+  content: "";
+  position: absolute;
+  inset: -6px -10px -6px -10px;
+  border-radius: 12px;
+  background: radial-gradient(70% 100% at 50% 50%, rgba(8, 18, 12, 0.62), transparent 78%);
+  z-index: -1;
+}
+
+/* --------------------------------------------------------------------------
+   Narrow-screen header.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 560px) {
+  .topbar {
+    padding-left: 10px;
+    padding-right: 10px;
+    gap: 6px;
+  }
+
+  .brand {
+    gap: 7px;
+    font-size: 13.5px;
+  }
+
+  .brand .logo {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    font-size: 15px;
+  }
+
+  /* The subtitle is the line that always wrapped, and it is decoration: the
+     name of the game is on the title right above it. */
+  .brand small {
+    display: none;
+  }
+
+  .topbar .pill {
+    padding-left: 8px;
+    padding-right: 8px;
+    font-size: 11.5px;
+  }
+}
+
+
+
+/* ==========================================================================
+   Seed chooser (tap a plot -> pick a seed -> it plants)
+   ========================================================================== */
+
+.seed-picker {
+  display: grid;
+  gap: 12px;
+}
+
+.picker-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.picker-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* --- preview ------------------------------------------------------------ */
+
+.seed-preview {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.85), rgba(255, 253, 240, 0.6));
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.seed-preview-orb {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.85), var(--seed) 62%);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--seed) 34%, transparent), inset 0 -3px 6px rgba(0, 0, 0, 0.14);
+}
+
+.seed-preview-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.seed-preview-copy > b {
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.seed-preview-copy > small {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #2f7a4a;
+}
+
+.seed-preview-copy > p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.seed-preview-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.seed-preview-stats > span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: rgba(47, 122, 74, 0.12);
+  color: #2f6b45;
+}
+
+/* --- grid --------------------------------------------------------------- */
+
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  max-height: min(42vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px;
+}
+
+.picker-card {
+  position: relative;
+  /* The grid is the decision surface, so cards get a real hover and focus ring.
+     Without them the only feedback is the click itself, which is too late to
+     change your mind about. */
+  transition: transform 0.14s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.picker-card:hover,
+.picker-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(47, 159, 98, 0.55);
+  box-shadow: 0 6px 16px rgba(47, 159, 98, 0.2);
+  outline: none;
+}
+
+/* Plants itself on press, the way a seed goes into soil. transform-origin on the
+   bottom edge is what separates "pressed into the ground" from "heartbeat". */
+.picker-card:active {
+  transform: translateY(1px) scale(0.985, 0.94);
+}
+
+.buy-tag {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #4a3200;
+  background: linear-gradient(180deg, #ffe27a, #ffc94a);
+  box-shadow: 0 2px 6px rgba(120, 80, 0, 0.28);
+  pointer-events: none;
+}
+
+.btn.wide {
+  width: 100%;
+  justify-content: center;
+}
+
+@media (max-width: 480px) {
+  .picker-grid {
+    grid-template-columns: repeat(auto-fill, minmax(122px, 1fr));
+    max-height: min(38vh, 260px);
+  }
+
+  .seed-preview {
+    padding: 10px;
+  }
+
+  .seed-preview-orb {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+  }
+}
+
+
+/* ==========================================================================
+   Combat juice (src/battle/juice.ts)
+   ========================================================================== */
+
+/* The contact wash. Driven from JS rather than keyframed because its strength
+   comes from the same weight table as the shake and the hitstop, and a
+   keyframe animation would have to be re-declared per level. */
+.battle-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(120% 90% at 50% 58%, rgba(255, 255, 255, 0.95), rgba(255, 226, 170, 0.35) 45%, transparent 74%);
+  will-change: opacity;
+}
+
+/* --- debris --------------------------------------------------------------- */
+
+.fx-shard {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 1px;
+  background: #ffe9b0;
+  box-shadow: 0 0 6px rgba(255, 210, 120, 0.9);
+  animation: fxShard 0.62s cubic-bezier(0.15, 0.6, 0.4, 1) both;
+}
+
+@keyframes fxShard {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(1.4);
+    opacity: 1;
+  }
+  60% {
+    opacity: 0.9;
+  }
+  100% {
+    /* Falls: the arc goes out along the attack line, then gravity takes over. */
+    transform: translate(var(--dx), calc(var(--dy) + 34px)) rotate(var(--rot)) scale(0.4);
+    opacity: 0;
+  }
+}
+
+/* --- projectile as a streak ---------------------------------------------- */
+
+.fx-bolt.is-struck {
+  /* Already at the contact point; the streak points back down the attack line
+     and collapses into it. */
+  width: var(--len, 120px);
+  height: 9px;
+  margin: -4.5px 0 0 0;
+  border-radius: 999px;
+  transform-origin: 100% 50%;
+  transform: rotate(var(--tilt));
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c) 70%, transparent) 45%, #fff 88%, #fff);
+  box-shadow: 0 0 18px var(--c);
+  animation: fxStreak 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+.fx-bolt.is-struck.is-crit {
+  height: 13px;
+  margin-top: -6.5px;
+  box-shadow: 0 0 26px var(--c), 0 0 50px var(--c);
+}
+
+@keyframes fxStreak {
+  0% {
+    transform: rotate(var(--tilt)) scaleX(0.2) scaleY(1.5);
+    opacity: 0;
+  }
+  22% {
+    opacity: 1;
+  }
+  100% {
+    /* Collapses toward the contact point — the streak is consumed by the hit. */
+    transform: rotate(var(--tilt)) scaleX(1.15) scaleY(0.4);
+    opacity: 0;
+  }
+}
+
+/* --- death ---------------------------------------------------------------- */
+
+.fx-death {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 236, 200, 0.9);
+  box-shadow: 0 0 26px rgba(255, 190, 120, 0.6), inset 0 0 26px rgba(255, 190, 120, 0.35);
+  animation: fxDeath 0.66s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes fxDeath {
+  0% {
+    transform: scale(0.3);
+    opacity: 1;
+  }
+  30% {
+    transform: scale(2.6);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(4.4);
+    opacity: 0;
+  }
+}
+
+/* --- numbers sized by weight ---------------------------------------------- */
+
+.fx-num.w-heavy { font-size: 23px; }
+.fx-num.w-crit { font-size: 30px; }
+.fx-num.w-kill {
+  font-size: 34px;
+  color: #ffe08a;
+  text-shadow: 0 0 16px rgba(255, 190, 80, 0.85), 0 2px 6px rgba(0, 0, 0, 0.85);
+  letter-spacing: -0.03em;
+}
+
+/* --- recoil -------------------------------------------------------------- */
+
+/* The juice layer writes transform directly each frame while a recoil runs, so
+   these get their own layer: a 30Hz update should not repaint the arena. */
+.battler {
+  will-change: transform;
+}
+
+.battler .avatar {
+  transform-origin: 50% 100%;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battle-flash {
+    display: none;
+  }
+
+  .fx-shard {
+    animation: none;
+    opacity: 0;
+  }
+
+  .fx-bolt.is-struck {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
+
+/* ==========================================================================
+   Fusion ceremony and staggered reveals (src/ui/fusion.ts)
+   ========================================================================== */
+
+.fusion-overlay {
+  /* ixed, not bsolute. Inherited from .overlay, it was sized against
+     .shell, which is as tall as the whole scrollable page (2336px here), so
+     the grid stretched: the stage landed at y=496 and the caption 1300px below
+     it, and the gradient's centre fell off-screen. A modal covers the viewport
+     and nothing else. */
+  position: fixed;
+  display: grid;
+  place-items: center;
+  /* Rows sized to content, so the stage and its caption stay together instead
+     of each taking half a tall container. */
+  grid-auto-rows: min-content;
+  align-content: center;
+  gap: 10px;
+  /* Opaque enough that the garden behind stops competing for attention. The
+     earlier version read as a green wash with the whole page legible through it,
+     which made the ceremony look like a tooltip. */
+  background: radial-gradient(72% 58% at 50% 44%, rgba(9, 20, 13, 0.94), rgba(4, 10, 6, 0.985));
+  backdrop-filter: blur(6px);
+  z-index: 60;
+}
+
+.fusion-stage {
+  position: relative;
+  width: min(78vw, 340px);
+  height: 300px;
+  display: grid;
+  place-items: center;
+}
+
+/* --- the two parents ------------------------------------------------------ */
+
+.fusion-parent {
+  position: absolute;
+  width: 108px;
+  height: 108px;
+  opacity: 0;
+  filter: saturate(0.75) brightness(0.8);
+}
+
+/* Drift in, hesitate, then be pulled in. The hesitation is the anticipation: it
+   is what makes the contact mean something rather than just being the next thing
+   that happens. */
+.fusion-parent.is-left {
+  animation: fusionInL 620ms cubic-bezier(0.34, 1.2, 0.5, 1) both;
+}
+
+.fusion-parent.is-right {
+  animation: fusionInR 620ms cubic-bezier(0.34, 1.2, 0.5, 1) both;
+}
+
+@keyframes fusionInL {
+  0% { transform: translate(-84px, 14px) scale(0.7) rotate(-14deg); opacity: 0; }
+  55% { transform: translate(-22px, 0) scale(1.02) rotate(-4deg); opacity: 1; }
+  100% { transform: translate(0, 0) scale(0.2) rotate(0deg); opacity: 0; }
+}
+
+@keyframes fusionInR {
+  0% { transform: translate(84px, 14px) scale(0.7) rotate(14deg); opacity: 0; }
+  55% { transform: translate(22px, 0) scale(1.02) rotate(4deg); opacity: 1; }
+  100% { transform: translate(0, 0) scale(0.2) rotate(0deg); opacity: 0; }
+}
+
+/* --- the contact point ---------------------------------------------------- */
+
+.fusion-core {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+  animation: fusionCore 620ms ease-out 560ms both;
+}
+
+@keyframes fusionCore {
+  0% { transform: scale(0); opacity: 0; box-shadow: 0 0 0 0 rgba(255, 244, 210, 0.9); }
+  18% { transform: scale(2.6); opacity: 1; }
+  40% { transform: scale(1.1); opacity: 0.95; box-shadow: 0 0 44px 18px rgba(255, 236, 180, 0); }
+  100% { transform: scale(0.2); opacity: 0; }
+}
+
+/* A shockwave ring, so the contact reads as force rather than as a cross-fade. */
+.fusion-core::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 240, 200, 0.9);
+  animation: fusionShock 560ms cubic-bezier(0.2, 0.8, 0.3, 1) 600ms both;
+}
+
+@keyframes fusionShock {
+  0% { transform: scale(1); opacity: 0.9; }
+  100% { transform: scale(11); opacity: 0; }
+}
+
+/* --- gene motes ----------------------------------------------------------- */
+
+.fusion-mote {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: hsl(var(--hue, 90) 90% 72%);
+  box-shadow: 0 0 8px hsl(var(--hue, 90) 95% 66%);
+  opacity: 0;
+  animation: fusionMote 780ms cubic-bezier(0.1, 0.7, 0.4, 1) both;
+}
+
+@keyframes fusionMote {
+  0% { transform: translate(0, 0) scale(0.4); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translate(var(--dx, 0), calc(var(--dy, 0) + 46px)) scale(0.5); opacity: 0; }
+}
+
+/* --- the child ------------------------------------------------------------ */
+
+/* Overshoots tall, then settles. The overshoot is what makes it feel like
+   something was born rather than something was displayed. */
+.fusion-child {
+  position: relative;
+  isolation: isolate;
+  width: 204px;
+  height: 204px;
+  opacity: 0;
+  transform-origin: 50% 100%;
+  animation: fusionChild 700ms cubic-bezier(0.18, 1.5, 0.4, 1) 620ms both;
+}
+
+/* A warm halo behind the child, so the reveal reads as something rare arriving
+   rather than as a sprite being swapped in. */
+.fusion-child::before {
+  content: "";
+  position: absolute;
+  /* Behind the artwork. An absolutely-positioned pseudo-element paints above
+     static content, so without this the halo covered the plant it was meant to
+     introduce — the glow became a smudge over the subject. isolation keeps the
+     negative z-index from escaping behind the overlay instead. */
+  z-index: -1;
+  inset: 8% 2%;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 238, 180, 0.34), rgba(160, 220, 140, 0.12) 52%, transparent 72%);
+  opacity: 0;
+  animation: fusionHalo 900ms ease-out 620ms both;
+  pointer-events: none;
+}
+
+@keyframes fusionHalo {
+  0% { opacity: 0; transform: scale(0.5); }
+  40% { opacity: 1; }
+  100% { opacity: 0.8; transform: scale(1); }
+}
+
+@keyframes fusionChild {
+  0% { transform: scale(0.1, 0.1); opacity: 0; }
+  26% { transform: scale(0.62, 1.24); opacity: 1; }
+  48% { transform: scale(1.18, 0.88); opacity: 1; }
+  70% { transform: scale(0.96, 1.04); }
+  100% { transform: scale(1, 1); opacity: 1; }
+}
+
+.fusion-panel {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  margin-top: 6px;
+}
+
+.fusion-caption {
+  font-size: 19px;
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  color: #f4faee;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  animation: fusionCaption 460ms ease-out 900ms both;
+}
+
+@keyframes fusionCaption {
+  0% { transform: translateY(8px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.fusion-hint {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(226, 240, 214, 0.6);
+  opacity: 0;
+  animation: fusionCaption 400ms ease-out 1150ms both;
+}
+
+/* Reduced motion: the information arrives, nothing moves. */
+.fusion-stage.is-calm .fusion-child,
+.fusion-stage.is-calm .fusion-caption {
+  animation: none;
+  opacity: 1;
+}
+
+.fusion-stage.is-calm .fusion-hint {
+  animation: none;
+  opacity: 1;
+}
+
+.fusion-stage.is-calm .fusion-core,
+.fusion-stage.is-calm .fusion-parent,
+.fusion-stage.is-calm .fusion-mote {
+  display: none;
+}
+
+/* --- staggered report rows ------------------------------------------------ */
+
+.rise-in {
+  animation: riseIn 320ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes riseIn {
+  0% { transform: translateY(9px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fusion-parent,
+  .fusion-core,
+  .fusion-mote,
+  .fusion-child,
+  .fusion-caption,
+  .fusion-hint,
+  .rise-in {
+    animation: none !important;
+    opacity: 1;
+  }
+
+  .fusion-parent,
+  .fusion-core,
+  .fusion-mote {
+    display: none;
+  }
+}
+
+
+/* ==========================================================================
+   Unlock conditions (src/config/unlocks.ts)
+   ========================================================================== */
+
+/* A locked species explains itself. The point of the rule system is that the
+   player can see how far off they are, so the block is a requirements list with
+   progress, not a "locked" badge. */
+.unlock-lock {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(90, 104, 78, 0.1);
+  border: 1px dashed rgba(90, 104, 78, 0.34);
+}
+
+.unlock-head {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #5c6b52;
+  margin-bottom: 5px;
+}
+
+.unlock-rule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 11.5px;
+  color: #4a5543;
+}
+
+/* A met requirement is struck back but stays visible, so an "any of these" gate
+   shows which route the player has already satisfied. */
+.unlock-rule.is-met {
+  color: #2f7a4a;
+}
+
+.unlock-rule.is-met .grow {
+  text-decoration: line-through;
+  opacity: 0.72;
+}
+
+.unlock-mark {
+  width: 14px;
+  flex: none;
+  text-align: center;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.unlock-rule .mono {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+/* A button that cannot be pressed should not look pressable. */
+.btn.is-locked {
+  opacity: 0.42;
+  filter: saturate(0.4);
+}
+
+/* --- locked garden plots --------------------------------------------------- */
+
+.plot-locked {
+  display: grid;
+  gap: 4px;
+  place-items: center;
+  padding: 10px 8px;
+  border-radius: 14px;
+  border: 1px dashed rgba(90, 104, 78, 0.4);
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(120, 140, 110, 0.07) 0 8px,
+    rgba(120, 140, 110, 0.03) 8px 16px
+  );
+  text-align: center;
+  cursor: default;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.plot-locked:hover {
+  border-color: rgba(47, 159, 98, 0.5);
+}
+
+.plot-locked .plot-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: #6b7a62;
+  background: rgba(120, 140, 110, 0.14);
+}
+
+.plot-locked .plot-req {
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #5c6b52;
+}
+
+.plot-locked .plot-cost {
+  font-size: 10.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #8a6a20;
+}
+
+.plot-locked.can-buy {
+  border-color: rgba(47, 159, 98, 0.55);
+  background: rgba(47, 159, 98, 0.09);
+  cursor: pointer;
+}
+
+.plot-locked.can-buy .plot-req {
+  color: #2f6b45;
+}
+
+/* Progress on a plot gate, when it has more than one route. */
+.plot-progress {
+  font-size: 9px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #6b7a62;
+}
+
+.plot-progress .done {
+  color: #2f7a4a;
+}
+
+
+/* ==========================================================================
+   Level badge and notices
+   ========================================================================== */
+
+/* The breeder level, always visible.
+   It gates every species, every plot and the shop tier, and used to appear only
+   as a footnote on one tab. A progression number the player has to go looking for
+   does not read as feedback. */
+.levelbadge {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 5px;
+  padding: 5px 10px 5px 9px;
+  border-radius: 12px;
+  border: 1px solid rgba(47, 159, 98, 0.32);
+  background: linear-gradient(150deg, rgba(47, 159, 98, 0.18), rgba(47, 159, 98, 0.06));
+  cursor: pointer;
+  flex: none;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.levelbadge:hover {
+  border-color: rgba(47, 159, 98, 0.55);
+  transform: translateY(-1px);
+}
+
+.levelbadge-num {
+  grid-row: 1;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #1f6b42;
+}
+
+.levelbadge-label {
+  grid-row: 1;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4a7a5c;
+  align-self: center;
+}
+
+/* XP to the next level. Sits under the number, so the badge reads as
+   "14, and here is how far to 15" rather than as a bare integer. */
+.levelbadge-bar {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(31, 107, 66, 0.16);
+  overflow: hidden;
+  margin-top: 3px;
+}
+
+.levelbadge-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #2f9f62, #6fce8f);
+  /* Width is written by script; a short transition turns a 40-point XP grant
+     into something you can see rather than a jump. */
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* A light sweep across the badge when the level moves. The number itself is the
+   thing that changed, so the highlight travels over the number, not over the bar
+   underneath it. */
+.levelbadge.is-levelled {
+  animation: level-pop 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.levelbadge.is-levelled::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+  animation: level-sweep 0.75s ease-out forwards;
+}
+
+@keyframes level-pop {
+  0% { transform: scale(1); }
+  28% { transform: scale(1.14); box-shadow: 0 0 0 4px rgba(111, 206, 143, 0.35); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(111, 206, 143, 0); }
+}
+
+@keyframes level-sweep {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(120%); }
+}
+
+/* --- notices --------------------------------------------------------------- */
+
+/* A host on the shell, not on the screen. A level-up fires two notices and the
+   render that follows would otherwise rebuild the banner mid-animation. */
+.notice-host {
+  position: fixed;
+  top: calc(var(--topbar-h, 52px) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: grid;
+  gap: 8px;
+  width: min(94vw, 430px);
+  pointer-events: none;
+}
+
+.notice {
+  pointer-events: auto;
+  padding: 11px 14px;
+  border-radius: 16px;
+  background: linear-gradient(150deg, rgba(38, 52, 40, 0.97), rgba(26, 38, 29, 0.97));
+  color: #eaf5ea;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.07) inset;
+  border: 1px solid rgba(120, 200, 145, 0.22);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-16px) scale(0.96);
+  transition: opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+.notice.is-in {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Exit is animated too. A banner that vanishes instantly reads as a glitch, and
+   dropping the node the moment the timer fires skips the last 300ms of the
+   movement the player was already watching. */
+.notice.is-out {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.97);
+  transition-duration: 0.26s;
+}
+
+.notice-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.notice-body {
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: rgba(234, 245, 234, 0.78);
+}
+
+/* The level banner is the one event worth making loud: it is the moment the
+   whole progression shifts. */
+.notice-level {
+  border-color: rgba(140, 226, 165, 0.42);
+  background: linear-gradient(150deg, rgba(28, 62, 40, 0.98), rgba(20, 44, 30, 0.98));
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.36), 0 0 0 1px rgba(140, 226, 165, 0.2) inset;
+  text-align: center;
+}
+
+.notice-level .notice-title {
+  font-size: 17px;
+  letter-spacing: 0.02em;
+  color: #b9f0cb;
+}
+
+/* An unlock names the plants rather than only counting them: "you may now buy 40
+   new things" means nothing, but three recognisable plants and a "+37" does. */
+.notice-species {
+  display: flex;
+  gap: 8px;
+  margin-top: 9px;
+  align-items: center;
+}
+
+.notice-species-chip {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 7px 4px;
+  border-radius: 12px;
+  /* Light, not dark. The plant renderer draws foliage and a soil mound, and on a
+     dark chip both sat within a few values of the card behind them — the banner
+     was announcing 1,163 new species with three invisible pictures. The chip
+     carries the contrast; the plant keeps its real colours. */
+  background: linear-gradient(170deg, #eef7ec, #dcebd8);
+  border: 1px solid rgba(31, 107, 66, 0.22);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  /* Staggered so they arrive in sequence rather than as one block. */
+  opacity: 0;
+  animation: notice-chip-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: calc(var(--i) * 90ms + 90ms);
+}
+
+.notice-species-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.notice-species-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.notice-species-name {
+  font-size: 9.5px;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.25;
+  /* Dark on the now-light chip. */
+  color: #1d3a2a;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.notice-species-more {
+  flex: none;
+  align-self: center;
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+  color: #b9f0cb;
+}
+
+.notice-species-more b {
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.notice-species-more small {
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(185, 240, 203, 0.65);
+}
+
+@keyframes notice-chip-in {
+  from { opacity: 0; transform: translateY(9px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Goal and plot notices are the least urgent of the set and read quieter. */
+.notice-goal,
+.notice-plot {
+  background: linear-gradient(150deg, rgba(38, 50, 56, 0.96), rgba(26, 36, 42, 0.96));
+  border-color: rgba(140, 190, 220, 0.24);
+}
+
+.notice-milestone {
+  border-color: rgba(240, 200, 120, 0.4);
+  background: linear-gradient(150deg, rgba(58, 46, 26, 0.97), rgba(40, 32, 18, 0.97));
+}
+
+.notice-milestone .notice-title {
+  color: #f7dfae;
+}
+
+/* Motion is decoration here, not information: every notice's text is already in
+   the DOM before it moves, and the level-up is still a level-up without the
+   sweep. */
+@media (prefers-reduced-motion: reduce) {
+  .levelbadge,
+  .levelbadge-bar i {
+    transition: none;
+  }
+
+  .levelbadge.is-levelled {
+    animation: none;
+  }
+
+  .levelbadge.is-levelled::after {
+    display: none;
+  }
+
+  .notice,
+  .notice.is-out {
+    transition: opacity 0.16s linear;
+    transform: none;
+  }
+
+  .notice-species-chip {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+
+/* ==========================================================================
+   Tabs
+   ========================================================================== */
+
+/* Real tabs, not chips pretending to be tabs: a persistent rail the content
+   sits under. The garden was one column holding six unrelated things, and the
+   clearest fix was not better headings — it was not showing all six at once.
+
+   Follows two rules borrowed from a UI kit that keeps its decisions written down
+   with the reasons: corner radius scales with height (a 40px-tall control wants
+   at least 12px of radius or it reads as a rectangle), and tabs carry no focus
+   ring because the active state already says which one you are on. */
+.tabs {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  margin-bottom: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(90, 104, 78, 0.14);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  /* The sticky rail has to sit above cards that scroll under it. Without a
+     backdrop the content shows through the gap between tabs. */
+  backdrop-filter: blur(8px);
+}
+
+.tab {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: #4a5543;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.tab:hover:not(.active) {
+  background: rgba(90, 104, 78, 0.09);
+}
+
+.tab:active {
+  transform: scale(0.97);
+}
+
+.tab.active {
+  /* Darker than the rest of the palette's greens on purpose. The obvious choice
+     was #2f9f62 — the accent — and white on it measures 3.18:1, which is below the
+     threshold for body text. Darkening to here measures about 6:1 and, as a bonus,
+     stops the active tab reading as the coin-gold accent it was borrowing from. */
+  background: linear-gradient(150deg, #1e7a4a, #17653e);
+  color: #f2fbf3;
+  box-shadow: 0 2px 8px rgba(23, 101, 62, 0.3);
+}
+
+/* Deliberately no focus ring. The active state already answers "where am I", and
+   a ring around the active tab only adds a second, uglier answer. A keyboard user
+   still gets the browser default outline via :focus-visible. */
+.tab:focus {
+  outline: none;
+}
+
+.tab:focus-visible {
+  outline: 2px solid rgba(47, 159, 98, 0.6);
+  outline-offset: 1px;
+}
+
+/* The shop's own tab row used inline styles for the same job; pointing it at the
+   class keeps one look across both screens. */
+.scrollx.btn-row {
+  gap: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .tab:active {
+    transition: none;
+  }
+}
+
+
+/* ==========================================================================
+   Morph
+   ========================================================================== */
+
+/* The enlargement lives in the juice layer's transform channel, not here.
+   * That layer writes `avatar.style.transform` inline every frame, so any scale
+   * set by a stylesheet would be overwritten the instant the plant was next hit —
+   * which is what happened the first time this was written.
+
+   * What is left here is the part CSS can own: the glow, the ring, the label. */
+.battler.is-morphed .avatar {
+  filter: drop-shadow(0 0 12px var(--morph-colour, #ff9f68))
+    brightness(1.16) saturate(1.2);
+}
+
+/* The contract beat. A morph that only expands reads as a hit landing, which is
+   the exact confusion it exists to prevent — so the plant pulls in first. */
+.fx-morph-contract .avatar {
+  filter: brightness(1.9) saturate(1.5);
+}
+
+/* The filter eases; the scale is the juice layer's channel. */
+.battler .avatar {
+  transition: filter 0.32s ease;
+}
+
+.fx-morph-ring {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border-radius: 50%;
+  border: 2px solid var(--morph-colour, #ff9f68);
+  pointer-events: none;
+  animation: morph-ring 0.72s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.fx-morph-ring.is-out {
+  animation: morph-ring-out 0.45s ease forwards;
+}
+
+@keyframes morph-ring {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+    border-width: 5px;
+  }
+  22% {
+    opacity: 1;
+  }
+  to {
+    transform: scale(4.6);
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+@keyframes morph-ring-out {
+  to {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+}
+
+/* The form's name. Kept up for a couple of seconds rather than a beat, because
+   it is the thing the player is meant to learn — "Cuồng Nham" is recognisable in
+   a later fight, where the log is all there is. */
+.fx-morph-label {
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: var(--morph-colour, #ff9f68);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  animation: morph-label 2.1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes morph-label {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.8);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.06);
+  }
+  22% {
+    transform: translate(-50%, 0) scale(1);
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -10px) scale(0.94);
+  }
+}
+
+/* Reduced motion: the state still has to be legible. The scale is the
+   information — a player must be able to see that this plant is transformed — so
+   it stays and only the movement goes. */
+@media (prefers-reduced-motion: reduce) {
+  .battler .avatar,
+  .fx-morph-contract .avatar {
+    transition: none;
+  }
+
+  .fx-morph-ring {
+    animation: none;
+    opacity: 0;
+  }
+
+  .fx-morph-label {
+    animation: none;
+    opacity: 1;
+  }
+}

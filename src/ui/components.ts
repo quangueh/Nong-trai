@@ -1,0 +1,348 @@
+/** Tiny DOM helpers + shared UI widgets. */
+
+import { Rng, seedToken } from "../core/rng";
+import { createSeedPlant } from "../genetics/genomeGenerator";
+import { renderPlantSvg } from "../render/plantRenderer";
+
+import type { Plant } from "../core/types";
+import { RARITY_META, RARITY_ORDER, type Rarity } from "../config/rarity";
+import { dominantElement, ELEMENT_INFO, ELEMENTS, type ElementId } from "../config/elements";
+import { TRAITS_BY_ID } from "../config/traits";
+import { ARCHETYPE_KEYS, ARCHETYPE_LABEL, ARCHETYPE_ROLE } from "../config/balance";
+import { speciesAffinity, type Archetype, type SpeciesDef, type SpeciesId } from "../config/species";
+
+export function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, string> = {},
+  children: (Node | string | null | undefined)[] = [],
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k === "html") node.innerHTML = v;
+    else if (k.startsWith("data-") || k === "style") node.setAttribute(k, v);
+    else node.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  }
+  return node;
+}
+
+export function esc(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
+export function fmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${(n / 1000).toFixed(1)}k`;
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(1);
+}
+
+export function pct(v: number, digits = 1): string {
+  return `${(v * 100).toFixed(digits)}%`;
+}
+
+export function rarityTag(r: Rarity): HTMLElement {
+  const meta = RARITY_META[r];
+  const tag = el("span", { class: "tag" });
+  tag.textContent = r;
+  tag.style.color = meta.colour;
+  tag.style.borderColor = `${meta.colour}44`;
+  tag.style.background = `${meta.colour}18`;
+  return tag;
+}
+
+export function elementTags(plant: Plant): HTMLElement[] {
+  const entries = ELEMENTS.map((id) => [id, plant.dna.elementGenes[id] ?? 0] as [ElementId, number])
+    .filter(([, v]) => v > 0.18)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+  return entries.map(([id, share]) => {
+    const info = ELEMENT_INFO[id];
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = `${info.name} ${Math.round(share * 100)}%`;
+    tag.style.color = info.ink;
+    tag.style.borderColor = info.tint;
+    tag.style.background = info.tint;
+    tag.title = info.flavour;
+    return tag;
+  });
+}
+
+export function traitChips(plant: Plant): HTMLElement[] {
+  if (!plant.traits.length) return [];
+  return plant.traits.map((t) => {
+    const def = TRAITS_BY_ID[t];
+    const chip = el("span", { class: "traitchip" });
+    chip.textContent = def?.name ?? t;
+    if (def?.rarity === "rare") chip.style.color = "#0d5f85"; // darkened: #9ad6ff was 1.03:1 on the light theme
+    if (def?.rarity === "unstable") chip.style.color = "#a5236b"; // darkened: #ff9ad6 was 1.28:1
+    return chip;
+  });
+}
+
+export function plantThumb(plant: Plant, size = 100, anim = false): HTMLElement {
+  const box = el("div", { class: "thumb" });
+  box.innerHTML = renderPlantSvg(plant, size, { anim });
+  return box;
+}
+
+/**
+ * Compact plant card used by the collection grid. Shares the garden's plot
+ * styling so the two screens look like one game.
+ */
+export function plantCard(plant: Plant, onClick: () => void): HTMLElement {
+  const card = el("div", { class: "plantcard plot" });
+  const meta = RARITY_META[plant.rarity];
+
+  const ribbon = el("div", { class: "ribbon" });
+  ribbon.style.background = `linear-gradient(90deg, ${meta.colour}, ${meta.colour}22)`;
+  card.appendChild(ribbon);
+
+  const flags = el("div", { class: "flags" });
+  if (plant.locks.favorite) flags.appendChild(el("span", {}, ["⭐"]));
+  if (plant.locks.manual) flags.appendChild(el("span", {}, ["🔒"]));
+  if (flags.children.length) card.appendChild(flags);
+
+  const bed = el("div", { class: "bed" });
+  bed.innerHTML = renderPlantSvg(plant, 150);
+  card.appendChild(bed);
+
+  const name = el("div", { class: "pname" });
+  name.textContent = plant.name;
+  card.appendChild(name);
+
+  const row = el("div", { class: "prow" });
+  const r = el("span", { class: "rarity" });
+  r.textContent = plant.rarity;
+  r.style.color = meta.colour;
+  const pw = el("span", { class: "mono muted" });
+  pw.textContent = `⚔${fmt(plant.powerRating)}`;
+  row.append(r, pw);
+  card.appendChild(row);
+
+  const dom = dominantElement(plant.dna.elementGenes);
+  const chip = el("span", { class: "chip dim" }, [ELEMENT_INFO[dom.id].name]);
+  chip.style.color = ELEMENT_INFO[dom.id].ink;
+  const foot = el("div", { class: "prow" });
+  foot.appendChild(chip);
+  if (plant.growth.stage === "mature" || plant.growth.stage === "awakened") {
+    foot.appendChild(el("span", { class: "chip gold" }, ["⚔"]));
+  }
+  card.appendChild(foot);
+
+  card.addEventListener("click", onClick);
+  return card;
+}
+
+/** Six-axis archetype radar (docs/15 §18). */
+export function archetypeRadar(plant: Plant, size = 150): string {
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = size / 2 - 22;
+  const n = ARCHETYPE_KEYS.length;
+  const pts = ARCHETYPE_KEYS.map((k, i) => {
+    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+    const v = Math.max(0.04, plant.archetype[k]);
+    return [cx + Math.cos(a) * r * v, cy + Math.sin(a) * r * v] as const;
+  });
+  const poly = pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  const gridLines = [0.33, 0.66, 1]
+    .map(
+      (f) =>
+        `<polygon points="${ARCHETYPE_KEYS.map((_, i) => {
+          const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+          return `${(cx + Math.cos(a) * r * f).toFixed(1)},${(cy + Math.sin(a) * r * f).toFixed(1)}`;
+        }).join(" ")}" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="1"/>`,
+    )
+    .join("");
+  const spokes = ARCHETYPE_KEYS.map((_, i) => {
+    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+    return `<line x1="${cx}" y1="${cy}" x2="${(cx + Math.cos(a) * r).toFixed(1)}" y2="${(cy + Math.sin(a) * r).toFixed(1)}" stroke="rgba(255,255,255,.13)" stroke-width="1"/>`;
+  }).join("");
+  const labels = ARCHETYPE_KEYS.map((k, i) => {
+    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+    const x = cx + Math.cos(a) * (r + 13);
+    const y = cy + Math.sin(a) * (r + 13);
+    return `<text x="${x.toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="middle" font-size="8.5" fill="#9fb8ad" font-weight="600">${ARCHETYPE_LABEL[k as Archetype]}</text>`;
+  }).join("");
+  const dom = dominantElement(plant.dna.elementGenes);
+  return `<svg class="radar" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    ${gridLines}${spokes}
+    <polygon points="${poly}" fill="${ELEMENT_INFO[dom.id].color}33" stroke="${ELEMENT_INFO[dom.id].color}" stroke-width="1.6" stroke-linejoin="round"/>
+    ${pts.map((p) => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2" fill="${ELEMENT_INFO[dom.id].color}"/>`).join("")}
+    ${labels}
+  </svg>`;
+}
+
+/** Six-axis archetype radar, typed helper for reuse outside the string above. */
+export function archetypeLabel(key: Archetype): string {
+  return ARCHETYPE_LABEL[key];
+}
+
+/** Rarity odds bar shown before breeding (docs/16 §22). */
+export function oddsBar(weights: Record<Rarity, number>): HTMLElement {
+  const wrap = el("div", { class: "odds" });
+  for (const r of RARITY_ORDER) {
+    const w = weights[r] / 100;
+    if (w < 0.001) continue;
+    const d = el("div");
+    d.style.width = `${w * 100}%`;
+    d.style.background = `${RARITY_META[r].colour}${r === "SSS" ? "ff" : "cc"}`;
+    // Every rarity fill is dark enough for white text (minimum 5.54:1), so the
+    // conditional that once existed for the light-theme palette is no longer needed.
+    d.style.color = "#fffdf1";
+    d.textContent = w >= 0.06 ? r : "";
+    d.title = `${r}: ${(w * 100).toFixed(2)}%`;
+    wrap.appendChild(d);
+  }
+  return wrap;
+}
+
+export function probabilityRows(weights: Record<Rarity, number>): HTMLElement[] {
+  return RARITY_ORDER.map((r) => {
+    const row = el("div", { class: "probbar" });
+    const lbl = el("span", { class: "lbl" });
+    lbl.textContent = r;
+    lbl.style.color = RARITY_META[r].colour;
+    const track = el("div", { class: "track" });
+    const bar = el("i");
+    // Scaled, not resized — same reason as `.bar > i` in the stylesheet.
+    bar.style.transform = `scaleX(${Math.max(0, Math.min(1, (weights[r] / 100) * 1.6))})`;
+    bar.style.background = RARITY_META[r].colour;
+    track.appendChild(bar);
+    const val = el("span", { class: "val" });
+    val.textContent = `${(weights[r] / 100).toFixed(2)}%`;
+    row.append(lbl, track, val);
+    return row;
+  });
+}
+
+export function bar(fraction: number, cls = ""): HTMLElement {
+  const b = el("div", { class: `bar ${cls}` });
+  const i = el("i");
+  // Scale instead of resizing so the bar animates on the compositor, not via layout.
+  i.style.transform = `scaleX(${Math.max(0, Math.min(1, fraction))})`;
+  b.appendChild(i);
+  return b;
+}
+
+export function statRow(label: string, value: string, extra = ""): HTMLElement {
+  const row = el("div", { class: "statrow" });
+  row.append(el("span", { class: "muted" }, [label]));
+  const v = el("span", { class: `mono ${extra}` });
+  v.textContent = value;
+  row.appendChild(v);
+  return row;
+}
+
+export function sheet(content: HTMLElement, onClose?: () => void): { overlay: HTMLElement; sheet: HTMLElement } {
+  const overlay = el("div", { class: "overlay" });
+  const s = el("div", { class: "sheet" });
+  s.appendChild(el("div", { class: "handle" }));
+  s.appendChild(content);
+  overlay.addEventListener("click", onClose ?? (() => {}));
+  return { overlay, sheet: s };
+}
+
+export function toast(message: string, ms = 2000): void {
+  const host = document.querySelector(".shell");
+  if (!host) return;
+  const t = el("div", { class: "toast" });
+  t.textContent = message;
+  host.appendChild(t);
+  setTimeout(() => t.remove(), ms);
+}
+
+export function floatNumber(x: number, y: number, text: string, kind: "dmg" | "heal" | "crit"): void {
+  const n = el("div", { class: `float-num ${kind}` });
+  n.textContent = text;
+  n.style.left = `${x}px`;
+  n.style.top = `${y}px`;
+  document.body.appendChild(n);
+  setTimeout(() => n.remove(), 950);
+}
+
+export function statGainFloat(target: HTMLElement, text: string): void {
+  const r = target.getBoundingClientRect();
+  const n = el("div", { class: "float-up", style: `left:${r.left + r.width / 2}px;top:${r.top}px` });
+  n.textContent = text;
+  document.body.appendChild(n);
+  setTimeout(() => n.remove(), 1100);
+}
+
+
+/**
+ * Compact seed chip — orb with the owned count, species name, role and price.
+ *
+ * Lives here because the garden's seed belt and the shop's featured shelf both
+ * need it, and the two drifting apart is how you end up with a `.card` squeezed
+ * into a 154px flex slot and one word per line.
+ */
+export function seedChip(sp: SpeciesDef, count: number, opts: { active?: boolean; onPick?: () => void; showPrice?: boolean } = {}): HTMLElement {
+  const role = ARCHETYPE_ROLE[sp.archetype] ?? sp.archetype;
+  const b = el("button", {
+    class: `seed-card ${opts.active ? "active" : ""} ${count <= 0 ? "empty-seed" : ""}`,
+  });
+  b.append(
+    el("span", { class: "seed-orb", style: `--seed:${seedColor(sp.id)}` }, [String(count)]),
+    el("span", { class: "seed-info" }, [
+      el("b", {}, [sp.name]),
+      // The chooser puts the price on a badge of its own. Showing it here too
+      // gave every card two prices and made the badge look like a duplicate.
+      el("small", {}, [opts.showPrice === false ? role : `${role} · ${sp.seedPrice} xu`]),
+    ]),
+  );
+  if (opts.onPick) b.addEventListener("click", opts.onPick);
+  return b;
+}
+
+/**
+ * Species colour for the seed orb.
+ *
+ * The five starters have hand-picked colours. Everything else is tinted by its
+ * dominant element, because the id space is open-ended and a hardcoded lookup
+ * would return nothing for the 1000 generated species.
+ */
+export function seedColor(id: SpeciesId): string {
+  const starter: Record<string, string> = {
+    thornroot: "#54b66f",
+    emberleaf: "#f06a3d",
+    dewbud: "#56a9e8",
+    voltvine: "#e8c93d",
+    gloomcap: "#9b72d9",
+  };
+  return starter[id] ?? ELEMENT_TINT[dominantElement(speciesAffinity(id)).id] ?? "#54b66f";
+}
+
+const ELEMENT_TINT: Record<string, string> = {
+  wood: "#54b66f",
+  fire: "#f06a3d",
+  water: "#56a9e8",
+  earth: "#c08a52",
+  electric: "#e8c93d",
+  poison: "#9b72d9",
+  light: "#f2e28a",
+  shadow: "#7d6aa8",
+};
+
+/**
+ * A plant portrait for a species, drawn from the real generator.
+ *
+ * Deterministic per species id, so the same seed always looks the same on the
+ * shop shelf, in the seed picker and in an unlock banner. That consistency is the
+ * point: a player who recognises a plant from the banner can find it on the
+ * shelf.
+ *
+ * Builds a full genome per call, so it is for one-off portraits and not for lists
+ * of hundreds.
+ */
+export function seedIcon(speciesId: string, size = 52): string {
+  const rng = new Rng(`icon:${speciesId}`);
+  const plant = createSeedPlant(speciesId as SpeciesId, "icon", seedToken(rng.next()), 0);
+  return renderPlantSvg(plant, size);
+}

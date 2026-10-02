@@ -1,0 +1,14 @@
+﻿# Normalise line endings in the repository rather than in each developer's working
+# copy.
+#
+# Without this, core.autocrlf decides per machine: Windows checkouts rewrite LF
+# to CRLF, Linux ones do not. The build runs on Linux, so the bytes that reach
+# Vercel are the ones that matter, and they should be the same regardless of who
+# committed last.
+* text=auto eol=lf
+
+# Binary assets, so Git never tries to diff or normalise them.
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
