@@ -1,0 +1,117 @@
+/* ==========================================================================
+   Anchored seed picker
+   ========================================================================== */
+
+/* Fixed positioning; the box is written by placePopover() from the anchor's
+   measured rect. CSS anchoring would be tidier but its support is still uneven,
+   and the usual fallback is "centre it" — which is the behaviour this replaced. */
+.seed-pop {
+  position: fixed;
+  z-index: 120;
+  width: min(94vw, 400px);
+  max-height: min(62vh, 460px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 44px rgba(60, 80, 40, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+  overflow: hidden;
+  /* Fades in from the anchor edge rather than fading up from nowhere, so it reads
+     as coming *from* the plot. */
+  transform-origin: center top;
+  animation: pop-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.seed-pop.is-above {
+  transform-origin: center bottom;
+  animation-name: pop-in-above;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pop-in-above {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* The arrow. Offset by the measured centre of the anchor, clamped in JS so it
+   cannot slide onto a rounded corner. */
+.seed-pop::before {
+  content: "";
+  position: absolute;
+  left: var(--arrow-x, 50%);
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  transform: translateY(-6px) rotate(45deg);
+}
+
+.seed-pop.is-above::before {
+  margin-left: -6px;
+  transform: translateY(6px) rotate(225deg);
+}
+
+/* Only shown when there is nothing to point at. */
+.seed-pop-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgba(38, 53, 29, 0.34);
+  animation: fade-in 0.18s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The plot you tapped, so it is obvious which one the popover belongs to while
+   the popover covers part of the garden. */
+.plot.is-picking {
+  border-color: var(--accent-fill);
+  box-shadow: 0 0 0 2px rgba(38, 121, 79, 0.4);
+  z-index: 1;
+}
+
+/* The picker body now scrolls inside a bounded popover rather than being a sheet
+   that scrolls the page. */
+.seed-pop .seed-picker {
+  padding: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seed-pop,
+  .seed-pop.is-above {
+    animation: none;
+  }
+
+  .seed-pop-scrim {
+    animation: none;
+  }
+}

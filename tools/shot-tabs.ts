@@ -16,11 +16,11 @@ await page.evaluate(`(() => {
   g.navigate("garden");
 })()`);
 await page.waitForTimeout(700);
-await page.screenshot({ path: "shots/tab-plots.png", fullPage: true });
+await page.screenshot({ path: "shots/tab-plots.png" });
 for (const [label, file] of [["Hôm nay", "tab-today"], ["Túi hạt", "tab-seeds"]]) {
   await page.locator(".tabs .tab", { hasText: label }).click();
   await page.waitForTimeout(500);
-  await page.screenshot({ path: `shots/${file}.png`, fullPage: true });
+  await page.screenshot({ path: `shots/${file}.png` });
 }
 const info = await page.evaluate(`(() => ({
   tabs: [...document.querySelectorAll(".tabs .tab")].map((t) => t.textContent),

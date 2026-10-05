@@ -505,6 +505,90 @@ const ARCHETYPE_STATS: Record<Archetype, StatGeneId[]> = {
   counter: ["defense", "crit", "skillPower"],
 };
 
+/**
+ * The five size bands.
+ *
+ * Spelled out here rather than imported from the plant module, because the species
+ * generator only reads it and importing a visual type into the registry would tie
+ * the two together for no benefit.
+ */
+export type SpeciesSize = "tiny" | "small" | "normal" | "large" | "colossal";
+
+/**
+ * The size band a species falls into, read off its own stats.
+ *
+ * Derived rather than rolled so it cannot contradict the card: a plant with a lot
+ * of health *is* a big plant, and if the two disagreed a player would eventually
+ * meet a tiny-looking plant that took forty minutes and rightly stop trusting the
+ * whole schedule.
+ */
+function sizeFor(statBias: Partial<Record<StatGeneId, number>>): SpeciesSize {
+  const bulk = (statBias.hp ?? 0.5) * 0.6 + (statBias.defense ?? 0.5) * 0.4;
+  if (bulk >= 0.82) return "colossal";
+  if (bulk >= 0.66) return "large";
+  if (bulk >= 0.44) return "normal";
+  if (bulk >= 0.3) return "small";
+  return "tiny";
+}
+
+/**
+ * How long a species takes, in minutes, and what its seed costs.
+ *
+ * Both are pure functions of what the plant is, so a player who has seen a
+ * `earth`/tank/colossal plant take half an hour can predict the next one. That is
+ * the property that makes the numbers worth learning; a price and a timer drawn
+ * from one shared random roll are not learnable at all.
+ *
+ * `grow` is computed first and `price` is derived from it, so the economy cannot
+ * drift into charging a lot for something that grows in two minutes. The jitter is
+ * a sixth of the base rather than a flat few minutes, so a slow species is slow by
+ * a wide margin and a fast one is only slightly quicker — the spread between
+ * archetypes has to survive the noise.
+ */
+function timingFor(archetype: Archetype, dominant: ElementId, size: SpeciesSize, rng: Rng): { growMinutes: number; seedPrice: number } {
+  // Minutes. Deliberately overlapping between archetypes so that the element and
+  // the size still decide something, but no archetype is a dead giveaway.
+  const byArchetype: Record<Archetype, number> = {
+    tank: 1.34,
+    sustain: 1.2,
+    counter: 1.06,
+    control: 1.0,
+    burst: 0.82,
+    tempo: 0.76,
+  };
+  const byElement: Record<ElementId, number> = {
+    earth: 1.24,
+    wood: 1.14,
+    water: 1.0,
+    light: 0.98,
+    poison: 0.94,
+    shadow: 0.92,
+    fire: 0.84,
+    electric: 0.8,
+  };
+  const bySize: Record<SpeciesSize, number> = {
+    colossal: 1.55,
+    large: 1.22,
+    normal: 1.0,
+    small: 0.86,
+    tiny: 0.74,
+  };
+
+  const base = 22 * byArchetype[archetype] * byElement[dominant] * bySize[size];
+  // A sixth of the base, so a 40-minute species varies by nearly seven and a
+  // 12-minute one by two. A flat jitter would have made the slow plants identical
+  // and the fast ones all over the place.
+  const grow = Math.round(base * (1 + rng.float(-0.08, 0.08)));
+
+  // Roughly four coins per waiting minute, rounded to a tidy step so the shop does
+  // not show prices like 1,137. The rounding is also what makes two species feel
+  // like they belong to the same shelf.
+  const raw = grow * 4.2 * rng.float(0.92, 1.1);
+  const price = Math.max(60, Math.round(raw / 5) * 5);
+
+  return { growMinutes: grow, seedPrice: price };
+}
+
 function generateSpecies(): SpeciesDef[] {
   const rng = new Rng("species-registry-v1");
   const out: SpeciesDef[] = [...STARTERS];
@@ -652,9 +736,9 @@ function generateSpecies(): SpeciesDef[] {
     out.push({
       id: `sp${i.toString().padStart(4, "0")}`,
       unlock: speciesUnlock(i),
+      ...timingFor(archetype, dominant, sizeFor(statBias), rng),
       name,
       seedPrice,
-      growMinutes: Math.round(clamp(16 + tier * 4 + rng.float(0, 8), 12, 60)),
       elements,
       archetype,
       blurb,

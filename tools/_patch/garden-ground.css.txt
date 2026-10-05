@@ -1,0 +1,103 @@
+/* The lawn the beds are dug into.
+
+   This is the single change that matters most. Before, each plot was a card and
+   this element was the gap between cards — so twenty-four plots read as a
+   spreadsheet with plants on it. Now this is the ground, and a plot is a hollow
+   in it. The gap between beds shows grass, which is what a real garden has
+   between its rows. */
+.plots {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+  padding: 12px;
+  border-radius: 24px;
+  background:
+    /* uneven growth, so the lawn is not a flat wash */
+    radial-gradient(72% 46% at 18% 6%, rgba(178, 222, 132, 0.55), transparent 72%),
+    radial-gradient(64% 40% at 88% 34%, rgba(132, 186, 92, 0.45), transparent 74%),
+    radial-gradient(58% 36% at 34% 92%, rgba(190, 228, 146, 0.4), transparent 72%),
+    linear-gradient(178deg, #a4d582 0%, #8dc068 52%, #7bb25a 100%);
+  border: 1px solid #6b9448;
+  /* A hollow, not a raised card: light from the top edge, shadow at the bottom. */
+  box-shadow:
+    inset 0 3px 9px rgba(44, 72, 24, 0.28),
+    inset 0 -2px 0 rgba(255, 255, 255, 0.14),
+    0 10px 24px rgba(80, 104, 53, 0.2);
+}
+
+@media (min-width: 680px) {
+  .plots {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* A hedge around the lawn.
+
+   The garden needs an edge to be a place rather than a region. Drawn as a soft
+   dark-green ring just inside the border so it reads as foliage standing behind
+   the grass rather than as an outline someone drew. */
+.plots::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 3px rgba(74, 112, 46, 0.34);
+  z-index: 0;
+}
+
+/* --- one bed of turned earth ---------------------------------------------- */
+
+.plot {
+  position: relative;
+  z-index: 1;
+  /* A bed in a field is rectangular. The heavy blob radius this had was the other
+     half of what made twenty-four of them read as separate objects. */
+  border-radius: 8px;
+  padding: 10px 10px 11px;
+  cursor: pointer;
+  overflow: visible;
+  border: none;
+  background-image:
+    /* Furrows. Soil that has been raked has a direction, and a flat fill reads as
+       a paint swatch rather than as earth. */
+    repeating-linear-gradient(
+      180deg,
+      rgba(122, 88, 52, 0.08) 0 3px,
+      rgba(255, 250, 235, 0.1) 3px 7px
+    ),
+    /* Pale sand at the crown, warmer loam at the edges. */
+    radial-gradient(86% 74% at 50% 30%, #eddcb6 0%, #e0c99b 48%, #c9a877 82%, #b08a58 100%);
+  /* No rim, no outer glow: the only separation is the furrow of darker soil the
+     grid gap leaves between neighbours. */
+  box-shadow: inset 0 3px 8px rgba(74, 48, 22, 0.2);
+  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Contact shadow only. A bed dug into soil has no hard rim; what separates it
+   from its neighbour is the shadow the rim of earth casts into the furrow. */
+.plot::before {
+  content: "";
+  position: absolute;
+  left: 3%;
+  right: 3%;
+  top: 6%;
+  bottom: -4px;
+  border-radius: 10px;
+  background: rgba(46, 62, 24, 0.16);
+  filter: blur(6px);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* The furrow: a darker line of turned earth around each bed, which is what the
+   eye uses to count the beds instead of a card border. */
+.plot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(104, 74, 42, 0.22);
+}

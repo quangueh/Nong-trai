@@ -192,6 +192,16 @@ export class GameStore {
 
   constructor() {
     this.state = loadOrCreate();
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try {
+        const at = (JSON.parse(raw) as { savedAt?: number }).savedAt;
+        if (typeof at === "number") this.savedAt = at;
+      } catch {
+        // A save that will not parse is rebuilt by loadOrCreate; the timestamp is
+        // simply unknown, which loses nothing but conflict resolution.
+      }
+    }
   }
 
   subscribe(fn: () => void): () => void {
@@ -239,12 +249,43 @@ export class GameStore {
     return out;
   }
 
+  /**
+   * When this save was last written, in epoch milliseconds.
+   *
+   * Carried on the state rather than in a wrapper object so the save in
+   * localStorage stays exactly the shape it always was — a save from before this
+   * field existed loads with it undefined and is treated as "older than anything".
+   */
+  savedAt = 0;
+
   save() {
+    this.savedAt = Date.now();
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
     } catch {
       // ignore quota / privacy mode
     }
+  }
+
+  /** The whole save, for the cloud copy. */
+  exportState(): unknown {
+    return this.state;
+  }
+
+  /**
+   * Replace the save with one from the cloud.
+   *
+   * Loaded through `loadOrCreate`'s repair path rather than assigned blindly, so a
+   * save written by an older build — or one that lost a field to a partial write —
+   * comes back with its pity counters, garden day and discovery lists repaired
+   * rather than crashing the first screen that touches them.
+   */
+  importState(next: unknown): void {
+    if (!next || typeof next !== "object") return;
+    const repaired = loadOrCreate(JSON.stringify(next));
+    this.state = repaired;
+    this.savedAt = Date.now();
+    this.emit();
   }
 
   private commit(reason: string) {
@@ -852,9 +893,9 @@ function rollWeighted(rng: Rng, weights: Record<Rarity, number>): Rarity {
 
 // --- persistence ---------------------------------------------------------
 
-function loadOrCreate(): PlayerState {
+function loadOrCreate(rawOverride?: string): PlayerState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = rawOverride ?? localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as PlayerState;
       if (parsed && Array.isArray(parsed.plants)) {
@@ -906,7 +947,7 @@ function loadOrCreate(): PlayerState {
   }
   fresh.seeds.thornroot = (fresh.seeds.thornroot ?? 1) - 1;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+    if (rawOverride === undefined) localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
   } catch {
     // ignore
   }

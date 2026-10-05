@@ -1,0 +1,161 @@
+/* ==========================================================================
+   Account and settings
+   ========================================================================== */
+
+.account {
+  display: grid;
+  gap: 10px;
+}
+
+.account-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.field {
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fffdf4;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.field:focus {
+  outline: 2px solid rgba(38, 121, 79, 0.5);
+  outline-offset: 1px;
+  border-color: var(--accent-fill);
+}
+
+/* The sync state, and the single sentence that explains it.
+   The dot is colour-coded so the state is readable before the text is parsed —
+   green for saved, amber for a conflict, grey for off. */
+.account-sync {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(90, 104, 78, 0.08);
+  border: 1px solid rgba(90, 104, 78, 0.16);
+}
+
+.account-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: #9aa89a;
+  align-self: center;
+}
+
+.account-sync > span:nth-child(2) {
+  line-height: 1.4;
+}
+
+.account-sync.is-synced .account-dot {
+  background: #2f9f62;
+}
+
+.account-sync.is-syncing .account-dot {
+  background: #d98f1f;
+  animation: sync-pulse 0.9s ease-in-out infinite;
+}
+
+.account-sync.is-conflict .account-dot,
+.account-sync.is-paused .account-dot {
+  background: #d9681f;
+}
+
+.account-sync.is-error .account-dot {
+  background: #c0392b;
+}
+
+@keyframes sync-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* The conflict resolution buttons only exist when there is a conflict. */
+.account-row {
+  display: flex;
+  gap: 8px;
+}
+
+.account-row .btn {
+  flex: 1;
+}
+
+.account-err {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #a83a28;
+  min-height: 14px;
+}
+
+.account-id {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(47, 159, 98, 0.1);
+  border: 1px solid rgba(47, 159, 98, 0.22);
+}
+
+.account-warn {
+  line-height: 1.45;
+  color: #6a5a2a;
+  background: rgba(217, 143, 31, 0.1);
+  border: 1px solid rgba(217, 143, 31, 0.24);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.account-more {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(90, 104, 78, 0.16);
+}
+
+/* Settings rows. */
+.account-rowbtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(90, 104, 78, 0.18);
+  background: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.account-rowbtn:hover {
+  background: rgba(90, 104, 78, 0.08);
+  border-color: rgba(90, 104, 78, 0.32);
+}
+
+.account-rowbtn:active {
+  transform: scale(0.99);
+}
+
+.account-chevron {
+  flex: none;
+  font-size: 16px;
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-sync.is-syncing .account-dot {
+    animation: none;
+  }
+}

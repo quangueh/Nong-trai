@@ -142,11 +142,36 @@ await wait(30);
 check("tapping a plot opens the chooser", !!$(".seed-picker"));
 check("and plants nothing yet", store.state.plants.length === plantsUntouched);
 check("and consumes no seed yet", (store.state.seeds[seedId] ?? 0) === seedsUntouched);
-check("the chooser lists the seeds held", $$(".picker-card").length > 0);
+check("the chooser lists the seeds held", $$(".picker-card").length > 0, `${$$(".picker-card").length} cards`);
 check("with a preview of one", !!$(".seed-preview"));
-click($(".overlay"));
+// Anchored to the plot, so there is no dimming overlay any more — a popover beside
+// the thing you tapped does not need one, and adding it back would put the tall
+// full-screen surface this replaced.
+check("and no full-screen overlay", !$(".overlay") && !$(".seed-pop-scrim"));
+
+// Tapping anywhere outside closes it. A real tap produces pointerdown before
+// click, and jsdom will not synthesise one from `click()`.
+document.dispatchEvent(new w.PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
 await wait(20);
-check("tapping the backdrop closes it", !$(".seed-picker"));
+check("tapping outside closes it", !$(".seed-pop") && !$(".seed-picker"));
+
+// And it can be reopened, so the dismissal did not leave the plot dead.
+click(emptyPlots[0]);
+await wait(30);
+// Placement is asserted from the inline left/top that placePopover writes, not from
+// getBoundingClientRect — jsdom has no layout engine, so every rect is zero and a
+// distance check here would be comparing 0 to 0. Whether the popover actually
+// lands next to the plot is verified in tools/shot-picker.ts, which runs a real
+// browser and can see position.
+const positioned = (): boolean => {
+  const pop = $(".seed-pop");
+  return Boolean(pop && pop.style.left && pop.style.top);
+};
+check("the plot still opens the chooser again", !!$(".seed-pop"));
+check("and it was positioned from the anchor", positioned(), `left="${$(".seed-pop")?.style.left ?? ""}"`);
+document.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+await wait(20);
+check("escape closes it", !$(".seed-pop"));
 
 section("2. Choosing a seed runs the ceremony");
 
@@ -278,8 +303,8 @@ check("and plants nothing", store.state.plants.length === 1, `${store.state.plan
 
 plot?.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
 await wait(30);
-check("tapping opens the chooser sheet", !!$(".sheet"));
-check("it is titled", ($(".sheet")?.textContent ?? "").includes("Chọn hạt"));
+check("tapping opens the chooser", !!$(".seed-pop"));
+check("it is titled", ($(".seed-pop")?.textContent ?? "").includes("Chọn hạt"));
 check(
   "it lists the seeds actually held",
   store.state.seeds[seedId] !== undefined && $$(".picker-card").length > 0,
@@ -328,12 +353,13 @@ section("9. Nothing leaks between plantings");
 
 setupGarden();
 await wait(20);
-// Opening and dismissing the chooser must not leave a sheet behind.
+// Opening and dismissing the chooser must leave nothing behind. Dismissal is a
+// pointerdown outside the popover — there is no overlay to click.
 click($(".empty-plot"));
 await wait(30);
-click($(".overlay"));
+document.dispatchEvent(new w.PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
 await wait(20);
-check("closing the chooser leaves nothing behind", !$(".sheet") && !$(".seed-picker"));
+check("closing the chooser leaves nothing behind", !$(".seed-pop") && !$(".seed-picker"));
 await plantViaChooser();
 await wait(20);
 click($(".plant-skip"));

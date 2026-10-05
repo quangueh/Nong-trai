@@ -1,0 +1,28 @@
+#:schema node_modules/wrangler/config-schema.json
+# Cloudflare Worker for the account API (docs/11).
+
+# The game itself stays a static site on Pages or Vercel; only this is a Worker.
+name = "nong-trai-account"
+main = "src/index.ts"
+compatibility_date = "2026-01-15"
+
+# The two bindings. Both are created by `wrangler kv namespace create DB`; the ids
+# it prints go here.
+[[kv_namespaces]]
+binding = "DB"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Secrets are NOT in this file and must never be committed. Set them with:
+#   npx wrangler secret put TOKEN_SECRET
+#   npx wrangler secret put PBKDF2_ROUNDS
+#
+# TOKEN_SECRET is any long random string. Generate one with:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# Changing it invalidates every session token, so everyone logs in again.
+[vars]
+PBKDF2_ROUNDS = "150000"
+
+# Note on the KV tier: the free plan allows roughly 1,000 writes per day. The
+# client syncs on login, on demand, and occasionally — not on every mutation —
+# because saving per action would exhaust that in an afternoon.
+observability = { enabled = true }

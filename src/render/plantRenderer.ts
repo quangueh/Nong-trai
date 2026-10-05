@@ -121,7 +121,7 @@ function composition(plant: Plant) {
   const complexity = v.complexity;
 
   // A seed stage shows only the sprout; a sprout shows stem and cotyledons.
-  const leafBudget = Math.max(stage === "seed" ? 2 : 4, Math.round(complexity * 9) + (stage === "young" ? 2 : 0));
+  const leafBudget = Math.max(stage === "seed" ? 3 : stage === "young" ? 7 : 9, Math.round(complexity * 22) + (stage === "young" ? 2 : 0));
   const showVeins = complexity > 0.45;
   const showBloom = body.flower !== "none" && complexity > 0.3 && stage !== "seed" && stage !== "sprout";
   const showThorns = body.thorn !== "none" && stage !== "seed";
@@ -318,7 +318,7 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
   const geoRng = new Rng(`geometry:${plant.plantId}`);
   const lean = stemLean(body.stem, v, geoRng);
   const sway = geoRng.float(-4, 4) + (body.stem === "vine" ? 6 : 0);
-  const fill = Math.min(1.15, 0.72 + v.scale * 0.3);
+  const fill = Math.min(1.32, 0.88 + v.scale * 0.32);
   // The solver and the renderer must describe the same plant, so the habit and
   // its branches are decided once, here, from the same deterministic stream.
   const habit = habitFor(body, complexity);
@@ -335,7 +335,9 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
     let height = Math.max(prev, (SOIL_TOP - 12) * (STAGE_SCALE[stage] ?? 1) * fill);
     let fitX = 1;
     let bloomScale = 1;
-    let leafScale = 1;
+  // Bigger leaves: with the count raised, each leaf also has to carry more of the
+  // silhouette, or a full plant reads as clutter instead of foliage.
+    let leafScale = 1.18;
 
     // The spine must include the curled tip: the renderer appends the curl before
     // any layer is drawn, so leaves hang off it and the bloom sits above it.
@@ -468,7 +470,7 @@ function compositionFor(plant: Plant, stage: string) {
   const complexity = plant.visual.complexity;
   const stageScale = STAGE_SCALE[stage] ?? 1;
   const scale = plant.visual.scale * stageScale;
-  const leafBudget = Math.max(stage === "seed" ? 2 : 4, Math.round(complexity * 9) + (stage === "young" ? 2 : 0));
+  const leafBudget = Math.max(stage === "seed" ? 3 : stage === "young" ? 7 : 9, Math.round(complexity * 22) + (stage === "young" ? 2 : 0));
   return { scale, complexity, leafBudget };
 }
 

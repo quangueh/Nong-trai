@@ -148,8 +148,39 @@ async function assertStylesheetIsCurrent(page: import("playwright-core").Page): 
   }
 }
 
-async function shot(page: import("playwright-core").Page, name: string, full = true): Promise<void> {
+/**
+ * Capture what a player actually sees: the viewport, not the document.
+ *
+ * The old default was `fullPage: true` and it concealed a complete layout failure
+ * for a whole session. The shell was 2,299px tall with the navigation bar and
+ * every sheet anchored to its bottom, so on an 820px screen none of them were
+ * visible and tapping a plant did nothing at all. Every screenshot looked correct,
+ * because a full-page image is exactly as tall as the bug.
+ *
+ * `full` is now opt-in, for a contact sheet of many specimens where the point is
+ * to see them side by side rather than to answer "what is on screen".
+ */
+async function shot(page: import("playwright-core").Page, name: string, full = false): Promise<void> {
   const path = `${OUT}/${name}.png`;
+
+  if (!full) {
+    // The one measurement that would have caught it. Worth a round trip.
+    //
+    // The trailing `()` is load-bearing. Playwright evaluates a string argument as
+    // an *expression*, so `(() => ({ … }))` is the function object, which does not
+    // serialise and comes back as the value `undefined`. Third time this has cost
+    // an hour in this project; every page-side snippet is now a called expression.
+    const m = (await page.evaluate(`(() => {
+      return { doc: document.documentElement.scrollHeight, view: window.innerHeight };
+    })()`)) as { doc: number; view: number };
+    if (m.doc > m.view + 2) {
+      console.log(
+        `  WARN ${name}: document is ${m.doc}px in a ${m.view}px viewport — ` +
+          `something is positioned against the page instead of the shell.`,
+      );
+    }
+  }
+
   await page.screenshot({ path, fullPage: full });
   console.log(`  ${name}.png`);
 }

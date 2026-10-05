@@ -352,10 +352,10 @@ function emptyPlot(nav: Navigate, index: number): HTMLElement {
   // The 480ms press-and-hold this replaces could not be discovered: nobody holds
   // a button for half a second hoping something happens. Right-click stays as an
   // alias because muscle memory reaches for it.
-  plot.addEventListener("click", () => openSeedPicker(nav));
+  plot.addEventListener("click", () => openSeedPicker(nav, plot));
   plot.addEventListener("contextmenu", (e) => {
     e.preventDefault();
-    openSeedPicker(nav);
+    openSeedPicker(nav, plot);
   });
   return plot;
 }
@@ -437,7 +437,12 @@ function doPlant(nav: Navigate, seedId: SpeciesId): void {
  * player saw before it happened, which is what the old one-tap-plant could not
  * promise.
  */
-function openSeedPicker(nav: Navigate): void {
+/**
+ * `anchorEl` is the plot that was tapped. Without it the picker centres itself,
+ * which is what the keyboard and the context-menu entry point use — a menu opened
+ * without a pointer still has to appear somewhere.
+ */
+function openSeedPicker(nav: Navigate, anchorEl?: HTMLElement): void {
   const held = SPECIES.filter((s) => (store.state.seeds[s.id] ?? 0) > 0);
   const body = el("div", { class: "seed-picker" });
 
@@ -504,18 +509,132 @@ function openSeedPicker(nav: Navigate): void {
   showPreview(held[0] ?? SPECIES[0]);
   body.prepend(preview, el("h3", { class: "picker-title" }, [held.length ? "Chọn hạt để gieo" : "Hạt nổi bật hôm nay"]), grid);
 
-  const { overlay, sheet: s } = sheet(body, () => close());
+  const pop = el("div", { class: "seed-pop" });
+  pop.appendChild(body);
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", "Chọn hạt để gieo");
+
+  // A scrim only when there is no anchor to point at. With one, the popover is
+  // close enough to its plot that a full-screen dim would be a lie about what is
+  // being interacted with.
+  const scrim = anchorEl ? null : el("div", { class: "seed-pop-scrim" });
+  scrim?.addEventListener("pointerdown", () => close());
+
   const close = (): void => {
     sfx.play("back");
-    overlay.remove();
-    s.remove();
+    anchorEl?.classList.remove("is-picking");
+    // Signals the ResizeObserver to disconnect. Fired before removal so the
+    // handler is still attached.
+    pop.dispatchEvent(new Event("pop:closed"));
+    pop.remove();
+    scrim?.remove();
     document.removeEventListener("keydown", onKey);
+    window.removeEventListener("resize", close);
+    window.removeEventListener("scroll", close, true);
+    document.removeEventListener("pointerdown", onOutside, true);
   };
+
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") close();
   };
+
+  const onOutside = (e: PointerEvent): void => {
+    const t = e.target as Node | null;
+    if (t && (pop.contains(t) || anchorEl?.contains(t))) return;
+    close();
+  };
+
+  const shell = document.querySelector(".shell")!;
+  if (scrim) shell.append(scrim);
+  shell.appendChild(pop);
+
+  if (anchorEl) {
+    placePopover(pop, anchorEl);
+    anchorEl.classList.add("is-picking");
+  }
+
   document.addEventListener("keydown", onKey);
-  document.querySelector(".shell")!.append(overlay, s);
+  document.addEventListener("pointerdown", onOutside, true);
+  // Not repositioned on scroll — closed. A popover that follows its anchor while
+  // the page scrolls under the player's thumb is a thing they are chasing.
+  window.addEventListener("resize", close);
+  window.addEventListener("scroll", close, true);
+}
+
+/**
+ * Put a popover next to its anchor, inside the viewport.
+ *
+ * `position: fixed` with a measured box, rather than CSS anchoring: the browser
+ * support for `anchor-name` is still uneven, and the fallback for an unsupported
+ * browser is usually "centre it", which is the exact thing this change exists to
+ * stop happening.
+ */
+function placePopover(pop: HTMLElement, anchor: HTMLElement): void {
+  const GAP = 10;
+  const MARGIN = 8;
+
+  let lastW = -1;
+  let lastH = -1;
+
+  const place = (force = false): void => {
+    const a = anchor.getBoundingClientRect();
+    // Measured after the popover is in the document, so this is its real size.
+    const p = pop.getBoundingClientRect();
+
+    // Placing writes `left`/`top`, so an observer that reacted to every change
+    // would be reacting to its own writes. Only a size change re-places, and the
+    // first pass always places.
+    if (!force && Math.abs(p.width - lastW) < 0.5 && Math.abs(p.height - lastH) < 0.5) return;
+    lastW = p.width;
+    lastH = p.height;
+    const vw = document.documentElement.clientWidth;
+    const vh = document.documentElement.clientHeight;
+
+    // Prefer below. Flip above only when below would genuinely not fit — a
+    // popover that flips while there is still room below reads as indecisive.
+    const roomBelow = vh - a.bottom;
+    const above = roomBelow < p.height + GAP && a.top > p.height + GAP;
+
+    let top = above ? a.top - p.height - GAP : a.bottom + GAP;
+    let left = a.left + a.width / 2 - p.width / 2;
+
+    // Clamp horizontally, and prefer aligning to whichever edge has more room so
+    // the popover's arrow still points at the plot.
+    if (left + p.width > vw - MARGIN) left = a.right - p.width;
+    if (left < MARGIN) left = MARGIN;
+    left = Math.max(MARGIN, Math.min(left, vw - p.width - MARGIN));
+
+    if (top + p.height > vh - MARGIN) top = Math.max(MARGIN, vh - p.height - MARGIN);
+
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+    pop.classList.toggle("is-above", above);
+
+    // Where the arrow goes, in the popover's own coordinates. Clamped well inside
+    // so it can never slide off the rounded corner.
+    const cx = a.left + a.width / 2;
+    pop.style.setProperty("--arrow-x", `${Math.round(Math.max(14, Math.min(p.width - 14, cx - left)))}px`);
+  };
+
+  // Two frames: one to be in the document, one for the entry transition to have
+  // started. Measuring in the same frame it was inserted gives a stale height.
+  requestAnimationFrame(() => requestAnimationFrame(() => place(true)));
+
+  // Content that arrives late. The webfont is the case that actually bites — the
+  // preview text reflows after positioning and the box grows past the edge — but
+  // a longer species description does the same thing.
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => place());
+    ro.observe(pop);
+    // Disconnected on close, so a dismissed popover stops observing. Without this
+    // the observer outlives the popover and holds its whole subtree alive.
+    pop.addEventListener("pop:closed", () => ro.disconnect(), { once: true });
+  }
+
+  // Belt and braces for the one case the observer would catch late: fonts.
+  if (typeof document !== "undefined" && "fonts" in document) {
+    void (document as Document & { fonts: FontFaceSet }).fonts.ready.then(() => place(true));
+  }
 }
 
 

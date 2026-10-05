@@ -82,7 +82,11 @@ body {
 #app {
   display: flex;
   justify-content: center;
-  min-height: 100dvh;
+  /* Height, not min-height. With `min-height` the shell grew to whatever its
+     content was, and every absolutely-positioned child — the nav, every sheet —
+     resolved against a container thousands of pixels tall. */
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .shell {
@@ -91,7 +95,11 @@ body {
   width: min(760px, 100vw);
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  /* Exactly one viewport, and no scrolling of its own. The screen inside scrolls;
+     the shell does not. */
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   background:
     linear-gradient(90deg, rgba(38, 53, 29, 0.035) 1px, transparent 1px) 0 0 / 28px 28px,
     linear-gradient(180deg, rgba(255, 251, 231, 0.92), rgba(220, 239, 200, 0.96));
@@ -109,9 +117,12 @@ body {
   border-bottom: 1px solid var(--line);
   background: rgba(255, 248, 226, 0.88);
   backdrop-filter: blur(12px);
-  position: sticky;
-  top: 0;
+  /* Was `sticky`, on the assumption that the document scrolled. It does not —
+     the screen does — so this is a plain flex child and stays put because there is
+     nothing to scroll past it. */
+  position: relative;
   z-index: 30;
+  flex: none;
 }
 
 .brand {
@@ -182,7 +193,12 @@ body {
 }
 
 .screen {
-  flex: 1;
+  flex: 1 1 auto;
+  /* The load-bearing line. A flex item defaults to `min-height: auto`, which
+     refuses to shrink below its content — so this element grew to the height of a
+     24-plot garden and the document scrolled instead of it, taking the shell's
+     bottom-anchored children with it. */
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 12px 14px 96px;
@@ -1297,7 +1313,6 @@ h4 {
   font-size: 30px;
 }
 
-
 @keyframes pop {
   0% {
     transform: scale(0.85);
@@ -1377,45 +1392,112 @@ h4 {
 
 /* A plot is a small patch of soil, not a generic card: the plant sits in the
    bed, and state lives in a chip rather than a wall of tiny text. */
+/* The lawn the beds are dug into.
+
+   This is the single change that matters most. Before, each plot was a card and
+   this element was the gap between cards — so twenty-four plots read as a
+   spreadsheet with plants on it. Now this is the ground, and a plot is a hollow
+   in it. The gap between beds shows grass, which is what a real garden has
+   between its rows. */
 .plots {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: 7px;
+  padding: 12px;
+  border-radius: 24px;
+  background:
+    /* uneven growth, so the lawn is not a flat wash */
+    radial-gradient(72% 46% at 18% 6%, rgba(178, 222, 132, 0.55), transparent 72%),
+    radial-gradient(64% 40% at 88% 34%, rgba(132, 186, 92, 0.45), transparent 74%),
+    radial-gradient(58% 36% at 34% 92%, rgba(190, 228, 146, 0.4), transparent 72%),
+    /* Deliberately the dullest green in the game. The soil and the plants are
+       what the eye is for; a lawn brighter than either competes with them. */
+    linear-gradient(178deg, #8fbc6f 0%, #7cae5d 52%, #6d9e4e 100%);
+  border: 1px solid #6b9448;
+  /* A hollow, not a raised card: light from the top edge, shadow at the bottom. */
+  box-shadow:
+    inset 0 3px 9px rgba(44, 72, 24, 0.28),
+    inset 0 -2px 0 rgba(255, 255, 255, 0.14),
+    0 10px 24px rgba(80, 104, 53, 0.2);
 }
 
-/* On a wide window the two-column grid left very large cells with a lot of dead
-   space around each plant, so a third column appears and the plots get denser. */
 @media (min-width: 680px) {
   .plots {
     grid-template-columns: repeat(3, 1fr);
   }
 }
 
-.plot {
-  position: relative;
-  border-radius: 18px;
-  padding: 11px 11px 12px;
-  cursor: pointer;
-  overflow: hidden;
-  border: 1px solid rgba(97, 126, 61, 0.24);
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.28), transparent 44%),
-    radial-gradient(120% 70% at 50% 0%, rgba(112, 187, 80, 0.18), transparent 70%),
-    linear-gradient(180deg, #cbeaa0 0%, #a9d178 52%, #8fbd62 100%);
-  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.16s, box-shadow 0.16s;
-}
+/* A hedge around the lawn.
 
-.plot::after {
-  /* soil bed */
+   The garden needs an edge to be a place rather than a region. Drawn as a soft
+   dark-green ring just inside the border so it reads as foliage standing behind
+   the grass rather than as an outline someone drew. */
+.plots::before {
   content: "";
   position: absolute;
-  left: -10%;
-  right: -10%;
-  bottom: 46px;
-  height: 26px;
-  background: linear-gradient(180deg, rgba(138, 88, 55, 0) 0%, rgba(138, 88, 55, 0.52) 55%, rgba(92, 57, 35, 0.76) 100%);
-  border-radius: 50% / 100% 100% 0 0;
+  inset: 0;
+  border-radius: inherit;
   pointer-events: none;
+  box-shadow: inset 0 0 0 3px rgba(74, 112, 46, 0.34);
+  z-index: 0;
+}
+
+/* --- one bed of turned earth ---------------------------------------------- */
+
+.plot {
+  position: relative;
+  z-index: 1;
+  /* A bed in a field is rectangular. The heavy blob radius this had was the other
+     half of what made twenty-four of them read as separate objects. */
+  border-radius: 8px;
+  padding: 10px 10px 11px;
+  cursor: pointer;
+  overflow: visible;
+  border: none;
+  background-image:
+    /* Furrows. Soil that has been raked has a direction, and a flat fill reads as
+       a paint swatch rather than as earth. */
+    repeating-linear-gradient(
+      180deg,
+      rgba(122, 88, 52, 0.08) 0 3px,
+      rgba(255, 250, 235, 0.1) 3px 7px
+    ),
+    /* Pale sand at the crown, warmer loam at the edges. */
+    radial-gradient(86% 74% at 50% 30%, #eddcb6 0%, #e0c99b 48%, #c9a877 82%, #b08a58 100%);
+  /* No rim, no outer glow: the only separation is the furrow of darker soil the
+     grid gap leaves between neighbours. */
+  box-shadow: inset 0 3px 8px rgba(74, 48, 22, 0.2);
+  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Contact shadow only. A bed dug into soil has no hard rim; what separates it
+   from its neighbour is the shadow the rim of earth casts into the furrow. */
+.plot::before {
+  content: "";
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  /* Entirely below the bed. At `top: 6%` the top of the blur sat above the bed
+     and read as a brown shelf lying across it — a shadow with no light source. */
+  top: calc(100% - 2px);
+  bottom: -7px;
+  border-radius: 10px;
+  background: rgba(44, 60, 24, 0.2);
+  filter: blur(6px);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* The furrow: a darker line of turned earth around each bed, which is what the
+   eye uses to count the beds instead of a card border. */
+.plot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(104, 74, 42, 0.22);
 }
 
 .plot:active {
@@ -1808,13 +1890,15 @@ h4 {
   place-items: center;
   align-content: center;
   gap: 8px;
-  border-style: dashed;
   color: var(--text);
   text-align: center;
-}
-
-.empty-plot::after {
-  bottom: 34px;
+  /* Unplanted, not unfinished. A dashed outline said "form to fill in"; a paler,
+     softer bed says "soil waiting". The dashed border that was here resolved to
+     black once .plot stopped declaring one. */
+  background-image:
+    repeating-linear-gradient(180deg, rgba(122, 88, 52, 0.05) 0 4px, transparent 4px 9px),
+    radial-gradient(86% 74% at 50% 30%, #e6dcbe 0%, #d8c9a5 50%, #c2ae82 84%, #b09665 100%);
+  box-shadow: inset 0 2px 6px rgba(74, 48, 22, 0.14);
 }
 
 .empty-plot .soil-mark {
@@ -1935,7 +2019,6 @@ h4 {
   font-weight: 800;
   text-align: center;
 }
-
 
 .sheet {
   position: absolute;
@@ -2231,7 +2314,6 @@ input::placeholder {
   background: rgba(47, 159, 98, 0.12);
 }
 
-
 .fadein {
   animation: fadein 0.3s ease;
 }
@@ -2269,7 +2351,6 @@ input::placeholder {
   background: var(--line);
   margin: 12px 0;
 }
-
 
 /* Shop catalogue. Auto-fill so one column on a phone, two or three on a
    desktop, without a breakpoint. The card was designed for a full-width
@@ -2935,7 +3016,6 @@ body.planting {
    Battle arena (src/battle/battleFx.ts)
    ========================================================================== */
 
-
 /* Sky: dark at the top, warming toward the horizon, and tinted toward each
    fighter's element so the arena belongs to the two plants in it. */
 
@@ -2943,7 +3023,6 @@ body.planting {
    horizon so the two read as standing on something. */
 
 /* Haze at the seam, so the ground does not start with a hard edge. */
-
 
 .fx-layer {
   position: absolute;
@@ -3352,7 +3431,6 @@ body.planting {
 
 /* --- action bar --------------------------------------------------------- */
 
-
 .skillbtn .nm {
   font-size: 12.5px;
   font-weight: 750;
@@ -3370,7 +3448,6 @@ body.planting {
 /* Ready reads as raised and lit; on cooldown it sinks and greys out. The
    difference has to be obvious at a glance — the old buttons all looked
    disabled because the ready state had no styling at all. */
-
 
 @media (prefers-reduced-motion: reduce) {
   .fx-layer.is-shaking,
@@ -3466,8 +3543,6 @@ body.planting {
     font-size: 11.5px;
   }
 }
-
-
 
 /* ==========================================================================
    Seed chooser (tap a plot -> pick a seed -> it plants)
@@ -3628,7 +3703,6 @@ body.planting {
   }
 }
 
-
 /* ==========================================================================
    Combat juice (src/battle/juice.ts)
    ========================================================================== */
@@ -3778,7 +3852,6 @@ body.planting {
     opacity: 0.85;
   }
 }
-
 
 /* ==========================================================================
    Fusion ceremony and staggered reveals (src/ui/fusion.ts)
@@ -4029,7 +4102,6 @@ body.planting {
   }
 }
 
-
 /* ==========================================================================
    Unlock conditions (src/config/unlocks.ts)
    ========================================================================== */
@@ -4165,7 +4237,6 @@ body.planting {
 .plot-progress .done {
   color: #2f7a4a;
 }
-
 
 /* ==========================================================================
    Level badge and notices
@@ -4467,7 +4538,6 @@ body.planting {
   }
 }
 
-
 /* ==========================================================================
    Tabs
    ========================================================================== */
@@ -4488,8 +4558,11 @@ body.planting {
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.42);
   border: 1px solid rgba(90, 104, 78, 0.14);
+  /* Sticky against the screen, which is now the real scroller, so the rail stays
+     put while a 24-plot garden scrolls under it. It needs a top offset because
+     the screen's own padding is what it sticks against, not a page edge. */
   position: sticky;
-  top: 0;
+  top: -12px;
   z-index: 20;
   /* The sticky rail has to sit above cards that scroll under it. Without a
      backdrop the content shows through the gap between tabs. */
@@ -4557,7 +4630,6 @@ body.planting {
     transition: none;
   }
 }
-
 
 /* ==========================================================================
    Morph
@@ -4684,5 +4756,286 @@ body.planting {
   .fx-morph-label {
     animation: none;
     opacity: 1;
+  }
+}
+
+/* ==========================================================================
+   Anchored seed picker
+   ========================================================================== */
+
+/* Fixed positioning; the box is written by placePopover() from the anchor's
+   measured rect. CSS anchoring would be tidier but its support is still uneven,
+   and the usual fallback is "centre it" — which is the behaviour this replaced. */
+.seed-pop {
+  position: fixed;
+  z-index: 120;
+  width: min(94vw, 400px);
+  max-height: min(62vh, 460px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 44px rgba(60, 80, 40, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+  overflow: hidden;
+  /* Fades in from the anchor edge rather than fading up from nowhere, so it reads
+     as coming *from* the plot. */
+  transform-origin: center top;
+  animation: pop-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.seed-pop.is-above {
+  transform-origin: center bottom;
+  animation-name: pop-in-above;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pop-in-above {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* The arrow. Offset by the measured centre of the anchor, clamped in JS so it
+   cannot slide onto a rounded corner. */
+.seed-pop::before {
+  content: "";
+  position: absolute;
+  left: var(--arrow-x, 50%);
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  transform: translateY(-6px) rotate(45deg);
+}
+
+.seed-pop.is-above::before {
+  margin-left: -6px;
+  transform: translateY(6px) rotate(225deg);
+}
+
+/* Only shown when there is nothing to point at. */
+.seed-pop-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgba(38, 53, 29, 0.34);
+  animation: fade-in 0.18s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The plot you tapped, so it is obvious which one the popover belongs to while
+   the popover covers part of the garden. */
+.plot.is-picking {
+  border-color: var(--accent-fill);
+  box-shadow: 0 0 0 2px rgba(38, 121, 79, 0.4);
+  z-index: 1;
+}
+
+/* The picker body now scrolls inside a bounded popover rather than being a sheet
+   that scrolls the page. */
+.seed-pop .seed-picker {
+  padding: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seed-pop,
+  .seed-pop.is-above {
+    animation: none;
+  }
+
+  .seed-pop-scrim {
+    animation: none;
+  }
+}
+
+
+/* ==========================================================================
+   Account and settings
+   ========================================================================== */
+
+.account {
+  display: grid;
+  gap: 10px;
+}
+
+.account-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.field {
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fffdf4;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.field:focus {
+  outline: 2px solid rgba(38, 121, 79, 0.5);
+  outline-offset: 1px;
+  border-color: var(--accent-fill);
+}
+
+/* The sync state, and the single sentence that explains it.
+   The dot is colour-coded so the state is readable before the text is parsed —
+   green for saved, amber for a conflict, grey for off. */
+.account-sync {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(90, 104, 78, 0.08);
+  border: 1px solid rgba(90, 104, 78, 0.16);
+}
+
+.account-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: #9aa89a;
+  align-self: center;
+}
+
+.account-sync > span:nth-child(2) {
+  line-height: 1.4;
+}
+
+.account-sync.is-synced .account-dot {
+  background: #2f9f62;
+}
+
+.account-sync.is-syncing .account-dot {
+  background: #d98f1f;
+  animation: sync-pulse 0.9s ease-in-out infinite;
+}
+
+.account-sync.is-conflict .account-dot,
+.account-sync.is-paused .account-dot {
+  background: #d9681f;
+}
+
+.account-sync.is-error .account-dot {
+  background: #c0392b;
+}
+
+@keyframes sync-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* The conflict resolution buttons only exist when there is a conflict. */
+.account-row {
+  display: flex;
+  gap: 8px;
+}
+
+.account-row .btn {
+  flex: 1;
+}
+
+.account-err {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #a83a28;
+  min-height: 14px;
+}
+
+.account-id {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(47, 159, 98, 0.1);
+  border: 1px solid rgba(47, 159, 98, 0.22);
+}
+
+.account-warn {
+  line-height: 1.45;
+  color: #6a5a2a;
+  background: rgba(217, 143, 31, 0.1);
+  border: 1px solid rgba(217, 143, 31, 0.24);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.account-more {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(90, 104, 78, 0.16);
+}
+
+/* Settings rows. */
+.account-rowbtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(90, 104, 78, 0.18);
+  background: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.account-rowbtn:hover {
+  background: rgba(90, 104, 78, 0.08);
+  border-color: rgba(90, 104, 78, 0.32);
+}
+
+.account-rowbtn:active {
+  transform: scale(0.99);
+}
+
+.account-chevron {
+  flex: none;
+  font-size: 16px;
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-sync.is-syncing .account-dot {
+    animation: none;
   }
 }
