@@ -55,6 +55,25 @@ npm run verify:prod    # tự bật preview, đi từng màn hình, tắt server
 Nó báo lỗi nếu có màn hình nào không render, request nào 404, console có lỗi,
 hoặc handle `__game` (chỉ dùng lúc dev) bị lọt vào bản production.
 
+### Vì sao build tách khỏi công cụ dev
+
+`npm run build` chỉ type-check **`tsconfig.json` = `src/`**, không đụng tới
+`tools/`. Một deploy đã hỏng vì lý do này: `playwright-core` dùng bởi các script
+chụp ảnh chưa từng được khai báo trong `package.json`, nên nó có trong
+`node_modules` cục bộ (tsc local pass) nhưng không có trên máy khác (Vercel
+fail) — và vì `tools/` nằm trong cùng tsconfig nên build chết theo.
+
+Bây giờ:
+
+| Lệnh | Phủ gì |
+|---|---|
+| `npm run build` | `src/` — thứ thật sự được ship |
+| `npm run typecheck` | `src/` **và** `tools/` — vẫn bắt lỗi trong công cụ dev |
+
+Nên **hỏng ở `tools/` không còn làm hỏng deploy**, nhưng vẫn bị typecheck chặn
+trước khi commit. Muốn chạy các script chụp ảnh thì cần một trình duyệt đã cài:
+`npx playwright install chromium`.
+
 > Cloudflare Pages: nhớ đặt **Node version 20+** trong Settings → Builds &
 > Environment, và build command `npm ci --include=dev && npm run build` — Pages mặc
 > định có thể bỏ devDependencies.

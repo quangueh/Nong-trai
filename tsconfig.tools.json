@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  // The development tooling: screenshot harnesses, the production-bundle check,
+  // the test suites and the diagnostics.
+  //
+  // Separate from tsconfig.json on purpose — see the note there. Under tsx in
+  // Node, so node types only and none of the browser lib set `src` relies on.
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["tools"]
+}

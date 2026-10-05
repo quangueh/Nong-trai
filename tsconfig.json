@@ -16,5 +16,6 @@
     "noEmit": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "tools"]
+  "//": "Only src. The build type-checks this file, so a screenshot harness losing a type must never be able to fail a deploy — which is exactly what happened when `tools/` was included and playwright-core turned out to be undeclared.",
+  "include": ["src"]
 }

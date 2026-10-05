@@ -6,10 +6,10 @@
   "description": "Đại Chiến Cây Đột Biến - game trồng, lai tạo gene và đấu cây bằng mã phòng.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
     "preview": "vite preview --port 4173",
     "verify:prod": "tsx tools/verify-prod.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
     "test": "npm run test:core && npm run test:species && npm run test:planting && npm run test:juice && npm run test:morph && npm run test:journey && npm run test:quests && npm run test:art && npm run test:ui && npm run test:room",
     "test:core": "tsx tools/test-determinism.ts",
     "diag:registry": "tsx tools/diag-registry.ts",
@@ -30,6 +30,7 @@
     "@types/jsdom": "^30.0.0",
     "@types/node": "^26.6.3",
     "jsdom": "^30.1.1",
+    "playwright-core": "^1.63.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.5"
