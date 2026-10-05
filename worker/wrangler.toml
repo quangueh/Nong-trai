@@ -10,7 +10,7 @@ compatibility_date = "2026-01-15"
 # it prints go here.
 [[kv_namespaces]]
 binding = "DB"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "f9a6984ac59f4d70b032516f08aa8316"
 
 # Secrets are NOT in this file and must never be committed. Set them with:
 #   npx wrangler secret put TOKEN_SECRET
@@ -20,7 +20,7 @@ id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
 #   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 # Changing it invalidates every session token, so everyone logs in again.
 [vars]
-PBKDF2_ROUNDS = "150000"
+PBKDF2_ROUNDS = "100000"
 
 # GOOGLE_CLIENT_ID is the OAuth client ID of the web app in Google Cloud console.
 # It is a var, not a secret: it is public by design and ships in the game's bundle.

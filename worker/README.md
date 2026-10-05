@@ -160,3 +160,23 @@ stubbed verify function — a verifier that ignored the signature would pass eve
   on a device that previously used a password starts a *new*, empty garden.
 - **No `hd` check**, so a Workspace and a personal Gmail account with the same address
   are still two accounts — consistent with the point above.
+
+## Cloudflare's PBKDF2 ceiling
+
+Workers **reject a `deriveBits` call that asks for more than 100,000 PBKDF2
+iterations** — the whole call throws. This Worker shipped configured for 150,000, so
+every `register` and `login` answered a bare `server` code and the password path was
+simply broken.
+
+It passed every local test. That is the point worth keeping: `tools/test-*.ts` run on
+Node, whose `crypto` has no such ceiling, so nothing short of a request over the wire
+could have found it. `PBKDF2_ROUNDS` is now clamped in code rather than trusted from
+the config, because a value that kills the endpoint is worse than one that is ignored.
+
+100,000 rounds is below what OWASP currently recommends for PBKDF2-SHA256 (600,000).
+That gap is the platform's ceiling, not a choice made here.
+
+`npx tsx tools/smoke-worker.ts` exercises the deployed Worker over real HTTPS —
+register, login, push, read back, conflict resolution, password change, and the three
+ways a Google token must be refused. It registers a throwaway email per run and leaves
+it behind; those are the only entries in KV.

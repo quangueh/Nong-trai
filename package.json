@@ -30,7 +30,8 @@
     "shot:breed": "tsx tools/shot-breeding.ts",
     "shot:elementfx": "tsx tools/shot-element-fx.ts",
     "test:google": "tsx tools/test-google-token.ts",
-    "audit:ui": "tsx tools/run-ui-audit.ts"
+    "audit:ui": "tsx tools/run-ui-audit.ts",
+    "smoke:worker": "tsx tools/smoke-worker.ts"
   },
   "devDependencies": {
     "@types/jsdom": "^30.0.0",

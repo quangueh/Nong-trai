@@ -125,6 +125,33 @@ const randomHex = (bytes: number): string => {
   return s;
 };
 
+/**
+ * PBKDF2 rounds, clamped to what Cloudflare Workers will actually run.
+ *
+ * Workers reject a `deriveBits` call asking for more than 100,000 PBKDF2 iterations —
+ * the whole call throws, not just the tail of it. The endpoint then answered a generic
+ * `server` and registration was simply broken, which is how this was found: it passed
+ * every local test, because Node's crypto has no such limit and `test-*.ts` never
+ * touches the Worker.
+ *
+ * So the value is clamped rather than trusted. A var that asks for 150,000 - which is
+ * what this file shipped with, and what `PBKDF2_ROUNDS` still says - now silently
+ * becomes 100,000 instead of killing the endpoint. Clamping is the right response to a
+ * platform ceiling: the ceiling is not negotiable, so the only choice is between
+ * honouring it and refusing to start.
+ *
+ * 100,000 rounds of PBKDF2-SHA256 is below what OWASP currently recommends (600,000),
+ * and that gap is the platform's, not this file's. It is stated here rather than left
+ * for someone to assume it was a deliberate choice.
+ */
+const PBKDF2_CEILING = 100_000;
+
+function pbkdf2Rounds(env: Env): number {
+  const asked = Number(env.PBKDF2_ROUNDS ?? PBKDF2_CEILING);
+  if (!Number.isFinite(asked) || asked <= 0) return PBKDF2_CEILING;
+  return Math.min(Math.floor(asked), PBKDF2_CEILING);
+}
+
 async function stretch(password: string, salt: Uint8Array, rounds: number): Promise<ArrayBuffer> {
   const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
   return crypto.subtle.deriveBits(
@@ -260,7 +287,7 @@ async function handleRegister(req: Request, env: Env): Promise<Response> {
   if (await env.DB.get(accountKey(email))) return RKO("taken", 409);
 
   const salt = randomBytes(16);
-  const rounds = Number(env.PBKDF2_ROUNDS ?? 150000);
+  const rounds = pbkdf2Rounds(env);
   const hash = await stretch(password, salt, rounds);
 
   const account: Account = {
@@ -288,7 +315,7 @@ async function handleLogin(req: Request, env: Env): Promise<Response> {
   // "wrong password", which is a free account-enumeration oracle. The constant-time
   // shape here costs one hash on a miss and buys not answering the question.
   const salt = raw ? unb64((JSON.parse(raw) as Account).salt) : new Uint8Array(16);
-  const rounds = Number(env.PBKDF2_ROUNDS ?? 150000);
+  const rounds = pbkdf2Rounds(env);
   const hash = await stretch(password, salt, rounds);
 
   if (!raw) {
@@ -438,11 +465,11 @@ async function handleChangePassword(req: Request, auth: Session, env: Env): Prom
   if (!raw) return RKO("no_account", 404);
   const account = JSON.parse(raw) as Account;
 
-  const check = await stretch(current, unb64(account.salt), Number(env.PBKDF2_ROUNDS ?? 150000));
+  const check = await stretch(current, unb64(account.salt), pbkdf2Rounds(env));
   if (b64(check) !== account.hash) return RKO("bad_credentials", 401);
 
   const salt = randomBytes(16);
-  const hash = await stretch(next, salt, Number(env.PBKDF2_ROUNDS ?? 150000));
+  const hash = await stretch(next, salt, pbkdf2Rounds(env));
   await env.DB.put(accountKey(auth.email!), JSON.stringify({ ...account, salt: b64(salt.buffer as ArrayBuffer), hash: b64(hash) }));
   return ROK({ ok: true });
 }
