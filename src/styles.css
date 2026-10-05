@@ -5644,12 +5644,69 @@ body.planting {
    palette, same button weights as everywhere else.
    ========================================================================== */
 
+/*
+ * Full screen, not a sheet.
+ *
+ * `.sheet` is a bottom-anchored panel with rounded top corners - correct for a dialog
+ * you opened on purpose, wrong for the thing that greets you at the gate. As a sheet it
+ * occupied one corner of a phone screen with the blurred garden behind it, which read as
+ * a popup the player could dismiss rather than a door they had to come through.
+ *
+ * So the gate gets its own layout: full bleed, the card centred, and the garden behind
+ * it dimmed far enough that the form is unambiguously the subject.
+ */
 .gate-overlay {
+  /*
+   * `fixed`, not `absolute`.
+   *
+   * `.overlay` is absolute, so it fills its nearest positioned ancestor - which is
+   * `.shell`. The shell is a centred column with a max-width, and it measured 758px on
+   * a 1180px viewport, so the gate covered only the middle of the screen and left the
+   * page background either side of it. A gate that does not reach the edges of the screen
+   * is not a gate.
+   */
+  position: fixed;
+  inset: 0;
   z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(38, 48, 28, 0.62);
+  backdrop-filter: blur(6px);
+  overflow-y: auto;
 }
 
 .gate-card {
-  max-width: 440px;
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  max-width: 420px;
+  max-height: none;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  padding: 18px 18px 16px;
+  box-shadow: 0 18px 48px rgba(24, 34, 16, 0.34);
+  /* The sheet's slide-up would be wrong here: this is not arriving from a tap. */
+  animation: gateRise 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes gateRise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate-card {
+    animation: none;
+  }
 }
 
 .gate-head {
