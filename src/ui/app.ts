@@ -9,6 +9,7 @@ import { renderArena, currentBattleView } from "./screens/arena";
 import { renderLab } from "./screens/lab";
 import { sfx } from "../audio/audio";
 import { accountStatus, initAccount, isSignedIn, onAccountStatus } from "../account/sync";
+import { showSignInGateIfNeeded } from "./signInGate";
 import { openAccount } from "./accountSheet";
 import { SPECIES_BY_ID } from "../config/species";
 
@@ -432,6 +433,22 @@ export function boot(root: HTMLElement) {
     write: (next, savedAt) => {
       store.importState(next);
       store.savedAt = savedAt;
+    },
+  });
+
+  /*
+   * The sign-in gate, before the first paint.
+   *
+   * Shown when there is no usable session and a Worker to authenticate against; it
+   * stands down otherwise, including when no Worker is configured at all. Decided by the
+   * gate rather than here, so the rule lives in one place instead of being a condition
+   * someone has to remember to add.
+   */
+  showSignInGateIfNeeded({
+    onEnter: () => {
+      // The garden renders underneath the gate from the start, so entering is a removal
+      // rather than a navigation. Re-rendering would throw away whatever the tick loop
+      // has already done in the seconds the gate was up.
     },
   });
 

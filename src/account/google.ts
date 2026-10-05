@@ -62,12 +62,20 @@ declare global {
             client_id: string;
             callback: (r: TokenResponse) => void;
             ux_mode?: "popup" | "redirect";
+            display?: "popup";
             context?: "signin" | "signup" | "continue";
+            auto_select?: boolean;
           }) => void;
           renderButton: (
             parent: HTMLElement,
             options: { theme?: string; width?: number; text?: string; size?: "large" | "medium" | "small" },
           ) => void;
+          /**
+           * The One Tap entry point. Required by the fallback button when Google's own
+           * button did not paint — `renderButton` drives its own popup, but something has
+           * to open the account chooser when it is not on screen.
+           */
+          prompt: () => void;
         };
       };
     };
@@ -107,45 +115,98 @@ function loadGis(): Promise<boolean> {
 }
 
 /**
+ * Whether `initialize` has already run.
+ *
+ * Google's Identity Services require `initialize()` before `renderButton()`, and they
+ * say so at the point of failure: "Failed to render button before calling initialize()".
+ * This module had them the wrong way round — `initialize` was called inside
+ * `requestGoogleIdToken`, which only ran when the player pressed a button, so the button
+ * never painted and the fallback it left behind did nothing except wait out a timeout.
+ * Sign-in was therefore broken end to end, and the only symptom in the console was one
+ * log line that reads like a warning rather than the total failure it was.
+ */
+let initialised = false;
+
+/** The resolver for a sign-in that is currently in flight, if any. */
+let inFlight: { resolve: (token: string) => void; reject: (e: unknown) => void } | null = null;
+
+/**
+ * Load the script and initialise GIS, once.
+ *
+ * `renderButton` and `prompt` both fail without it, and both may be called from
+ * different places — the panel renders on open, the fallback button calls `prompt` —
+ * so the initialisation cannot live inside either one.
+ */
+async function initGis(): Promise<boolean> {
+  if (!googleSignInAvailable) return false;
+  const ok = await loadGis();
+  if (!ok || !window.google?.accounts?.id) return false;
+  if (initialised) return true;
+  try {
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      // `popup` in both fields, deliberately. `ux_mode: "popup"` governs the rendered
+      // button's behaviour; `display: "popup"` governs the One Tap prompt that the
+      // fallback button drives. Setting only the first leaves the fallback with no
+      // way to open anything.
+      ux_mode: "popup",
+      display: "popup",
+      context: "signin",
+      auto_select: false,
+      callback: (r: TokenResponse) => {
+        const pending = inFlight;
+        inFlight = null;
+        const token = r.credential ?? r.id_token;
+        if (!pending) return;
+        if (!token) {
+          // Google's docs call this the "cancelled" response: an empty credential with
+          // no error means the player dismissed the chooser.
+          pending.reject(new GoogleSignInError("cancelled", "Sign-in was dismissed"));
+          return;
+        }
+        pending.resolve(token);
+      },
+    });
+    initialised = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Ask Google for an ID token.
  *
- * Resolves with the raw JWT, which is then sent to the Worker for verification.
- * Rejects with a `GoogleSignInError` — never with `null` — so the caller is forced to
- * distinguish "the player closed the popup" from "the network is down".
+ * Used by the fallback button. When Google's own button is on screen it drives its own
+ * popup and this is never called, which is why it goes through `prompt()` rather than
+ * pretending to be the primary path.
  */
 export async function requestGoogleIdToken(): Promise<string> {
   if (!googleSignInAvailable) throw new GoogleSignInError("unavailable", "Google sign-in is not configured");
-
-  const ok = await loadGis();
+  const ok = await initGis();
   if (!ok) throw new GoogleSignInError("network", "Could not load Google's sign-in");
 
   return new Promise<string>((resolve, reject) => {
     const timer = window.setTimeout(() => {
+      inFlight = null;
       reject(new GoogleSignInError("no_token", "Google did not return a token in time"));
-    }, 60_000);
+    }, 90_000);
+
+    inFlight = {
+      resolve: (token) => {
+        window.clearTimeout(timer);
+        resolve(token);
+      },
+      reject: (e) => {
+        window.clearTimeout(timer);
+        reject(e);
+      },
+    };
 
     try {
-      window.google!.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        // `popup` rather than `redirect`: a redirect would tear down the page and lose
-        // the in-progress game, which for a browser game is not a small cost.
-        ux_mode: "popup",
-        context: "signin",
-        callback: (r: TokenResponse) => {
-          window.clearTimeout(timer);
-          const token = r.credential ?? r.id_token;
-          if (!token) {
-            // Google's own docs call this the "cancelled" response: an empty credential
-            // with no error means the player dismissed the chooser.
-            reject(new GoogleSignInError("cancelled", "Sign-in was dismissed"));
-            return;
-          }
-          resolve(token);
-        },
-        // The button is rendered by the caller into a real container; this prompt is only
-        // a fallback for the case where the button failed to paint.
-      });
+      window.google!.accounts.id.prompt();
     } catch (e) {
+      inFlight = null;
       window.clearTimeout(timer);
       reject(new GoogleSignInError("unavailable", `Google sign-in failed to start: ${String(e)}`));
     }
@@ -161,7 +222,7 @@ export async function requestGoogleIdToken(): Promise<string> {
  */
 export async function renderGoogleButton(parent: HTMLElement): Promise<boolean> {
   if (!googleSignInAvailable) return false;
-  const ok = await loadGis();
+  const ok = await initGis();
   if (!ok || !window.google?.accounts?.id) return false;
   try {
     // Google replaces the container's contents with an iframe. Cleared first so a

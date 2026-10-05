@@ -36,6 +36,7 @@ import {
   type AccountSession,
 } from "./api";
 import { forgetSessionKind, rememberSessionKind, type SessionKind } from "./kind";
+import { forgetSignIn, rememberSignIn } from "./stamp";
 
 const TOKEN_KEY = "nong-trai-account-token";
 const EMAIL_KEY = "nong-trai-account-email";
@@ -205,6 +206,10 @@ function adoptSession(newToken: string, email: string, kind: SessionKind = "pass
   localStorage.setItem(TOKEN_KEY, newToken);
   localStorage.setItem(EMAIL_KEY, email);
   rememberSessionKind(kind);
+  // The grace period starts when the sign-in succeeds, not when the page loads. Reading
+  // "is there a token" instead would treat an expired session as a live one and let it
+  // through forever, which is precisely what the grace period is meant to bound.
+  rememberSignIn();
   emit({ email, state: "idle", message: "Đã đăng nhập." });
   startAuto();
 }
@@ -233,6 +238,7 @@ export function signOut(): void {
     localStorage.removeItem(EMAIL_KEY);
     localStorage.removeItem(SEEN_KEY);
     forgetSessionKind();
+    forgetSignIn();
     emit({ email: null, state: "off", message: "Đã đăng xuất. Vườn vẫn còn trên máy này.", lastSyncedAt: null, serverWasNewer: false });
   });
 }

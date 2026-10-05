@@ -5512,11 +5512,19 @@ body.planting {
 }
 
 .gpanel-slot {
-  /* Reserved height so the form does not jump upward when Google's iframe arrives. */
+  /*
+   * Block, not flex.
+   *
+   * As a flex row it held two children — Google's iframe and the styled fallback —
+   * and they split the width between them, squeezing both into narrow columns with the
+   * label wrapped over five lines. They are alternatives that never show at the same
+   * time, so there is nothing to lay out side by side.
+   *
+   * The reserved height stops the form below from jumping upward while Google's script
+   * is still in flight.
+   */
   min-height: 56px;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
+  display: block;
 }
 
 /* --- the styled button, and Google's replacement for it -------------------- */
@@ -5535,6 +5543,17 @@ body.planting {
   text-align: left;
   cursor: pointer;
   transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.12s ease;
+}
+
+/*
+ * `hidden` has to be re-asserted.
+ *
+ * The UA stylesheet's `[hidden] { display: none }` is a type-free attribute rule, so
+ * `.gpanel-btn { display: flex }` wins on specificity and the "hidden" fallback stayed
+ * on screen next to Google's real button. The photograph showed both, each squeezed.
+ */
+.gpanel-btn[hidden] {
+  display: none;
 }
 
 .gpanel-btn:hover {
@@ -5599,13 +5618,98 @@ body.planting {
 }
 
 /*
- * Google's own iframe, when it paints.
+ * Google's own button, when it paints.
  *
- * The container is sized so the two are interchangeable and nothing shifts. Google
- * renders its own border, so no styling is applied over it — fighting an opaque
- * cross-origin iframe is not possible anyway, and pretending otherwise would only
- * produce a button that looks broken.
+ * Current GIS renders a `div[role="button"]` rather than an iframe, so there is nothing
+ * here to restyle and nothing should try. An earlier version stretched `iframe` to 100%,
+ * written on the assumption that the button was an iframe; it did nothing for the div and
+ * would have distorted the iframe variant on older renderers.
+ *
+ * The container is full width so the button is centred by Google's own wrapper rather
+ * than inheriting a squeezed track from this one.
  */
-.gpanel-slot > div[style*="width"] {
-  margin: 0 auto;
+.gpanel-inner {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ==========================================================================
+   Sign-in gate (src/ui/signInGate.ts)
+   --------------------------------------------------------------------------
+   Full-screen and deliberately calm. This is the first thing a returning player sees,
+   so it carries the game's own voice rather than a browser dialog: same sheet, same
+   palette, same button weights as everywhere else.
+   ========================================================================== */
+
+.gate-overlay {
+  z-index: 40;
+}
+
+.gate-card {
+  max-width: 440px;
+}
+
+.gate-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.gate-mark {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  border-radius: 10px;
+  background: #eef7f0;
+  border: 1px solid #cfe4d4;
+}
+
+.gate-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.gate-sub {
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+
+/*
+ * The escape hatch.
+ *
+ * Styled as text rather than a button on purpose. It is a way out for a player whose
+ * Worker is down, not a peer of signing in, and giving it a button's weight would make
+ * it the second-most-attractive thing on the screen.
+ */
+.gate-skip {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 9px 0 2px;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted, #6b6355);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.gate-skip:hover {
+  color: var(--ink, #2b2620);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate-skip {
+    transition: none;
+  }
 }

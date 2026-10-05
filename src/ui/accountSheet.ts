@@ -1,9 +1,9 @@
 /** Account sheet: sign in, sign up, and see the sync state. */
 
 import { el, toast } from "./components";
-import { sfx } from "../audio/audio";
 import { googleSignInAvailable } from "../account/google";
 import { googlePanel } from "./googlePanel";
+import { buildEmailSignIn } from "./emailSignIn";
 import { AccountError, accountServiceAvailable } from "../account/api";
 import { sessionKind } from "../account/kind";
 import {
@@ -13,9 +13,7 @@ import {
   onAccountStatus,
   pull,
   push,
-  signIn,
   signOut,
-  signUp,
   takeServer,
   updatePassword,
   type AccountStatus,
@@ -134,82 +132,35 @@ function syncStrip(status: AccountStatus): HTMLElement {
 }
 
 function renderSignedOut(body: HTMLElement, render: () => void): void {
-  const email = el("input", { class: "field", type: "email", placeholder: "Email", autocomplete: "email" }) as HTMLInputElement;
-  const pass = el("input", { class: "field", type: "password", placeholder: "Mật khẩu (ít nhất 8 ký tự)", autocomplete: "current-password" }) as HTMLInputElement;
+  /*
+   * Shared with the sign-in gate.
+   *
+   * Was written out inline here, which meant the gate and this sheet were two
+   * implementations of the same form with no way to disagree loudly - and the divergence
+   * would only ever show up on one of them. It is a real <form> so Chrome offers the
+   * password manager and Enter-to-submit works without a hand-written keydown handler.
+   */
+  const email = buildEmailSignIn();
+  email.form.addEventListener("signed-in", () => {
+    toast("Đã đăng nhập.");
+    render();
+  });
+
   const note = el("p", { class: "tiny muted" }, [
     "Không bắt buộc. Không đăng nhập thì vườn chỉ nằm trên máy này và mất nếu xoá dữ liệu trình duyệt.",
   ]);
-  const err = el("p", { class: "account-err" });
 
-  let mode: "in" | "up" = "in";
-  const submit = el("button", { class: "btn primary wide" }, ["Đăng nhập"]);
-  const swap = el("button", { class: "btn ghost wide", style: "margin-top:8px" }, ["Chưa có tài khoản? Đăng ký"]);
-
-  const apply = (): void => {
-    submit.textContent = mode === "in" ? "Đăng nhập" : "Đăng ký";
-    swap.textContent = mode === "in" ? "Chưa có tài khoản? Đăng ký" : "Đã có tài khoản? Đăng nhập";
-    pass.autocomplete = mode === "in" ? "current-password" : "new-password";
-  };
-
-  const run = async (): Promise<void> => {
-    err.textContent = "";
-    if (!email.value.trim()) {
-      err.textContent = "Cần email.";
-      return;
-    }
-    submit.disabled = true;
-    submit.textContent = "Đang xử lý…";
-    try {
-      if (mode === "in") await signIn(email.value.trim(), pass.value);
-      else await signUp(email.value.trim(), pass.value);
-      sfx.play("levelUp");
-      toast("Đã đăng nhập.");
-      render();
-    } catch (e) {
-      err.textContent = explain(e);
-      sfx.play("error");
-    } finally {
-      submit.disabled = false;
-      apply();
-    }
-  };
-
-  submit.addEventListener("click", () => void run());
-  swap.addEventListener("click", () => {
-    mode = mode === "in" ? "up" : "in";
-    err.textContent = "";
-    apply();
-  });
-  for (const input of [email, pass]) {
-    input.addEventListener("keydown", (e) => {
-      if ((e as KeyboardEvent).key === "Enter") void run();
-    });
-  }
-
-  /*
-   * The Google panel is the primary action and comes first; the email form is the
-   * alternative, under a divider that says so.
-   *
-   * It gets its own error line rather than sharing `err`. A failure in the Google path
-   * and a failure in the form are different messages about different mistakes, and one
-   * shared line meant whichever wrote first hid the other.
-   */
   const google = googlePanel(render, () => {
-    // Nothing to do here: the panel writes its own message. The callback exists so the
-    // sheet can react later without the panel needing to know what a sheet is.
+    // The panel writes its own message.
   });
 
   body.append(
     syncStrip(accountStatus()),
     ...google.nodes,
     el("div", { class: "account-sep tiny muted" }, ["hoặc — đăng nhập bằng email"]),
-    el("div", { class: "account-fields" }, [email, pass]),
-    err,
-    submit,
-    swap,
+    email.form,
     note,
   );
-  apply();
 }
 
 function renderSignedIn(body: HTMLElement, render: () => void): void {
