@@ -54,6 +54,13 @@ export interface GooglePanelResult {
  */
 export function googlePanel(onSignedIn: () => void, onFailure: (message: string) => void): GooglePanelResult {
   const errorSlot = el("p", { class: "account-err" });
+  /*
+   * Progress lives here rather than inside `attempt`, so it is appended with the rest
+   * of the panel and occupies its line from the start. An empty paragraph is a fixed,
+   * predictable slot - adding the element only when there is something to say makes the
+   * form jump the first time a message appears.
+   */
+  const stepSlot = el("p", { class: "gpanel-step tiny muted" });
 
   const brand = el("div", { class: "gpanel-brand" });
   brand.innerHTML = GOOGLE_G;
@@ -84,17 +91,32 @@ export function googlePanel(onSignedIn: () => void, onFailure: (message: string)
     if (busy) return;
     busy = true;
     errorSlot.textContent = "";
+
+    // A visible step, because the alternative is a screen that looks frozen.
+    //
+    // Google sign-in has three phases separated by two round trips to different servers,
+    // and the failure modes are entirely different: the popup never opened, the Worker
+    // rejected the token, or the token never came back. A single "hangs" gives the
+    // player nothing to report and gives me nothing to go on either.
+    const setStep = (text: string): void => {
+      stepSlot.textContent = text;
+    };
+
     action.classList.add("is-busy");
     try {
+      setStep("Đang mở cửa sổ đăng nhập Google…");
       const idToken = await requestGoogleIdToken();
+
+      setStep("Đang xác thực với máy chủ…");
       const session = await signInWithGoogle(idToken);
+
+      setStep("Đang đồng bộ vườn…");
       sfx.play("levelUp");
-      // "mối" is not Vietnamese - it means a romantic partner. The message is about
-      // creating an account, so it says that.
       toast(session.created ? "Đã tạo tài khoản. Đã đồng bộ." : "Đã quay lại. Đồng bộ xong.");
       onSignedIn();
     } catch (e) {
       const message = e instanceof GoogleSignInError ? googleFailureMessage(e.code) : describe(e);
+      setStep("");
       // Cancellation is not an error. Saying "sign-in failed" after the player
       // deliberately closed the popup is the kind of small lie that teaches people to
       // distrust the messages.
@@ -146,7 +168,7 @@ export function googlePanel(onSignedIn: () => void, onFailure: (message: string)
   // One wrapper, assembled in the order a reader should meet them: who this is, the
   // button, what went wrong if anything, then what is and is not being asked for.
   const wrap = el("div", { class: "gpanel-wrap" });
-  wrap.append(slot, errorSlot, reassurance);
+  wrap.append(slot, stepSlot, errorSlot, reassurance);
 
   return { nodes: [wrap], run: () => void attempt(), errorSlot };
 }

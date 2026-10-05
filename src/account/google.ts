@@ -189,8 +189,13 @@ export async function requestGoogleIdToken(): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const timer = window.setTimeout(() => {
       inFlight = null;
-      reject(new GoogleSignInError("no_token", "Google did not return a token in time"));
-    }, 90_000);
+      reject(
+        new GoogleSignInError(
+          "no_token",
+          "Google không trả về mã đăng nhập. Nếu bạn đã chọn tài khoản xong mà vẫn bị kẹt, hãy kiểm tra header Cross-Origin-Opener-Policy của trang là same-origin-allow-popups.",
+        ),
+      );
+    }, 45_000);
 
     inFlight = {
       resolve: (token) => {

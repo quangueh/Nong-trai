@@ -189,7 +189,9 @@ export async function signUp(email: string, password: string): Promise<void> {
 export async function signIn(email: string, password: string): Promise<void> {
   const session: AccountSession = await apiLogin(email, password);
   adoptSession(session.token, email);
-  await pull(true);
+  // Bounded for the same reason as the Google path: a slow Worker must not be able to
+  // keep a player out of the game they have just signed in to.
+  await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull(true));
 }
 
 /**
@@ -222,10 +224,48 @@ function adoptSession(newToken: string, email: string, kind: SessionKind = "pass
  * would be, including the initial pull, so a returning player lands on the garden they
  * left rather than on a blank one.
  */
+/**
+ * How long sign-in will wait for the garden before letting the player in anyway.
+ *
+ * Authentication and synchronisation are different concerns, and a failure in the second
+ * must not block the first. `pull` already swallows its own errors, so this bounds the
+ * time it can take rather than the outcome - but a slow Worker and a hung one look
+ * identical from outside, and only one of them should be able to keep a player out of a
+ * game they have just proved they own.
+ */
+const ENTRY_SYNC_TIMEOUT_MS = 8000;
+
+async function settleWithin(ms: number, work: Promise<unknown>): Promise<boolean> {
+  // Widened rather than `number`: this one source compiles for Node, whose setTimeout
+  // returns a Timeout object, and for the browser, which returns a number. A cast at the
+  // call site would silence a real mismatch instead of describing it.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const cap = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  const done = work.then(
+    () => true,
+    () => true,
+  );
+  try {
+    return await Promise.race([done, cap]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
+ * Sign in with Google.
+ *
+ * The browser only forwards an ID token; the Worker verifies it and is the only party
+ * that decides who this is. The session is adopted exactly as a password session would
+ * be, and the gate opens on that alone - the garden sync is allowed to finish behind the
+ * player rather than in front of them.
+ */
 export async function signInWithGoogle(idToken: string): Promise<{ created: boolean; email: string }> {
   const session = await apiGoogleSignIn(idToken);
   adoptSession(session.token, session.email ?? session.name ?? "Google", "google");
-  await pull(true);
+  await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull(true));
   return { created: session.created, email: session.email ?? "" };
 }
 
