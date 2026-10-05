@@ -351,12 +351,23 @@ await render("lab renders", () => navigate("lab"));
   check("offers seed packs", t.includes("x10 ·"), "per-card bulk buy, 5% off");
 
   const coinsBefore = store.state.leafCoin;
-  // Must be an *enabled* button. The shelf now lists locked species, and their buy
-  // buttons carry the coin glyph and are disabled — so the first matching button is
-  // no longer a buyable one, and this line was clicking a dead control and reporting
-  // that buying does not work.
-  const buyable = $$(".screen .btn").find((b) => b.textContent?.includes("🪙") && !(b as HTMLButtonElement).disabled);
-  check("the shelf offers at least one purchasable seed", !!buyable, `${$$(".screen .btn").filter((b) => b.textContent?.includes("🪙") && !(b as HTMLButtonElement).disabled).length} enabled`);
+  /* Scoped to the shelf grid, and must be *enabled*.
+   *
+   * Both halves are load-bearing, and the first one was learned the hard way. The filter
+   * bar carries currency chips labelled "🪙 49031" - the same glyph a buy button carries -
+   * and a screen-wide "first button with a coin in it" picked a *filter chip*, clicked it,
+   * and reported that buying does not deduct anything. The chips sit above the shelf, so
+   * they always won. Nothing about the shop was broken; the question was asked of the
+   * wrong element. And within the grid, locked species have a coin glyph on a disabled
+   * button, so a match without the enabled check clicks a dead control. */
+  const buyable = $$(".screen .seed-grid .btn").find(
+    (b) => b.textContent?.includes("\u{1FA99}") && !(b as HTMLButtonElement).disabled,
+  );
+  check(
+    "the shelf offers at least one purchasable seed",
+    !!buyable,
+    `${$$(".screen .seed-grid .btn").filter((b) => b.textContent?.includes("\u{1FA99}") && !(b as HTMLButtonElement).disabled).length} enabled`,
+  );
   await render("buy a seed", () => click(buyable!));
   check("buying deducts coins", store.state.leafCoin < coinsBefore, `${coinsBefore} -> ${store.state.leafCoin}`);
 

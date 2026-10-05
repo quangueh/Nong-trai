@@ -5,6 +5,7 @@ import { MAX_PLOTS, RULE_LABEL, checkUnlock, plotStatuses } from "../../config/u
 import { el, toast, fmt, seedChip, seedIcon } from "../components";
 import { store } from "../app";
 import { plantDisplayName } from "../../core/plantNames";
+import { CURRENCIES } from "../../core/currency";
 import { currencyIcon } from "../../core/currency";
 import { getSpecies, type SpeciesDef } from "../../config/species";
 import { ELEMENTS, ELEMENT_INFO } from "../../config/elements";
@@ -15,6 +16,7 @@ import {
   featuredSpecies,
   queryCatalogue,
   TIER_UNLOCK,
+  type CatalogueSort,
 } from "../../economy/shop";
 import { canSell } from "../../growth/stages";
 
@@ -77,6 +79,18 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
   let lockFilter: "all" | "open" | "locked" = "all";
   let element: string | null = null;
   let archetype: string | null = null;
+  /**
+   * Shelf order, and whether to hide what the player cannot pay for.
+   *
+   * Both live here rather than in the query because this screen owns them; they are handed
+   * to the query, which applies them before it paginates.
+   */
+  let sort: CatalogueSort = "default";
+  let affordableOnly = false;
+  /** Which currency's shelf to browse. Null means all four at once. */
+  let currency: string | null = null;
+  /** Whether the nineteen element/archetype chips are showing. Closed by default. */
+  let fancyOpen = false;
   let page = 1;
 
   const list = el("div");
@@ -168,23 +182,111 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
       b.addEventListener("click", apply);
       optRow.appendChild(b);
     };
-    for (const e of ELEMENTS) {
-      const on = element === e;
-      optChip(ELEMENT_INFO[e].name, on, () => {
-        element = on ? null : e;
-        page = 1;
-        repaint();
-      });
-    }
-    for (const a of ["tank", "burst", "sustain", "control", "tempo", "counter"] as const) {
-      const on = archetype === a;
-      optChip(ARCHETYPE_ROLE[a], on, () => {
-        archetype = on ? null : a;
-        page = 1;
-        repaint();
-      });
+    /*
+     * Elements and archetypes, folded away by default.
+     *
+     * This row is nineteen chips long and it was always the least-used filter on the
+     * screen. Left open it pushes the shelf itself below the fold on a phone, and a shop
+     * whose first screen is nineteen buttons is a shop nobody scrolls past. The toggle says
+     * how many are active, so a filter set here is still visible from the collapsed state
+     * rather than becoming invisible work.
+     */
+    const fancyCount = (element ? 1 : 0) + (archetype ? 1 : 0);
+    const fancyBtn = el("button", { class: "btn xs" + (fancyOpen ? " primary" : "") }, [
+      fancyOpen ? "▾ Nguyên tố" : `▸ Nguyên tố${fancyCount ? ` (${fancyCount})` : ""}`,
+    ]);
+    fancyBtn.addEventListener("click", () => {
+      fancyOpen = !fancyOpen;
+      repaint();
+    });
+    optRow.appendChild(fancyBtn);
+    if (fancyOpen) {
+      for (const e of ELEMENTS) {
+        const on = element === e;
+        optChip(ELEMENT_INFO[e].name, on, () => {
+          element = on ? null : e;
+          page = 1;
+          repaint();
+        });
+      }
+      for (const a of ["tank", "burst", "sustain", "control", "tempo", "counter"] as const) {
+        const on = archetype === a;
+        optChip(ARCHETYPE_ROLE[a], on, () => {
+          archetype = on ? null : a;
+          page = 1;
+          repaint();
+        });
+      }
     }
     wrap.appendChild(optRow);
+
+    // Price order, and affordability.
+    //
+    // Put after the element and archetype chips because those narrow *which* plants are
+    // shown and these only decide *in what order* - so a player who has just filtered to
+    // "Lửa" is not made to re-pick the order afterwards.
+    const sortRow = el("div", { class: "scrollx", style: "gap:6px;margin-bottom:10px" });
+    const sortChip = (label: string, value: CatalogueSort) => {
+      const b = el("button", { class: "btn xs" + (sort === value ? " primary" : "") }, [label]);
+      b.addEventListener("click", () => {
+        sort = value;
+        page = 1;
+        repaint();
+      });
+      sortRow.appendChild(b);
+    };
+    sortChip("↕ Mặc định", "default");
+    sortChip("💰 Giá thấp → cao", "price-asc");
+    sortChip("💎 Giá cao → thấp", "price-desc");
+
+    // "Can I afford this" is the question a price order exists to answer, and it cannot be
+    // answered from the order alone now that a shelf carries four currencies: the cheapest
+    // card may be priced in Pollen the player holds none of. This is the toggle that makes
+    // ascending order actionable.
+    const affordChip = el("button", { class: "btn xs" + (affordableOnly ? " primary" : "") }, [
+      affordableOnly ? "✓ Chỉ loài tôi đủ tiền" : "Chỉ loài tôi đủ tiền",
+    ]);
+    affordChip.addEventListener("click", () => {
+      affordableOnly = !affordableOnly;
+      page = 1;
+      repaint();
+    });
+    sortRow.appendChild(affordChip);
+
+    wrap.appendChild(sortRow);
+
+    // Which currency's shelf to browse.
+    //
+    // The default order leads with tier 0, which is entirely LeafCoin - so without this a
+    // player browsing the shop sees one currency and never learns the other three exist.
+    //
+    // Its own row, and icon-plus-balance rather than name-and-balance. Folded into the sort
+    // row it did not fit: nine chips in a 780px column put the four currency chips entirely
+    // off the right edge, which is worse than an extra row - a filter nobody can see is not
+    // a filter. The full name moved into the tooltip, where it costs no width.
+    const curRow = el("div", { class: "scrollx", style: "gap:6px;margin-bottom:12px" });
+    const balances: Record<string, number> = {
+      leafCoin: store.state.leafCoin,
+      nectar: store.state.nectar,
+      pollen: store.state.pollen,
+      ember: store.state.ember,
+    };
+    const curChip = (label: string, title: string, value: string | null) => {
+      const b = el("button", { class: "btn xs" + (currency === value ? " primary" : ""), title }, [label]);
+      b.addEventListener("click", () => {
+        currency = value;
+        page = 1;
+        repaint();
+      });
+      curRow.appendChild(b);
+    };
+    curChip("Mọi tiền tệ", "Mọi tiền tệ", null);
+    for (const c of CURRENCIES) {
+      const held = Math.round(balances[c.id] ?? 0);
+      curChip(`${c.icon} ${held.toLocaleString("vi-VN")}`, `${c.name} — bạn đang có ${held.toLocaleString("vi-VN")}`, c.id);
+    }
+    wrap.appendChild(curRow);
+
     return wrap;
   };
 
@@ -222,6 +324,17 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
       archetype,
       page,
       perPage: 24,
+      sort,
+      affordableOnly,
+      currency,
+      // What the player holds in each currency, so "can I afford this" can be answered
+      // per species - the shelf is priced in four of them.
+      balances: {
+        leafCoin: store.state.leafCoin,
+        nectar: store.state.nectar,
+        pollen: store.state.pollen,
+        ember: store.state.ember,
+      },
       // Handed in rather than built here: the query needs the real nursery to
       // tell a gated species from an open one.
       progress: store.unlockContext(),

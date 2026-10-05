@@ -127,13 +127,68 @@ export interface CatalogueQuery {
    * locked.
    */
   progress?: UnlockContext;
+  /**
+   * The player's balances, keyed by currency, for `affordableOnly`.
+   *
+   * Passed in for the same reason `progress` is: this module is pure and has no access to
+   * the store. A partial map is fine - a currency that is absent reads as zero, which is
+   * the honest reading of "we were not told you hold any of that".
+   */
+  balances?: Partial<Record<string, number>>;
   search?: string;
   tier?: number | null;
   element?: string | null;
   archetype?: string | null;
   page?: number;
   perPage?: number;
+  /**
+   * How the shelf is ordered.
+   *
+   * "default" is the order the registry is meant to be read in: cheapest tier first, and
+   * cheapest first within it, so the shelf leads with what a new player can actually buy.
+   *
+   * The price orders are here rather than in the screen because **the shelf is paginated**.
+   * Sorting a page after it has been sliced sorts twenty-four cards in isolation, and the
+   * second page then arrives in an order that contradicts the first - which is not a sort at
+   * all, it is a shuffle with extra steps.
+   */
+  sort?: CatalogueSort;
+  /**
+   * Only species whose price the player can currently pay.
+   *
+   * Not a filter on `locked`: a species can be unlocked and still unaffordable, and
+   * "unlocked" is the wrong word for what a price-ordered shelf actually needs. Reads each
+   * balance in the currency that species is *sold* in, which is why it cannot be answered
+   * without the multi-currency shop.
+   */
+  affordableOnly?: boolean;
+  /**
+   * Show only the species sold in one currency.
+   *
+   * Exists because the default order leads with tier 0, which is entirely LeafCoin - so a
+   * player browsing the shop sees one currency and has no way to learn the other three
+   * exist. Sorting by price did not fix that either: cheapest-first across four currencies
+   * is still cheapest-first, and the cheapest card on the shelf may be priced in a
+   * currency its reader holds none of. Being able to say "show me the Pollen shelf" is the
+   * thing that makes a four-currency shop usable.
+   */
+  currency?: string | null;
 }
+
+/**
+ * The orders offered.
+ *
+ * Named for what they do rather than where they point, so adding one does not mean
+ * renumbering the others.
+ */
+export type CatalogueSort = "default" | "price-asc" | "price-desc";
+
+/** What each order is called on the filter chip. */
+export const SORT_LABEL: Record<CatalogueSort, string> = {
+  default: "Mặc định",
+  "price-asc": "Giá thấp → cao",
+  "price-desc": "Giá cao → thấp",
+};
 
 export interface CataloguePage {
   entries: ShopEntry[];
@@ -174,17 +229,48 @@ export function queryCatalogue(q: CatalogueQuery): CataloguePage {
     if (q.tier != null && s.tier !== q.tier) return false;
     if (q.archetype && s.archetype !== q.archetype) return false;
     if (q.element && dominantElement(speciesAffinity(s.id)).id !== q.element) return false;
+    if (q.currency && s.currency !== q.currency) return false;
     if (needle && !searchable(s.name).includes(needle)) return false;
     return true;
   });
 
-  // Cheapest first within a tier, so the shelf leads with what the player can buy.
-  matched.sort((a, b) => a.tier - b.tier || a.seedPrice - b.seedPrice || a.name.localeCompare(b.name, "vi"));
+  // Affordability, judged before anything is ordered, because a price sort is only
+  // meaningful against a balance. A species costs its own currency, so this compares each
+  // price against the balance for *that* currency rather than against one purse - which is
+  // the whole point of having more than one.
+  const affordable = q.affordableOnly
+    ? matched.filter((s) => {
+        const held = q.balances?.[s.currency] ?? 0;
+        return held >= s.seedPrice;
+      })
+    : matched;
 
-  const total = matched.length;
+  /*
+   * Ordered here, before the slice, because the shelf is paginated. Ordering after the
+   * slice would sort each page in isolation and the second page would contradict the
+   * first.
+   *
+   * Every comparator ends in the name, and that is not decoration: `Array.sort` is stable
+   * in modern engines, but stability is only a tie-break between *equal* keys, and two
+   * species can share a price. Without the name the order of equal-priced cards would
+   * depend on the order the registry happened to be generated in, so paging through the
+   * same shelf twice could show the same species on two pages.
+   */
+  const byName = (a: (typeof affordable)[number], b: (typeof affordable)[number]) => a.name.localeCompare(b.name, "vi");
+  const sort = q.sort ?? "default";
+  if (sort === "price-asc") {
+    affordable.sort((a, b) => a.seedPrice - b.seedPrice || byName(a, b));
+  } else if (sort === "price-desc") {
+    affordable.sort((a, b) => b.seedPrice - a.seedPrice || byName(a, b));
+  } else {
+    // Cheapest tier first, cheapest within it: the shelf leads with what can be bought.
+    affordable.sort((a, b) => a.tier - b.tier || a.seedPrice - b.seedPrice || byName(a, b));
+  }
+
+  const total = affordable.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
   const page = Math.min(Math.max(1, q.page ?? 1), pages);
-  const slice = matched.slice((page - 1) * perPage, page * perPage);
+  const slice = affordable.slice((page - 1) * perPage, page * perPage);
 
   return {
     entries: slice.map((s) => {
