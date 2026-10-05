@@ -81,7 +81,14 @@ export function openAccount(): void {
           "Chưa cấu hình dịch vụ tài khoản. Game vẫn chơi bình thường, vườn được lưu trên máy này.",
         ]),
         el("p", { class: "tiny muted", style: "margin-top:8px" }, [
-          "Để bật: đặt VITE_ACCOUNT_API trong .env rồi dựng Worker theo worker/README.md.",
+          // Both variables are named, not just the first one. Sign-in needs the Worker,
+          // so Google sign-in is unreachable without it too — and a message that
+          // mentioned only VITE_ACCOUNT_API would have sent someone off to set that and
+          // then wondered why no Google button appeared.
+          "Để bật: đặt VITE_ACCOUNT_API trong .env rồi dựng Worker theo worker/README.md." +
+            (googleSignInAvailable
+              ? ""
+              : " Ngoài ra cần VITE_GOOGLE_CLIENT_ID để bật đăng nhập Google."),
         ]),
       );
       return;
@@ -246,14 +253,14 @@ function googleSection(err: HTMLElement): HTMLElement[] {
       if (painted) return;
       slot.replaceChildren(
         el("div", { class: "tiny muted", style: "text-align:center;padding:6px 0" }, [
-          "Không tải được nùt đăng nhập Google. Bạn vẫn đăng nhập bằng email được dưới.",
+          "Không tải được nút đăng nhập Google. Bạn vẫn đăng nhập bằng email được dưới.",
         ]),
       );
     })
     .catch(() => {
       slot.replaceChildren(
         el("div", { class: "tiny muted", style: "text-align:center;padding:6px 0" }, [
-          "Không tải được nùt đăng nhập Google.",
+          "Không tải được nút đăng nhập Google.",
         ]),
       );
     });

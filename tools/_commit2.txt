@@ -1,0 +1,14 @@
+Set the Google client id, and fix a silent empty sign-in button
+
+- GOOGLE_CLIENT_ID in wrangler.toml and VITE_GOOGLE_CLIENT_ID in the local .env.
+  The two must match: the Worker checks the token's aud claim against its own copy,
+  and a mismatch refuses every sign-in with no message the player can act on.
+- renderGoogleButton returned true after an unchecked renderButton call. It can
+  finish without painting - unsupported origin, blocked iframe, stale script - and
+  the caller, seeing true, skipped its fallback and left an empty box. A blank area
+  reads as "this game has no Google sign-in". It now waits frames for the button to
+  appear and reports honestly when it did not.
+- The "service not configured" notice named only VITE_ACCOUNT_API. Google sign-in
+  needs the Worker too, so following it left you setting one variable and then
+  wondering why no Google button appeared.
+- Fixed a typo in two Vietnamese strings written through a patch script.

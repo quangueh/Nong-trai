@@ -173,7 +173,25 @@ export async function renderGoogleButton(parent: HTMLElement): Promise<boolean> 
       text: "continue_with",
       width: Math.min(320, Math.max(220, parent.clientWidth || 280)),
     });
-    return true;
+    /*
+     * Verify that something actually landed in the container.
+     *
+     * Returning true after an unchecked call was a real bug and produced the exact
+     * failure this module exists to avoid: `renderButton` can complete without painting
+     * — an unsupported origin, a blocked iframe, a stale script — and the caller, seeing
+     * `true`, skipped its fallback and left an empty box. A player looking at a blank
+     * area has no way to tell whether the game lacks Google sign-in or their browser
+     * blocked it.
+     *
+     * Two frames, because Google builds the button asynchronously: an iframe is the
+     * normal case, and a styled div is the fallback some configurations render.
+     */
+    for (let i = 0; i < 20; i++) {
+      if (parent.firstElementChild) return true;
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    parent.replaceChildren();
+    return false;
   } catch {
     return false;
   }

@@ -32,7 +32,7 @@ PBKDF2_ROUNDS = "150000"
 # It does NOT need to be a secret. What matters is that it matches
 # VITE_GOOGLE_CLIENT_ID in the game's .env, because the token's "aud" claim is
 # checked against it and a mismatch refuses every sign-in.
-GOOGLE_CLIENT_ID = ""
+GOOGLE_CLIENT_ID = "985241634573-u19ok6lg1vt7i2f221hr2smrmbs0v3nl.apps.googleusercontent.com"
 
 # Note on the KV tier: the free plan allows roughly 1,000 writes per day. The
 # client syncs on login, on demand, and occasionally — not on every mutation —
