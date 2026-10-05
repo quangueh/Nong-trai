@@ -125,6 +125,13 @@ body {
   flex: none;
 }
 
+/* The pills never shrink and the brand always does, so the bar's width is decided by
+   however many balances are on it. Below 560px the two care materials come off (see the
+   media query); above it there is room for everything. Making the bar a scroll container
+   instead was tried and is worse: it stops the flex children from sharing the width, the
+   brand collapses to zero, and a game with no title on a phone is a worse trade than one
+   that has to scroll. */
+
 .brand {
   display: flex;
   align-items: center;
@@ -132,8 +139,12 @@ body {
   font-weight: 800;
   letter-spacing: -0.02em;
   font-size: 15px;
-  flex: 1;
+  /* `flex: 1 1 0` rather than `flex: 1`. With a zero basis the brand is the first thing
+     to lose width in a crowded bar and it ends up at zero - which is how the game ended up
+     with no title on a phone while every balance stayed full size. */
+  flex: 1 1 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 /* The title is a single line at any width. Wrapping it is what produced a
@@ -3523,7 +3534,7 @@ body.planting {
   .topbar {
     padding-left: 10px;
     padding-right: 10px;
-    gap: 6px;
+    gap: 5px;
   }
 
   .brand {
@@ -3545,9 +3556,26 @@ body.planting {
   }
 
   .topbar .pill {
-    padding-left: 8px;
-    padding-right: 8px;
+    padding-left: 7px;
+    padding-right: 7px;
     font-size: 11.5px;
+  }
+
+  /* The two care materials come off the bar on a narrow screen. They were the pills
+     pushing the settings button - and therefore the whole settings sheet - past the right
+     edge, where it could not be reached at all. A HUD that hides its own settings is
+     worse than a HUD that shows one fewer number. */
+  .topbar .pill.material {
+    display: none;
+  }
+
+  /* The title goes before anything else does.
+     The brand is the one flexible child in a bar full of fixed-width balances, so it
+     absorbs every pixel of pressure and ends up at zero - the game loses its name rather
+     than a number being abbreviated. Four balances plus the level badge need about 320px,
+     which leaves room for the logo on a 390px phone and not for the words beside it. */
+  .brand > div:last-child {
+    display: none;
   }
 }
 
@@ -6003,6 +6031,78 @@ body.planting {
   border-color: var(--accent-bright);
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* A currency pill. Ember gets its own so the one number a player is hunting for is not
+   lost between two larger ones, and the pair pill holds the mid-game currencies so seven
+   pills do not have to fit a phone. */
+.pill.ember {
+  background: linear-gradient(180deg, #ffe0b0, #f7c46a);
+  border-color: #d99b3a;
+  color: #6e4912;
+}
+
+.pill.pair {
+  gap: 4px;
+}
+
+.pill .pair-sep {
+  opacity: 0.4;
+  margin: 0 1px;
+}
+
+/* A brief lift when a balance changes, so earning is felt rather than read. Removed and
+   re-added with a reflow between, because toggling a class twice in one frame is
+   coalesced away and the animation never runs. */
+.pill.bump {
+  animation: pill-bump 0.42s var(--spring);
+}
+
+@keyframes pill-bump {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.14);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* One dropped currency on the result receipt, name left and amount right. Separate lines
+   rather than one joined string so a 3 reads as 3 and not as part of a longer number. */
+.drop-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.drop-line.is-empty {
+  color: var(--muted);
+  font-weight: 500;
+  font-style: italic;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill.bump {
+    animation: none;
+  }
+}
+
+/* A currency's label, where the shop says what a price is in. */
+.cur-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-2);
 }
 
 @media (prefers-reduced-motion: reduce) {

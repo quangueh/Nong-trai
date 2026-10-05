@@ -12,6 +12,7 @@ import { accountStatus, initAccount, isSignedIn, onAccountStatus } from "../acco
 import { showSignInGateIfNeeded } from "./signInGate";
 import { openAccount } from "./accountSheet";
 import { SPECIES_BY_ID } from "../config/species";
+import { CURRENCIES, compactNumber, type CurrencyId } from "../core/currency";
 import { onSlotChange, restoreActiveAccount } from "../core/saveSlot";
 
 import type { Screen } from "./screens/types";
@@ -44,6 +45,10 @@ let noticeHost: HTMLElement | null = null;
 let current: Screen = "garden";
 let screenHost: HTMLElement;
 let navHost: HTMLElement;
+let emberPill: HTMLElement;
+let pairPill: HTMLElement;
+/** The last balances updatePills wrote, so it can tell which pill changed. */
+let lastBalances: { leafCoin: number; ember: number; nectar: number; pollen: number } | null = null;
 let coinPill: HTMLElement;
 let crystalPill: HTMLElement;
 let itemPill: HTMLElement;
@@ -165,7 +170,34 @@ function openSettings(): void {
 }
 
 function updatePills() {
-  coinPill.replaceChildren(el("span", {}, ["🪙"]), el("span", { class: "mono" }, [fmtInt(store.state.leafCoin)]));
+  for (const id of ["leafCoin", "ember"] as const) {
+    const pill = id === "leafCoin" ? coinPill : emberPill;
+    if (pill) pill.classList.remove("bump");
+  }
+  coinPill.replaceChildren(el("span", {}, ["🪙"]), el("span", { class: "mono" }, [compactNumber(store.state.leafCoin)]));
+  emberPill.replaceChildren(el("span", {}, ["🔥"]), el("span", { class: "mono" }, [compactNumber(store.state.ember)]));
+  pairPill.replaceChildren(
+    el("span", {}, ["🍯"]),
+    el("span", { class: "mono" }, [compactNumber(store.state.nectar)]),
+    el("span", { class: "pair-sep" }, ["/"]),
+    el("span", {}, ["🌼"]),
+    el("span", { class: "mono" }, [compactNumber(store.state.pollen)]),
+  );
+
+  // A brief lift on the pill that changed, so earning a currency is felt rather than
+  // read. Skipped on the first call, when there is no previous value to compare against.
+  if (lastBalances) {
+    for (const [id, pill] of [["leafCoin", coinPill], ["ember", emberPill]] as const) {
+      if (lastBalances[id] !== store.state[id]) {
+        pill.classList.remove("bump");
+        // Reflow, so removing and re-adding restarts the animation rather than being
+        // coalesced away.
+        void pill.offsetWidth;
+        pill.classList.add("bump");
+      }
+    }
+  }
+  lastBalances = { leafCoin: store.state.leafCoin, ember: store.state.ember, nectar: store.state.nectar, pollen: store.state.pollen };
   crystalPill.replaceChildren(el("span", {}, ["💎"]), el("span", { class: "mono" }, [String(store.state.geneCrystal)]));
   itemPill.replaceChildren(el("span", {}, ["🧺"]), el("span", { class: "mono" }, [String(store.state.items)]));
 }
@@ -346,8 +378,16 @@ export function boot(root: HTMLElement) {
   });
 
   coinPill = el("div", { class: "pill coin" });
-  crystalPill = el("div", { class: "pill crystal" });
-  itemPill = el("div", { class: "pill" });
+  crystalPill = el("div", { class: "pill crystal material" });
+  /**
+     * Gene crystals and supplies are care *materials*, not shop currencies. They are the
+     * two pills the narrow layout drops, because each is already printed as a cost on the
+     * action that spends it.
+     */
+    itemPill = el("div", { class: "pill material" });
+  emberPill = el("div", { class: "pill ember", title: "Mảnh lửa — rớt khi đấu, tối đa 3 mỗi ngày" });
+  /** Nectar and Pollen share one pill, because seven pills do not fit a phone. */
+  pairPill = el("div", { class: "pill pair", title: "Mật ong và Phấn hoa — bấm để xem nguồn" });
   /**
    * Settings.
    *
@@ -362,7 +402,16 @@ export function boot(root: HTMLElement) {
     sfx.play("tap");
     openSettings();
   });
-  topbar.append(levelBadge, brand, coinPill, crystalPill, itemPill, settings);
+  topbar.append(levelBadge, brand, coinPill, emberPill, pairPill, crystalPill, itemPill, settings);
+
+  // Tapping the shared pill says what each half is for and where it comes from, since a
+  // two-number pill is not self-explanatory and the shop's cards now name currencies.
+  pairPill.addEventListener("click", () => {
+    const rows = CURRENCIES.filter((c) => c.id === "nectar" || c.id === "pollen").map(
+      (c) => `${c.icon} ${c.name}: ${fmtInt(store.state[c.id as CurrencyId])} — ${c.source}`,
+    );
+    toast(rows.join("  ·  "), 4200);
+  });
 
   /**
    * Interface clicks, delegated.

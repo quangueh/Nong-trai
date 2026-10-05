@@ -72,31 +72,49 @@ for (const vp of VIEWPORTS) {
 
     // Measured, not eyeballed: overflow and clipping are the failures a screenshot
     // shows only if you know to look for them.
+    //
+    // Scoped to the shell, not to `.screen`. The top bar is where a wide layout breaks
+    // first - seven currency pills overflowed it on a phone and pushed the settings
+    // button off the right edge, which this harness reported as clean because it only
+    // ever looked inside the screen.
     const report = (await page.evaluate(`(() => {
       const doc = document.documentElement;
-      const overflowing = [...document.querySelectorAll(".screen *")]
+      const scope = ".screen *, .topbar *, .bottomnav *";
+      const overflowing = [...document.querySelectorAll(scope)]
         .filter((n) => n.scrollWidth > n.clientWidth + 2 && getComputedStyle(n).overflowX !== "auto" && getComputedStyle(n).overflowX !== "scroll")
         .slice(0, 4)
-        .map((n) => (n.className || n.tagName) + " " + n.scrollWidth + ">" + n.clientWidth);
-      const clipped = [...document.querySelectorAll(".screen *")]
+        .map((n) => (n.getAttribute("class") || n.tagName) + " " + n.scrollWidth + ">" + n.clientWidth);
+      const clipped = [...document.querySelectorAll(scope)]
         .filter((n) => {
           const cs = getComputedStyle(n);
           return (cs.textOverflow === "ellipsis" || cs.overflow === "hidden") && n.scrollWidth > n.clientWidth + 2;
         })
         .slice(0, 4)
-        .map((n) => (n.className || n.tagName) + " " + (n.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 30));
+        .map((n) => (n.getAttribute("class") || n.tagName) + " " + (n.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 30));
+
+      // A control that cannot be reached is worse than one that looks wrong, so the last
+      // child of each bar is checked against the viewport rather than against its parent.
+      const offscreen = [...document.querySelectorAll(".topbar > *, .bottomnav > *")]
+        .filter((n) => {
+          const r = n.getBoundingClientRect();
+          return r.width > 0 && r.right > doc.clientWidth + 1;
+        })
+        .map((n) => (n.getAttribute("class") || n.tagName) + " right=" + Math.round(n.getBoundingClientRect().right) + "/" + doc.clientWidth);
+
       return {
         docScroll: doc.scrollHeight > doc.clientHeight ? doc.scrollHeight + ">" + doc.clientHeight : "none",
         chars: (document.querySelector(".screen") || {}).textContent?.length ?? 0,
         overflowing,
         clipped,
+        offscreen,
       };
-    })()`)) as { docScroll: string; chars: number; overflowing: string[]; clipped: string[] };
+    })()`)) as { docScroll: string; chars: number; overflowing: string[]; clipped: string[]; offscreen: string[] };
 
     const flags: string[] = [];
     if (report.docScroll !== "none") flags.push("document scrolls " + report.docScroll);
     if (report.overflowing.length) flags.push("overflow " + JSON.stringify(report.overflowing));
     if (report.clipped.length) flags.push("clipped " + JSON.stringify(report.clipped));
+    if (report.offscreen.length) flags.push("UNREACHABLE " + JSON.stringify(report.offscreen));
     if (report.chars < 40) flags.push("suspiciously empty (" + report.chars + " chars)");
 
     console.log(

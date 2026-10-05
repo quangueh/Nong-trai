@@ -15,6 +15,7 @@ import { Rng, clamp, round2 } from "../core/rng";
 import type { UnlockReq } from "./unlocks";
 import { ELEMENTS, type ElementId } from "./elements";
 import { nameKey } from "../genetics/names";
+import { currencyForTier, type CurrencyId } from "../core/currency";
 
 /**
  * Species ids are open, not a closed union. The five starters are named; the
@@ -68,6 +69,15 @@ export interface SpeciesDef {
   id: SpeciesId;
   name: string;
   seedPrice: number;
+  /**
+   * Which currency this species' seed is sold in.
+   *
+   * Part of the definition rather than something the shop decides, so the price on a
+   * card, the price the store takes and the currency the ledger names are all reading
+   * one field. Derived once at build time from the tier by `currencyForTier`, which is
+   * where the reasoning lives.
+   */
+  currency: CurrencyId;
   /** Minutes to reach `mature`; the game runs a compressed table. */
   growMinutes: number;
   elements: Partial<Record<ElementId, number>>;
@@ -102,6 +112,9 @@ const STARTERS: readonly SpeciesDef[] = [
     blurb: "Thủ, phản đòn. Sống dai và gai sắc.",
     rarityHint: 0,
     tier: 0,
+    // LeafCoin: tier 0 is what a new player meets first, and a currency they
+    // have never earned would be a bad first minute.
+    currency: "leafCoin",
     statBias: { hp: 1.2, defense: 1.25, attack: 0.9, speed: 0.7, evasion: 0.6 },
     bodyBias: { stem: "thick", root: "deep", thorn: "barbed", leaf: "broad" },
     skillBias: { melee: 1.3, trap: 1.2, projectile: 0.6, shield: 0.9 },
@@ -116,6 +129,9 @@ const STARTERS: readonly SpeciesDef[] = [
     blurb: "Sát thương bùng nổ, chết nhanh.",
     rarityHint: 0,
     tier: 0,
+    // LeafCoin: tier 0 is what a new player meets first, and a currency they
+    // have never earned would be a bad first minute.
+    currency: "leafCoin",
     statBias: { attack: 1.3, crit: 1.25, speed: 0.95, hp: 0.8, defense: 0.7 },
     bodyBias: { stem: "lean", leaf: "serrated", flower: "ember_core", aura: "warm_glow" },
     skillBias: { projectile: 1.4, dot: 1.3, aura: 1.1 },
@@ -130,6 +146,9 @@ const STARTERS: readonly SpeciesDef[] = [
     blurb: "Hồi phục và làm chậm. Kéo dài trận.",
     rarityHint: 0,
     tier: 0,
+    // LeafCoin: tier 0 is what a new player meets first, and a currency they
+    // have never earned would be a bad first minute.
+    currency: "leafCoin",
     statBias: { hp: 1.15, skillPower: 1.15, defense: 1.05, attack: 0.7, crit: 0.6 },
     bodyBias: { stem: "slender", leaf: "round", flower: "dew_bloom", fruit: "pearl" },
     skillBias: { heal: 1.5, shield: 1.3, control: 1.1, aura: 1.2 },
@@ -144,6 +163,9 @@ const STARTERS: readonly SpeciesDef[] = [
     blurb: "Tốc độ và chí mạng. Ép nhịp đối thủ.",
     rarityHint: 0,
     tier: 0,
+    // LeafCoin: tier 0 is what a new player meets first, and a currency they
+    // have never earned would be a bad first minute.
+    currency: "leafCoin",
     statBias: { speed: 1.35, crit: 1.2, attack: 1.05, hp: 0.8, defense: 0.7 },
     bodyBias: { stem: "vine", leaf: "arrow", aura: "spark", pattern: "veined" },
     skillBias: { chain: 1.5, projectile: 1.2, control: 1.0 },
@@ -158,6 +180,9 @@ const STARTERS: readonly SpeciesDef[] = [
     blurb: "Gây độc và làm suy giảm đối thủ. Thắng bằng kiểm soát nhịp đánh.",
     rarityHint: 0,
     tier: 0,
+    // LeafCoin: tier 0 is what a new player meets first, and a currency they
+    // have never earned would be a bad first minute.
+    currency: "leafCoin",
     statBias: { skillPower: 1.3, hp: 1.05, attack: 0.85, crit: 0.7, evasion: 0.9 },
     bodyBias: { fungus: "cap", flower: "spore_ring", aura: "spore_dust", pattern: "mottled" },
     skillBias: { dot: 1.5, control: 1.3, trap: 1.1, aura: 1.0 },
@@ -733,6 +758,11 @@ function generateSpecies(): SpeciesDef[] {
     }
     usedBlurbs.add(blurb);
 
+    // Named first because the currency is drawn from it as well as stored on the
+    // definition. A shorthand property cannot refer to itself, so this has to be a
+    // local rather than an inline `rarityHint:` twice.
+    const rarityHint = round2(clamp(0.08 + tier * 0.2 + rng.float(0, 0.12), 0, 1));
+
     out.push({
       id: `sp${i.toString().padStart(4, "0")}`,
       unlock: speciesUnlock(i),
@@ -742,8 +772,9 @@ function generateSpecies(): SpeciesDef[] {
       elements,
       archetype,
       blurb,
-      rarityHint: round2(clamp(0.08 + tier * 0.2 + rng.float(0, 0.12), 0, 1)),
+      rarityHint,
       tier,
+      currency: currencyForTier(tier, rarityHint),
       statBias,
       bodyBias,
       skillBias,

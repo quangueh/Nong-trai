@@ -5,6 +5,7 @@ import { MAX_PLOTS, RULE_LABEL, checkUnlock, plotStatuses } from "../../config/u
 import { el, toast, fmt, seedChip, seedIcon } from "../components";
 import { store } from "../app";
 import { plantDisplayName } from "../../core/plantNames";
+import { currencyIcon } from "../../core/currency";
 import { getSpecies, type SpeciesDef } from "../../config/species";
 import { ELEMENTS, ELEMENT_INFO } from "../../config/elements";
 import { ARCHETYPE_ROLE } from "../../config/balance";
@@ -65,8 +66,15 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
   // through the catalogue does not reset the shelf.
   let search = "";
   let tier: number | null = null;
-  /** False shows everything; true shows only what is still gated. */
-  let onlyLocked = false;
+  /**
+   * Three states, not two.
+   *
+   * This was a boolean, and "Chỉ loài đã mở" was wired to the same value as "Tất cả" -
+   * so asking the shop for the species you already own returned the locked ones as well,
+   * and both chips lit up at once because they were the same choice. A boolean cannot
+   * express "neither", which is exactly what a filter needs here.
+   */
+  let lockFilter: "all" | "open" | "locked" = "all";
   let element: string | null = null;
   let archetype: string | null = null;
   let page = 1;
@@ -137,21 +145,21 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
     }
     wrap.appendChild(tierRow);
 
-    // "Only what I am working towards". A reasonable thing to want once locked
-    // stock is visible, and impossible to ask for while it was hidden.
+    // "Only what I am working towards", and its opposite, which is a reasonable thing to
+    // want too: a shelf of what you can already buy tells you what to go and breed.
     const lockRow = el("div", { class: "scrollx", style: "gap:6px;margin-bottom:12px" });
-    const lockChip = (label: string, value: boolean) => {
-      const b = el("button", { class: "btn xs" + (onlyLocked === value ? " primary" : "") }, [label]);
+    const lockChip = (label: string, value: "all" | "open" | "locked") => {
+      const b = el("button", { class: "btn xs" + (lockFilter === value ? " primary" : "") }, [label]);
       b.addEventListener("click", () => {
-        onlyLocked = value;
+        lockFilter = value;
         page = 1;
         repaint();
       });
       lockRow.appendChild(b);
     };
-    lockChip("Tất cả", false);
-    lockChip("Chỉ loài đã mở", false);
-    lockChip("Chỉ loài đang khoá", true);
+    lockChip("Tất cả", "all");
+    lockChip("Chỉ loài đã mở", "open");
+    lockChip("Chỉ loài đang khoá", "locked");
     wrap.appendChild(lockRow);
 
     const optRow = el("div", { class: "scrollx", style: "gap:6px;margin-bottom:12px" });
@@ -236,7 +244,11 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
     // Filtered in the view, not the query: it is a presentation choice about this
     // screen, and putting it in the query would mean every caller had to think
     // about a filter that only the shelf uses.
-    const shown = onlyLocked ? res.entries.filter((e) => e.locked) : res.entries;
+    //
+    // Applied here rather than in the query for a second reason: "already unlocked" is
+    // about what the *player* has done, and the query has no idea what that is.
+    const shown =
+      lockFilter === "locked" ? res.entries.filter((e) => e.locked) : lockFilter === "open" ? res.entries.filter((e) => !e.locked) : res.entries;
     for (const entry of shown) {
       const owned = store.state.seeds[entry.species] ?? 0;
       grid.appendChild(seedCard(getSpecies(entry.species), nav, owned));
@@ -310,14 +322,21 @@ function seedCard(sp: SpeciesDef, nav: Navigate, ownedOverride?: number): HTMLEl
   // The price stays visible when locked, with a lock on it. Hiding it loses
   // information the player wants: knowing a thing costs 98 is part of deciding
   // whether it is worth planning for. A dimmed empty slot says nothing.
+  // The species' own currency, used for the label *and* the affordability test. Reading
+  // one from the definition and the other from somewhere else is how a card ends up
+  // offering a Pollen seed to somebody holding nothing but coins.
+  const paid = sp.currency;
+  const paidIcon = currencyIcon(paid);
+  const afford = (n: number) => store.state[paid] >= n;
+
   const buy = el(
     "button",
     { class: "btn sm primary" + (gate.met ? "" : " is-locked") },
-    gate.met ? [`${sp.seedPrice}🪙`] : ["🔒", `${sp.seedPrice}🪙`],
+    gate.met ? [`${fmt(sp.seedPrice)}${paidIcon}`] : ["🔒", `${fmt(sp.seedPrice)}${paidIcon}`],
   );
   // Disabled rather than refused: a button you can press and that then complains is
   // worse than one that visibly cannot be pressed.
-  buy.disabled = store.state.leafCoin < sp.seedPrice || !gate.met;
+  buy.disabled = !afford(sp.seedPrice) || !gate.met;
   if (!gate.met) buy.title = gate.summary;
   buy.addEventListener("click", () => {
     const r = store.buySeed(sp.id);
@@ -328,12 +347,12 @@ function seedCard(sp: SpeciesDef, nav: Navigate, ownedOverride?: number): HTMLEl
   });
 
   const packPrice = Math.floor(sp.seedPrice * 10 * 0.95);
-  const pack = el("button", { class: "btn sm", title: "Mua 10 hạt, giảm 5%" }, [`x10 · ${packPrice}🪙`]);
+  const pack = el("button", { class: "btn sm", title: "Mua 10 hạt, giảm 5%" }, [`x10 · ${fmt(packPrice)}${paidIcon}`]);
   // The pack inherits the same gate as the single seed. It used to check only the
   // coin balance, so a locked species still showed a live “buy 10” button that
   // accepted the tap and then refused in silence — the one dead affordance on a card
   // whose entire purpose is to tell the player what they still have to do.
-  pack.disabled = store.state.leafCoin < packPrice || !gate.met;
+  pack.disabled = !afford(packPrice) || !gate.met;
   if (!gate.met) pack.title = gate.summary;
   pack.addEventListener("click", () => {
     const r = store.buySeed(sp.id, 10);

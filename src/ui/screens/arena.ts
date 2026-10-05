@@ -12,6 +12,8 @@ import { addSkillXp } from "../../genetics/skillGenerator";
 import type { Stance } from "../../battle/engine";
 import { advanceStreak, battleStreakBonus, streakCoinPreview, STREAK_CAP } from "../../core/streak";
 import { plantDisplayName } from "../../core/plantNames";
+import { currencyIcon, currencyName } from "../../core/currency";
+import { dropOdds, EMBER_DAILY_CAP, type DropRoll } from "../../core/drops";
 import { SPECIES } from "../../config/species";
 import type { Navigate } from "./types";
 
@@ -168,6 +170,42 @@ function renderMenu(nav: Navigate): HTMLElement {
       ]),
     );
     root.appendChild(pay);
+
+    // What else a fight might leave behind, with the odds.
+    //
+    // Printed from the table the roll actually uses. Coins are not listed because they
+    // are certain - a certain payout needs no odds column, and mixing the two would blur
+    // exactly which part of the reward is luck.
+    const emberLeft = store.emberLeftToday();
+    const loot = el("div", { class: "card", style: "margin-top:10px" });
+    loot.appendChild(el("div", { class: "sec-title" }, ["Có thể rớt"]));
+    for (const line of dropOdds("win")) {
+      const capped = line.currency === "ember" && emberLeft <= 0;
+      loot.appendChild(
+        el("div", { class: "kv" }, [
+          el("span", { class: "kv-k" }, [`${currencyIcon(line.currency)} ${currencyName(line.currency)}`]),
+          el(
+            "span",
+            {
+              class: "kv-v mono",
+              style: capped ? "opacity:.55" : line.currency === "ember" ? "color:var(--accent-2)" : "",
+            },
+            [
+              capped
+                ? "đã đủ hạn mức hôm nay"
+                : `${Math.round(line.chance * 100)}% · ${line.min === line.max ? line.min : `${line.min}-${line.max}`}`,
+            ],
+          ),
+        ]),
+      );
+    }
+    loot.appendChild(
+      el("div", { class: "tiny muted", style: "margin-top:6px;line-height:1.45" }, [
+        "Mỗi loại được quay riêng, nên một trận có thể rớt cả hai.",
+        emberLeft > 0 && emberLeft < EMBER_DAILY_CAP ? ` 🔥 Còn ${emberLeft}/${EMBER_DAILY_CAP} Mảnh lửa hôm nay.` : "",
+      ]),
+    );
+    root.appendChild(loot);
   }
 
   const hist = el("div", { class: "card", style: "margin-top:14px" });
@@ -361,6 +399,7 @@ function renderPickOpponent(nav: Navigate, plant: Plant): HTMLElement {
  * they come to disagree.
  */
 function reward(plant: Plant, won: boolean, draw: boolean, coins: number, xp: number, damage: number) {
+  const outcome = won ? "win" : draw ? "draw" : "loss";
   const bonus = battleStreakBonus(plant.battleRecord.streak);
   const paid = Math.round(coins * bonus);
   advanceStreak(plant.battleRecord, won ? "win" : draw ? "draw" : "loss");
@@ -381,12 +420,16 @@ function reward(plant: Plant, won: boolean, draw: boolean, coins: number, xp: nu
   for (const s of plant.skills) addSkillXp(s, 6 + Math.round(damage / 45));
   if (Math.random() < 0.15) plant.battleRecord.scars++;
   store.addBreederXp(6);
+
+  // Rolled here, where the outcome is already known, and paid through the store so the
+  // daily Ember cap is counted in one place. The result screen prints what comes back.
+  const drops = store.awardDrops(outcome);
   store.save();
 
   // Returned so the result screen shows what was actually paid. It used to print the
   // base figure from its own table, which was correct only while the payout was the base
   // figure — the moment a streak could change it, the receipt stopped matching.
-  return { paid, items, bonus, streak: plant.battleRecord.streak };
+  return { paid, items, bonus, streak: plant.battleRecord.streak, drops };
 }
 
 function showResult(
@@ -397,7 +440,7 @@ function showResult(
   winner: string,
   a: BattleSummary,
   onExit: () => void,
-  payout: { paid: number; items: number; bonus: number; streak: number },
+  payout: { paid: number; items: number; bonus: number; streak: number; drops: DropRoll[] },
 ) {
   container.replaceChildren();
   const won = winner === "a";
@@ -424,6 +467,21 @@ function showResult(
 
   // The streak, said either way. A win names what the run is now worth; a loss says what
   // it was, so the number the player just lost is on screen rather than gone.
+  // The loot, named one line each so a 3-pollen drop does not read as a 33-pollen one.
+  if (payout.drops.length) {
+    for (const drop of payout.drops) {
+      card.appendChild(
+        el("div", { class: "drop-line" }, [
+          `${currencyIcon(drop.currency)} ${currencyName(drop.currency)}`,
+          el("span", { class: "mono" }, [`+${drop.amount}`]),
+        ]),
+      );
+    }
+  } else {
+    // Said outright. An empty list reads as a bug, and this fight genuinely paid none.
+    card.appendChild(el("div", { class: "drop-line is-empty" }, ["Không rớt thêm gì lần này."]));
+  }
+
   if (won && payout.streak > 0) {
     card.appendChild(
       el("div", { class: "streak-note" }, [

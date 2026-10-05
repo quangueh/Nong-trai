@@ -10,6 +10,15 @@ import { createSeedPlant, breedPlants, genomeSignature, validateGenome, estimate
 import { applyCatalyst, getProtocol, protocolDiversity, protocolUnlocked, type ProtocolId } from "../genetics/protocols";
 import { plantName, nameKey } from "../genetics/names";
 import { emptyStreakFields } from "./streak";
+import {
+  CURRENCY_IDS,
+  NECTAR_PER_CARE,
+  POLLEN_PER_BREED,
+  currencyInfo,
+  shortOf,
+  type CurrencyId,
+} from "./currency";
+import { EMBER_DAILY_CAP, rollDrops, type DropRoll } from "./drops";
 import { getActiveAccountId, saveSlotKey } from "./saveSlot";
 import { computeEcr } from "../genetics/ecrCalculator";
 import { applyCare, gainXp } from "../growth/care";
@@ -195,6 +204,24 @@ export interface PlayerState {
   breederLevel: number;
   breederXp: number;
   leafCoin: number;
+  /**
+   * The other three currencies.
+   *
+   * Flat fields rather than a bag, for the same reason `pity` and `gardenDay` are flat:
+   * a save written before a currency existed simply lacks the field, and repairing it in
+   * `loadOrCreate` is a one-line spread. A nested record would make every read a
+   * `?.` and every write a merge.
+   */
+  /** From tending. Pays the tier-2 shelf. */
+  nectar: number;
+  /** From breeding, plus an uncommon battle drop. Pays tier 3. */
+  pollen: number;
+  /** From a rare battle drop only, and daily-capped. Pays tier 4 and nothing else. */
+  ember: number;
+  /** The day `emberToday` was counted on, so the cap resets by date and not by session. */
+  emberDay: string;
+  /** Ember already earned today. Compared against the cap before a drop fires. */
+  emberToday: number;
   geneCrystal: number;
   items: number;
   plants: Plant[];
@@ -420,10 +447,80 @@ export class GameStore {
     return contextFrom(this.state.plants, this.state.breederLevel, this.state.seeds, this.state.leafCoin);
   }
 
-    buySeed(species: SpeciesId, count = 1): { ok: boolean; reason?: string } {
+    /**
+   * Credit a currency.
+   *
+   * Goes through here rather than being assigned at a call site so that every gain lands
+   * in the ledger. With one currency that was already true; with four it is the only
+   * thing that makes "where did this pollen come from" answerable after the fact, which
+   * is the first question a player asks when a currency will not move.
+   */
+  creditCurrency(id: CurrencyId, delta: number, reason: string) {
+    this.state[id] += delta;
+    this.state.ledger.push({ at: Date.now(), delta, reason });
+    if (this.state.ledger.length > 200) this.state.ledger.splice(0, this.state.ledger.length - 200);
+  }
+
+  /**
+   * Thousands-separated, for the refusal message. A local formatter rather than the one in
+   * ui/components: the store must not import the UI, which imports the store.
+   */
+  private static say(n: number): string {
+    return Math.round(n).toLocaleString("vi-VN");
+  }
+
+  /** Spend a currency. Refuses rather than going negative, and says which one was short. */
+  private debitCurrency(id: CurrencyId, delta: number, reason: string): boolean {
+    if (this.state[id] < delta) return false;
+    this.state[id] -= delta;
+    this.state.ledger.push({ at: Date.now(), delta: -delta, reason });
+    return true;
+  }
+
+  /**
+   * Ember still obtainable today.
+   *
+   * Resets by date rather than by session, so closing the game does not hand out a fresh
+   * allowance. Read through here because the comparison has to happen in one place: the
+   * roll, the arena's printed odds and the result screen all ask this question, and three
+   * copies of "have I had my three today" is how the cap quietly stops working.
+   */
+  emberLeftToday(): number {
+    const today = dayKey(Date.now());
+    if (this.state.emberDay !== today) {
+      this.state.emberDay = today;
+      this.state.emberToday = 0;
+    }
+    return Math.max(0, EMBER_DAILY_CAP - this.state.emberToday);
+  }
+
+  /**
+   * Roll a finished fight's drops and pay them.
+   *
+   * Returns what was actually paid, so the result screen prints the same list the ledger
+   * recorded. The Ember line is counted against the daily cap here and nowhere else,
+   * including when it is refused - a drop that was rolled and then discarded must not
+   * count as one that was earned, or the cap silently drifts upwards over a long session.
+   */
+  awardDrops(outcome: "win" | "loss" | "draw", rng: () => number = Math.random): DropRoll[] {
+    const left = this.emberLeftToday();
+    const rolled = rollDrops(outcome, rng, { emberLeftToday: left });
+    const paid: DropRoll[] = [];
+
+    for (const drop of rolled) {
+      if (drop.currency === "ember") {
+        this.state.emberToday += drop.amount;
+      }
+      this.creditCurrency(drop.currency, drop.amount, `Trận ${outcome === "win" ? "thắng" : outcome === "draw" ? "hòa" : "thua"}`);
+      paid.push(drop);
+    }
+    return paid;
+  }
+
+  buySeed(species: SpeciesId, count = 1): { ok: boolean; reason?: string } {
     const def = SPECIES_BY_ID[species];
     // Unlock gate. Without it all 6000 generated species are purchasable on day
-    // one and progression means nothing — the shop would simply be the most
+    // one and progression means nothing - the shop would simply be the most
     // expensive entry in the registry.
     //
     // Reports progress rather than a bare refusal, so a player can see they are
@@ -432,9 +529,16 @@ export class GameStore {
     if (!gate.met) {
       return { ok: false, reason: `Chưa mở khóa: ${gate.summary}` };
     }
+    // Charged in the species' own currency. The card shows this same figure before the
+    // button, so a player who cannot afford it knows which of four numbers to go and
+    // earn rather than just being refused.
+    const currency = def.currency;
     const price = Math.floor(def.seedPrice * count * (1 - (count >= 10 ? SEED_PACK_PRICE : 0)));
-    if (!this.debit(price, `Mua ${count} hạt ${def.name}`)) {
-      return { ok: false, reason: "Không đủ LeafCoin" };
+    if (!this.debitCurrency(currency, price, `Mua ${count} hạt ${def.name}`)) {
+      return {
+        ok: false,
+        reason: `${shortOf(currency)} — cần ${currencyInfo(currency).icon}${GameStore.say(price)} (đang có ${currencyInfo(currency).icon}${GameStore.say(this.state[currency])})`,
+      };
     }
     this.state.seeds[species] = (this.state.seeds[species] ?? 0) + count;
     // "Unlock" means the gate had not passed before this purchase. Counting every
@@ -487,6 +591,10 @@ export class GameStore {
     addUnique(this.state.discovery.careActions, action);
     this.recordPlantDiscovery(plant);
     this.advanceGoal("care", 1);
+    // Nectar, from tending. Paid on every action without exception, which is what makes
+    // this currency a floor rather than a goal: a player who does nothing but tend can
+    // always eventually reach the tier-2 shelf.
+    this.creditCurrency("nectar", NECTAR_PER_CARE, `Chăm cây: ${action}`);
     this.tryCareCombo(plant);
     this.commit("care");
     return { ok: true, result: res, plant };
@@ -632,6 +740,9 @@ export class GameStore {
     this.state.discovery.breeds++;
     this.recordPlantDiscovery(result.plant);
     this.advanceGoal("breed", 1);
+    // Pollen, from breeding. Paid for the act rather than for the result, because the
+    // result is already standing in the garden as the child plant.
+    this.creditCurrency("pollen", POLLEN_PER_BREED, `Lai tạo: ${a.name} × ${b.name}`);
     this.commit("breed");
     return { ok: true, result };
   }
@@ -1068,6 +1179,18 @@ function loadOrCreate(rawOverride?: string): PlayerState {
       if (parsed && Array.isArray(parsed.plants)) {
         // Repair missing pity.
         parsed.pity = { ...emptyPity(), ...parsed.pity };
+        // Repair the currencies a save written before the multi-currency shop has none of.
+        // Read as 0 rather than left undefined, so the top bar prints a number instead of
+        // "NaN" for a returning player - and so a refusal can compare against a number.
+        for (const id of CURRENCY_IDS) {
+          const held = (parsed as unknown as Record<string, unknown>)[id];
+          (parsed as unknown as Record<string, number>)[id] = typeof held === "number" && Number.isFinite(held) ? held : 0;
+        }
+        // Ember is a daily cap, so the day it was last spent has to survive too. Without
+        // it a returning player would either lose the day's Ember or be charged for a cap
+        // that no longer applies, and neither is knowable from a bare number.
+        parsed.emberDay = typeof parsed.emberDay === "string" ? parsed.emberDay : dayKey(Date.now());
+        parsed.emberToday = Number.isFinite(parsed.emberToday) ? parsed.emberToday : 0;
         // Repair plants saved before battle streaks existed. Done per plant because
         // the streak lives on the fighter, and a save written by an older build has no
         // such field on any of them. Read as 0 rather than undefined so the arena screen
@@ -1100,6 +1223,15 @@ function loadOrCreate(rawOverride?: string): PlayerState {
     breederLevel: 1,
     breederXp: 0,
     leafCoin: 1200,
+    // Enough nectar to buy one tier-2 seed outright, so the first time a player meets a
+    // price in something other than coins it is a price they can actually pay. Pollen and
+    // Ember start at zero on purpose: both have to be earned, and both are earned by the
+    // two things the game most wants a new player to try.
+    nectar: 40,
+    pollen: 0,
+    ember: 0,
+    emberDay: dayKey(now),
+    emberToday: 0,
     geneCrystal: 5,
     items: 30,
     plants: [],
