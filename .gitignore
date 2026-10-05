@@ -28,6 +28,12 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-# The Windows-generated UTF-16 BOM variants PowerShell sometimes leaves behind.
-# They are duplicates, not source.
-*.utf16.txt
+# One-off migration scripts.
+#
+# These edit the source and are run once, then deleted. Committing them adds noise
+# to a repository whose history is already long, and every one of them encodes a
+# decision that the code it wrote already records.
+tools/patch-*.mjs
+tools/fix-*.mjs
+tools/rm-*.mjs
+tools/_patch/
