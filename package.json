@@ -44,7 +44,8 @@
     "test:shop": "tsx tools/test-shop-filter.ts",
     "test:shop-sort": "tsx tools/test-shop-sort.ts",
     "test:social": "tsx tools/test-social.ts",
-    "test:ascent": "tsx tools/test-ascent.ts"
+    "test:ascent": "tsx tools/test-ascent.ts",
+    "test:audit-full": "tsx tools/audit-full.ts"
   },
   "devDependencies": {
     "@types/jsdom": "^30.0.0",

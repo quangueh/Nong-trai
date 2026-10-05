@@ -21,15 +21,25 @@ export function plotCard(plant: Plant, onClick: () => void, plotNumber?: number)
   const progress = stageProgress(plant, now);
   const meta = RARITY_META[plant.rarity];
 
-  const card = el("div", { class: "plantcard plot" + (mature ? " ready" : "") + (canBreed(plant) ? " bred" : "") });
+  /* `plot` paints the island: soil, grass cap, and a root tapering to a point below the card.
+
+     Only in the garden. A plant on the collection screen is standing on nothing, and the doc
+     comment above already says so - but the class was applied unconditionally, so every
+     collection card hung a cone of earth under itself with no soil attached to it. That is
+     what put the stray pot beneath the card in the collection screenshot. */
+  const inSoil = plotNumber !== undefined;
+  const card = el("div", {
+    class: "plantcard" + (inSoil ? " plot" : "") + (mature ? " ready" : "") + (canBreed(plant) ? " bred" : ""),
+  });
 
   // Rarity ribbon across the top.
   const ribbon = el("div", { class: "ribbon" });
   ribbon.style.background = `linear-gradient(90deg, ${meta.colour}, ${meta.colour}22)`;
   card.appendChild(ribbon);
 
-  // Plot number, same 1-based figure the empty and locked tiles use.
-  if (plotNumber !== undefined) {
+  // Plot number, same 1-based figure the empty and locked tiles use. Garden only - it
+  // refers to a position on the field, which is exactly what the collection has not got.
+  if (inSoil) {
     card.appendChild(el("div", { class: "soil-mark" + (mature ? " dim" : "") }, [String(plotNumber)]));
   }
 

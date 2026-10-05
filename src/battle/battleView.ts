@@ -36,6 +36,16 @@ export interface BattleViewOptions {
   mySide: "a" | "b";
   maxSeconds?: number;
   interactive?: boolean;
+  /**
+   * Draw the arena without the stance row, the skill bar or the speed controls.
+   *
+   * For a fight that is being watched rather than played - the PvE ladder, and a duel that
+   * the Worker already resolved. Those fights have an outcome before the first frame, so
+   * live controls on them invite input on a decision that is already made: the finished-stage
+   * screenshot showed a stance row and a skill list still lit under the result, which reads as
+   * a fight still in progress.
+   */
+  hideControls?: boolean;
   onIntent?: (intent: BattleIntent) => void;
   onFinish: (result: { winner: "a" | "b" | "draw"; a: BattleSummary; b: BattleSummary; events: BattleEvent[] }) => void;
 }
@@ -80,6 +90,56 @@ export class BattleView {
   private timer: number | null = null;
   private finished = false;
   private speed = 1;
+  /** Whether the fight is stopped on purpose, as opposed to finished. */
+  private paused = false;
+  private pauseBtn: HTMLButtonElement | null = null;
+  /** Detached in `destroy`, or every fight ever opened would leave a keydown behind. */
+  private onKey: ((e: KeyboardEvent) => void) | null = null;
+  private pauseVeil: HTMLElement | null = null;
+
+  /**
+   * Stop and resume the fight.
+   *
+   * Public because the arena's own leave button and the ladder's back button both need it:
+   * a fight that keeps ticking after the screen that showed it is gone is a fight playing
+   * sounds in an empty garden.
+   */
+  togglePause(): void {
+    if (this.finished) return;
+    this.paused = !this.paused;
+    if (this.paused) {
+      this.stop();
+      this.showPauseVeil();
+    } else {
+      this.hidePauseVeil();
+      this.restartTimer();
+    }
+    if (this.pauseBtn) this.pauseBtn.textContent = this.paused ? "▶" : "⏸";
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
+  /** The "paused" plate, so a stopped fight never looks like a hung one. */
+  private showPauseVeil(): void {
+    if (this.pauseVeil) return;
+    this.pauseVeil = el("div", { class: "battle-paused" }, [
+      el("div", { class: "battle-paused-title" }, ["⏸ Tạm dừng"]),
+      el("div", { class: "tiny muted" }, ["Nhấn cách hoặc ▶ để tiếp tục"]),
+    ]);
+    // Over `.battlefield`, which is the positioned box the fighters and the fx layer live in.
+    // It is not `.battlebox` - that class does not exist, and the veil was being appended to
+    // `null` and silently doing nothing, so the pause stopped the fight with no way to tell.
+    const field = this.opts.container.querySelector(".battlefield");
+    if (field) field.appendChild(this.pauseVeil);
+    else this.opts.container.appendChild(this.pauseVeil);
+  }
+
+  private hidePauseVeil(): void {
+    this.pauseVeil?.remove();
+    this.pauseVeil = null;
+  }
 
   private fx!: FxLayer;
   private juice!: CombatJuice;
@@ -174,16 +234,68 @@ export class BattleView {
       speedBtn.textContent = `⏩ ${this.speed}x`;
       this.restartTimer();
     });
-    tools.append(this.focusBtn, this.autoBtn, speedBtn);
+
+    /* Pause.
+     *
+     * A fight that cannot be paused is a fight the player has to sit through - and on a phone
+     * that is a fight they put down mid-match. The tick is a plain interval, so pausing is
+     * stopping it and resuming is restarting it; the simulation is untouched either way, so
+     * nothing about the outcome depends on whether anybody was looking.
+     *
+     * Space bar as well, because holding a phone and reaching for a button is the worst of
+     * both, and `Escape` for the same reason on a desktop. Both are ignored while the player
+     * is typing in a field.
+     */
+    const pauseBtn = el("button", { class: "btn sm ghost", title: "Tạm dừng (cách)" }, ["⏸"]);
+    pauseBtn.addEventListener("click", () => this.togglePause());
+    this.pauseBtn = pauseBtn;
+    this.onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.code === "Space" || e.code === "Escape") {
+        e.preventDefault();
+        this.togglePause();
+      }
+    };
+    window.addEventListener("keydown", this.onKey);
+
+    tools.append(this.focusBtn, this.autoBtn, speedBtn, pauseBtn);
     controls.appendChild(tools);
     c.appendChild(controls);
+
+    /* Watched rather than played: drop every control but the pause, which is the one thing a
+       viewer still wants. The stances and skills go too - they are the game's inputs, and a
+       viewer has none. */
+    if (this.opts.hideControls) {
+      controls.replaceChildren();
+      const watch = el("div", { class: "row", style: "gap:8px;align-items:center" }, [
+        el("span", { class: "tiny muted grow" }, ["Trận tự diễn — bạn có thể tạm dừng bất cứ lúc nào."]),
+        pauseBtn,
+      ]);
+      controls.appendChild(watch);
+      this.focusBtn.remove();
+      this.autoBtn.remove();
+      speedBtn.remove();
+    }
 
     this.logBox = el("div", { class: "battlelog" });
     this.logBox.appendChild(el("div", { class: "l hi" }, ["Trận đấu bắt đầu!"]));
     c.appendChild(this.logBox);
 
-    this.renderSkills();
-    this.renderStances();
+    if (this.opts.hideControls) {
+      // The skill bar and stance row are built and then taken straight back out; skipping the
+      // build would mean branching renderSkills and renderStances, and those two are the same
+      // code for both kinds of fight.
+      this.renderSkills();
+      this.renderStances();
+      // `skillRow`, not `skillBar` - the latter is a CSS class, and reaching for it by name
+      // would have left the real row on screen and taken nothing away.
+      this.skillRow?.remove();
+      this.stanceRow?.remove();
+    } else {
+      this.renderSkills();
+      this.renderStances();
+    }
   }
 
   // --- lifecycle ---
@@ -209,6 +321,12 @@ export class BattleView {
 
   destroy(): void {
     this.stop();
+    this.paused = false;
+    this.hidePauseVeil();
+    if (this.onKey) {
+      window.removeEventListener("keydown", this.onKey);
+      this.onKey = null;
+    }
     this.juice.destroy();
     this.fx.destroy();
     this.opts.container.replaceChildren();

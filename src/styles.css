@@ -1454,6 +1454,46 @@ h4 {
   }
 }
 
+/* The collection shelf.
+
+   A plain grid on the page's own background, with the same card sizing as the garden's so
+   the two screens agree about how big a plant is. Deliberately not the sky panel: that
+   background is sized for a field of islands and reads as an empty blue expanse around a
+   list. The cards also carry no island here - see `plotCard`'s `inSoil` - so there is
+   nothing floating for a sky to be the sky of. */
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 12px;
+  padding: 4px 0 8px;
+}
+
+/* A card with no island under it needs a surface of its own, or it floats on the page
+   background with its shadow hanging in nothing. This is the same soil tone the plot uses,
+   flattened: a card standing on a shelf, not a slab of earth. */
+.shelf .plantcard {
+  border-radius: 18px;
+  border: 1px solid rgba(120, 168, 196, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 244, 0.94) 0%, rgba(246, 240, 219, 0.9) 100%);
+  box-shadow:
+    0 2px 0 rgba(255, 255, 255, 0.6) inset,
+    0 8px 18px rgba(70, 110, 140, 0.16);
+  padding: 9px 10px 10px;
+  cursor: pointer;
+}
+
+.shelf .plantcard:active {
+  transform: translateY(3px);
+  box-shadow: 0 4px 10px rgba(70, 110, 140, 0.2);
+}
+
+@media (min-width: 680px) {
+  .shelf {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+
 /* A high-sun rim: light along the top edge, none at the bottom.
 
    This replaced a hedge. A sky has nothing to grow at its edge, and a green ring around
@@ -3281,6 +3321,34 @@ body.planting {
   from { transform: scale(0.5) rotate(calc(var(--flip) * -40deg)); opacity: 0; }
   40% { opacity: 1; }
   to { transform: scale(1.25) rotate(calc(var(--flip) * 40deg)); opacity: 0; }
+}
+
+/* The pause plate.
+   Sits over the fighters rather than replacing them: a paused fight that hides the arena
+   reads as a different screen, and the player's last frame of it is usually the moment they
+   paused to look at. */
+.battle-paused {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  background: rgba(10, 22, 14, 0.62);
+  backdrop-filter: blur(3px);
+  animation: fadeIn 0.16s ease-out both;
+}
+
+.battle-paused-title {
+  font-size: 20px;
+  font-weight: 900;
+  color: #fff8e2;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.battle-paused .tiny.muted {
+  color: rgba(255, 248, 226, 0.78);
 }
 
 .fx-ring {

@@ -173,7 +173,13 @@ export class FxLayer {
         break;
       }
       case "aura": {
-        const ring = el("div", { class: "fx-ring", style: `--c:${colour};--r:${Math.max(60, b.w)}px` });
+        /* The ring is centred on the target and drawn at the target's own width, which on a fighter
+       standing near an edge means most of it lands outside the arena. `overflow:hidden` on the
+       fx layer clips it, so it is a quarter-ring rather than a circle - and the audit reported
+       it as an overflow because the element's box is genuinely wider than its container.
+       Capped at half the layer's width so it stays a ring rather than a sliver. */
+    const half = Math.min(Math.max(60, b.w), this.root.clientWidth / 2);
+    const ring = el("div", { class: "fx-ring", style: `--c:${colour};--r:${half}px` });
         ring.style.left = `${b.cx}px`;
         ring.style.top = `${b.cy}px`;
         this.spawn(ring, 560);

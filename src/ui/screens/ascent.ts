@@ -263,6 +263,14 @@ export function renderAscent(_nav: Navigate): HTMLElement {
      * So the fight replaces the list for as long as it is on, and gets its own header. */
     /* The fight takes over the screen. `hidden` rather than removed, so the ladder is still
        there when it ends and coming back does not re-render it from nothing. */
+    /* Non-interactive: the store already settled it, and letting the player cast into a battle
+       that is over would be theatre.
+
+       The controls go with it. Left in place they invited input on a decided fight - and the
+       screenshot of a finished stage showed a stance row, an auto-toggle, a speed toggle and a
+       skill list, all live, under the result. A player would reasonably read that as a fight
+       they could still lose. So the view is told to hide them rather than having this screen
+       reach into its DOM, which keeps the decision where the markup is. */
     listHost.hidden = true;
     const sheet = el("div", { class: "card pop", style: "margin-bottom:12px" });
     const stageTitle = el("div", { class: "small", style: "font-weight:700;margin-bottom:2px" }, [
@@ -287,6 +295,7 @@ export function renderAscent(_nav: Navigate): HTMLElement {
       plantB: monster.plant,
       mySide: "a",
       interactive: false,
+      hideControls: true,
       onFinish: () => {
         const done = el("button", { class: "btn block", style: "margin-top:10px" }, ["Về thang"]);
         done.addEventListener("click", () => {

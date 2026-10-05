@@ -62,7 +62,14 @@ export function renderCollection(nav: Navigate): HTMLElement {
   const countLabel = el("div", { class: "tiny muted", style: "margin-bottom:8px" });
   root.appendChild(countLabel);
 
-  const grid = el("div", { class: "plots" });
+  /* `shelf`, not `plots`.
+
+     The garden's grid paints a sky - clouds, a horizon gradient, a rim - because it is a
+     field of floating islands and that is what the islands are floating in. On the collection
+     screen the same class painted a large sky panel around a list, with one plant card in its
+     top-left corner and the rest of it empty blue. The panel is sized for a field; a
+     collection is a shelf. */
+  const grid = el("div", { class: "shelf" });
   root.appendChild(grid);
   paintGrid();
 

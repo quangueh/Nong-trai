@@ -92,11 +92,15 @@ export function plantThumb(plant: Plant, size = 100, anim = false): HTMLElement 
 }
 
 /**
- * Compact plant card used by the collection grid. Shares the garden's plot
- * styling so the two screens look like one game.
+ * Compact plant card used by the collection grid.
+ *
+ * Shares the garden's card *sizing* and type so the two screens look like one game, but not
+ * the island: `plot` paints soil, a grass cap and a root tapering to a point below the card,
+ * and a plant standing in the collection is standing on nothing. It was applied anyway, and
+ * every collection card hung a cone of earth under itself with nothing holding it up.
  */
 export function plantCard(plant: Plant, onClick: () => void): HTMLElement {
-  const card = el("div", { class: "plantcard plot" });
+  const card = el("div", { class: "plantcard" });
   const meta = RARITY_META[plant.rarity];
 
   const ribbon = el("div", { class: "ribbon" });
