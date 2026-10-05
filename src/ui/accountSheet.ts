@@ -2,13 +2,8 @@
 
 import { el, toast } from "./components";
 import { sfx } from "../audio/audio";
-import {
-  GoogleSignInError,
-  googleFailureMessage,
-  googleSignInAvailable,
-  renderGoogleButton,
-  requestGoogleIdToken,
-} from "../account/google";
+import { googleSignInAvailable } from "../account/google";
+import { googlePanel } from "./googlePanel";
 import { AccountError, accountServiceAvailable } from "../account/api";
 import { sessionKind } from "../account/kind";
 import {
@@ -19,7 +14,6 @@ import {
   pull,
   push,
   signIn,
-  signInWithGoogle,
   signOut,
   signUp,
   takeServer,
@@ -33,16 +27,6 @@ import {
  * The worker returns codes rather than sentences so the text lives here, in the
  * game's language, and so a copy change does not mean a redeploy of the Worker.
  */
-/**
- * The open sheet's repaint function, or null when no sheet is open.
- *
- * A module-level hook because a Google sign-in finishes inside a promise chain outside
- * `openAccount`'s scope, and it still has to repaint the panel it did not build. Without
- * it, a successful Google sign-in left the sheet sitting on the signed-out form and the
- * player had no way to tell whether anything had happened.
- */
-let repaint: (() => void) | null = null;
-
 const WHY: Record<string, string> = {
   bad_email: "Email không hợp lệ.",
   weak_password: "Mật khẩu cần ít nhất 8 ký tự.",
@@ -104,16 +88,8 @@ export function openAccount(): void {
     if (strip) strip.replaceWith(syncStrip(accountStatus()));
   });
 
-  // Registered so a Google sign-in, which runs inside a promise and outside this
-  // function's scope, can repaint the sheet when it succeeds.
-  repaint = render;
-
   const close = (): void => {
     off();
-    // Cleared, not left dangling. A stale repaint would write into a detached sheet if
-    // a Google sign-in resolved after the player closed the sheet — harmless visually,
-    // but it keeps the whole sheet alive in memory for as long as the promise lives.
-    repaint = null;
     overlay.remove();
     s.remove();
   };
@@ -210,10 +186,23 @@ function renderSignedOut(body: HTMLElement, render: () => void): void {
     });
   }
 
+  /*
+   * The Google panel is the primary action and comes first; the email form is the
+   * alternative, under a divider that says so.
+   *
+   * It gets its own error line rather than sharing `err`. A failure in the Google path
+   * and a failure in the form are different messages about different mistakes, and one
+   * shared line meant whichever wrote first hid the other.
+   */
+  const google = googlePanel(render, () => {
+    // Nothing to do here: the panel writes its own message. The callback exists so the
+    // sheet can react later without the panel needing to know what a sheet is.
+  });
+
   body.append(
     syncStrip(accountStatus()),
-    ...googleSection(err),
-    el("div", { class: "account-sep tiny muted" }, ["hoặc — hoặc"],),
+    ...google.nodes,
+    el("div", { class: "account-sep tiny muted" }, ["hoặc — đăng nhập bằng email"]),
     el("div", { class: "account-fields" }, [email, pass]),
     err,
     submit,
@@ -222,76 +211,6 @@ function renderSignedOut(body: HTMLElement, render: () => void): void {
   );
   apply();
 }
-
-/**
- * The Google half of the signed-out panel.
- *
- * Rendered asynchronously because Google's script is, and it is allowed to fail. The
- * returned elements are appended immediately and filled in when the script arrives, so
- * the email form is usable the whole time rather than waiting on a third party.
- */
-function googleSection(err: HTMLElement): HTMLElement[] {
-  const slot = el("div", { class: "account-google" });
-  const spinner = el("div", { class: "tiny muted", style: "text-align:center;padding:6px 0" }, [
-    "Đảng tải đăng nhập Google…",
-  ]);
-  slot.appendChild(spinner);
-
-  if (!googleSignInAvailable) {
-    // Said plainly instead of hidden. A missing option with no explanation reads as
-    // "this game does not support Google", which is a different and wrong statement.
-    slot.replaceChildren(
-      el("div", { class: "tiny muted", style: "text-align:center;padding:6px 0" }, [
-        "Đăng nhập Google chưa bố trì đị bềt đếnh (VITE_GOOGLE_CLIENT_ID).",
-      ]),
-    );
-    return [slot];
-  }
-
-  void renderGoogleButton(slot)
-    .then((painted) => {
-      if (painted) return;
-      slot.replaceChildren(
-        el("div", { class: "tiny muted", style: "text-align:center;padding:6px 0" }, [
-          "Không tải được nút đăng nhập Google. Bạn vẫn đăng nhập bằng email được dưới.",
-        ]),
-      );
-    })
-    .catch(() => {
-      slot.replaceChildren(
-        el("div", { class: "tiny muted", style: "text-align:center;padding:6px 0" }, [
-          "Không tải được nút đăng nhập Google.",
-        ]),
-      );
-    });
-
-  // The click path. Google's own button renders its own popup and calls the callback set
-  // in initialize(), so this listener never fires — it is here for the case where the
-  // script loaded but the button did not paint, which is otherwise a dead zone.
-  slot.addEventListener("click", () => {
-    if (slot.querySelector("iframe")) return;
-    void runGoogle(err);
-  });
-
-  return [slot];
-}
-
-/** Ask Google, then hand the token to the Worker. Every failure is named. */
-async function runGoogle(err: HTMLElement): Promise<void> {
-  err.textContent = "";
-  try {
-    const idToken = await requestGoogleIdToken();
-    const session = await signInWithGoogle(idToken);
-    sfx.play("levelUp");
-    toast(session.created ? "Đã chào mối. Đã đồng bộ." : "Đã quay lại. Đồng bộ xong.");
-    repaint?.();
-  } catch (e) {
-    if (e instanceof GoogleSignInError) err.textContent = googleFailureMessage(e.code);
-    else err.textContent = explain(e);
-    sfx.play("error");
-  }
-}
-
 
 function renderSignedIn(body: HTMLElement, render: () => void): void {
   const status = accountStatus();

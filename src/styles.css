@@ -5494,3 +5494,118 @@ body.planting {
   border: 1px dashed var(--line, #d8d2c6);
   text-align: center;
 }
+
+/* ==========================================================================
+   Google sign-in panel (src/ui/googlePanel.ts)
+   --------------------------------------------------------------------------
+   The button is the primary action on this screen, so it is sized and weighted like
+   one: full width, a real border, the four-colour mark at 20px. The email form below
+   it is deliberately smaller and separated by a divider that names it as the
+   alternative, because a tap and a form are not two equal options.
+
+   Everything is transform/opacity only. Nothing here animates width, height, top or
+   left, so the panel cannot force layout while it appears.
+   ========================================================================== */
+
+.gpanel-wrap {
+  margin: 12px 0 4px;
+}
+
+.gpanel-slot {
+  /* Reserved height so the form does not jump upward when Google's iframe arrives. */
+  min-height: 56px;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+/* --- the styled button, and Google's replacement for it -------------------- */
+
+.gpanel-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #d6d3cd;
+  border-radius: 12px;
+  color: #1f1f1f;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.12s ease;
+}
+
+.gpanel-btn:hover {
+  border-color: #a8a49c;
+  box-shadow: 0 1px 3px rgba(20, 16, 10, 0.08);
+  transform: translateY(-1px);
+}
+
+.gpanel-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Busy state: dimmed and not clickable, so a double tap cannot open two popups. */
+.gpanel-btn.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.gpanel-brand {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+.gpanel-brand svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.gpanel-text {
+  min-width: 0;
+}
+
+.gpanel-title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.gpanel-sub {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #5f5b53;
+  margin-top: 2px;
+}
+
+/* --- shown when the script is blocked or the client id is missing ---------- */
+
+.gpanel-off {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px dashed #d6d3cd;
+  border-radius: 12px;
+  background: #f6f4ee;
+}
+
+.gpanel-note {
+  margin: 9px 0 0;
+  line-height: 1.45;
+}
+
+/*
+ * Google's own iframe, when it paints.
+ *
+ * The container is sized so the two are interchangeable and nothing shifts. Google
+ * renders its own border, so no styling is applied over it — fighting an opaque
+ * cross-origin iframe is not possible anyway, and pretending otherwise would only
+ * produce a button that looks broken.
+ */
+.gpanel-slot > div[style*="width"] {
+  margin: 0 auto;
+}
