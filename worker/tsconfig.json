@@ -9,5 +9,20 @@
     "skipLibCheck": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src"]
+  "//include": "Only the pure modules the duel simulation reaches. Listing src/core and src/config wholesale drags in room.ts, store.ts, saveSlot.ts and quests.ts, which reference BroadcastChannel and localStorage - none of which exist here, and none of which a server-side battle needs. quests.ts is the one that does it from the config side, via a type-only import of core/store.",
+  "include": [
+    "src",
+    "../src/battle/engine.ts",
+    "../src/core/rng.ts",
+    "../src/core/types.ts",
+    "../src/config/elements.ts",
+    "../src/config/species.ts",
+    "../src/config/balance.ts",
+    "../src/config/skills.ts",
+    "../src/config/careActions.ts",
+    "../src/config/rarity.ts",
+    "../src/config/traits.ts",
+    "../src/config/unlocks.ts",
+    "../src/genetics/names.ts"
+  ]
 }

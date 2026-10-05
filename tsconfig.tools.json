@@ -3,13 +3,18 @@
   // The development tooling: screenshot harnesses, the production-bundle check,
   // the test suites and the diagnostics.
   //
-  // Separate from tsconfig.json on purpose — see the note there. Under tsx in
+  // Separate from tsconfig.json on purpose - see the note there. Under tsx in
   // Node, so node types only and none of the browser lib set `src` relies on.
   "compilerOptions": {
     // node for the harnesses, vite/client because the tools import from src and
     // that code reads `import.meta.env`. Dropping vite/client here broke the
     // account client's env lookup, which is the kind of failure that only shows
     // up when a tools pass type-checks the source it pulls in.
+    //
+    // Not workers-types: the social test drives worker/src directly, and the way
+    // that is possible without pulling a Cloudflare-only type package into the
+    // browser toolchain is that social.ts declares the slice of KV it actually
+    // uses. A real `Env` satisfies it structurally, and so does a fake in a test.
     "types": ["node", "vite/client"]
   },
   "include": ["tools"]

@@ -306,6 +306,18 @@ export function isSignedIn(): boolean {
 }
 
 /**
+ * The session token, or null.
+ *
+ * Exported so a feature that authenticates its own requests does not have to keep its own
+ * copy of one, or read it out of localStorage where the signing-in code is the only thing
+ * that should be writing it. Null means signed out, and callers are expected to say so
+ * rather than to send an unauthenticated request and read the 401 as an error.
+ */
+export function currentToken(): string | null {
+  return token;
+}
+
+/**
  * Bring the cloud save down.
  *
  * `force` is what happens on login: the cloud is newer by definition then, because

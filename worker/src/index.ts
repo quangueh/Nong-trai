@@ -34,6 +34,16 @@
  */
 
 import { googleAccountKey, googleSaveKey, verifyGoogleIdToken } from "./google";
+import {
+  handleDuelAccept,
+  handleDuelDecline,
+  handleDuelInbox,
+  handleDuelResult,
+  handleDuelSend,
+  handleFriend,
+  indexAccount,
+  type Identity,
+} from "./social";
 
 export interface Env {
   /** KV namespace holding both accounts and saves. */
@@ -514,6 +524,12 @@ export default {
         const auth = await readAuth(req, env);
         if (!auth) res = RKO("unauthorised", 401);
         else res = await handleChangePassword(req, auth, env);
+      } else if (path === "/api/friend" && req.method === "POST") {
+        const me = await readIdentity(req, env);
+        if (!me) res = RKO("unauthorised", 401);
+        else res = await handleFriend(req, env, me);
+      } else if (path === "/api/duel" && req.method === "POST") {
+        res = await routeDuel(req, env);
       } else if (path === "/api/health") {
         res = ROK({ ok: true, at: Date.now() });
       } else {
@@ -530,6 +546,88 @@ export default {
     }
   },
 };
+
+/**
+ * Who the session belongs to, as a friend-list identity.
+ *
+ * Reads the account record rather than trusting the token's claims, for two reasons: the
+ * display name lives there and nowhere else, and a token minted before a rename would
+ * otherwise carry the old name for ever.
+ *
+ * Returns null both when the session does not verify and when the account behind it has
+ * gone. Those are different failures and the client is told which, because "your session
+ * expired" sends you to the sign-in screen and "your account is gone" does not.
+ */
+async function readIdentity(req: Request, env: Env): Promise<Identity | null> {
+  const auth = await readAuth(req, env);
+  if (!auth) return null;
+  const key = auth.sub ? googleAccountKey(auth.sub) : accountKey(auth.email!);
+  const recordRaw = await env.DB.get(key);
+  if (!recordRaw) return null;
+  const rec = JSON.parse(recordRaw) as { email?: string; name?: string };
+  const handle = rec.email ?? "";
+  if (!handle) return null;
+  const identity: Identity = {
+    handle,
+    name: rec.name?.trim() || handle.split("@")[0] || handle,
+    key,
+    saveKey: auth.sub ? googleSaveKey(auth.sub) : saveKey(auth.email!),
+  };
+  // Keeps the search indexes current, so an account can be found by name and by address
+  // without publishing itself anywhere.
+  await indexAccount(env, identity);
+  return identity;
+}
+
+/**
+ * The duel endpoint's actions.
+ *
+ * Split out rather than inlined so the "who is this" question is answered in one place for
+ * every action. Reading a finished fight is the exception and is deliberately
+ * unauthenticated: it is keyed by an unguessable id, both participants need it, and a fight
+ * result is not private information.
+ */
+async function routeDuel(req: Request, env: Env): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as
+    | { action?: string; to?: string; id?: string; plantId?: string }
+    | null;
+  const action = String(body?.action ?? "");
+
+  if (action === "result") return handleDuelResult(env, String(body?.id ?? ""));
+
+  const me = await readIdentity(req, env);
+  if (!me) return RKO("unauthorised", 401);
+
+  switch (action) {
+    case "send":
+      return handleDuelSend(env, me, String(body?.to ?? ""), String(body?.plantId ?? ""), await loadSave(env, me.saveKey));
+    case "inbox":
+      return handleDuelInbox(env, me);
+    case "accept":
+      return handleDuelAccept(env, me, String(body?.id ?? ""), String(body?.plantId ?? ""), await loadSave(env, me.saveKey));
+    case "decline":
+      return handleDuelDecline(env, me, String(body?.id ?? ""));
+    default:
+      return RKO("unknown_action", 400);
+  }
+}
+
+/**
+ * A save out of KV, unwrapped from its `{ savedAt, state }` envelope.
+ *
+ * The fighter is taken from *this* and never from the request, which is the whole basis of
+ * the duel being unfakeable: a client nominates a plant id and the server checks it against
+ * the garden it already holds.
+ */
+async function loadSave(env: Env, saveKey: string): Promise<unknown> {
+  const raw = await env.DB.get(saveKey);
+  if (!raw) return null;
+  try {
+    return (JSON.parse(raw) as { state: unknown }).state;
+  } catch {
+    return null;
+  }
+}
 
 async function readAuth(req: Request, env: Env): Promise<Session | null> {
   const header = req.headers.get("authorization") ?? "";

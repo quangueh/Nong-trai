@@ -14,6 +14,8 @@ import { advanceStreak, battleStreakBonus, streakCoinPreview, STREAK_CAP } from 
 import { plantDisplayName } from "../../core/plantNames";
 import { currencyIcon, currencyName } from "../../core/currency";
 import { dropOdds, EMBER_DAILY_CAP, type DropRoll } from "../../core/drops";
+import { friendsPanel } from "./friends";
+import { duelSummaryCard } from "./duelResult";
 import { SPECIES } from "../../config/species";
 import type { Navigate } from "./types";
 
@@ -48,6 +50,22 @@ export function renderArena(nav: Navigate, params?: unknown): HTMLElement {
 
 function renderMenu(nav: Navigate): HTMLElement {
   const root = el("div", { class: "fadein" });
+
+  // Friends first, above the room code.
+  //
+  // The order is the argument. A room code is a workaround for not knowing who you want to
+  // fight; a friend list is the answer to that. Leaving the code box at the top keeps
+  // asking people to transcribe six characters when there is a button with a name on it.
+  const friends = friendsPanel((result, iAm) => {
+    const summary = duelSummaryCard(result, iAm, () => nav("arena"));
+    const host = document.querySelector(".screen");
+    if (host) {
+      host.replaceChildren(summary);
+      host.scrollTop = 0;
+    }
+  });
+  root.appendChild(friends.el);
+
   root.appendChild(el("div", { class: "sec-title" }, ["⚔ Đại chiến"]));
 
   const ready = store.state.plants.filter((p) => canBattle(p));
