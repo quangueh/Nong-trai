@@ -4,7 +4,7 @@ import { sfx } from "../../audio/audio";
 import { MAX_PLOTS, RULE_LABEL, checkUnlock, plotStatuses } from "../../config/unlocks";
 import { el, toast, fmt, seedChip, seedIcon } from "../components";
 import { store } from "../app";
-import { SPECIES, getSpecies, type SpeciesDef } from "../../config/species";
+import { getSpecies, type SpeciesDef } from "../../config/species";
 import { ELEMENTS, ELEMENT_INFO } from "../../config/elements";
 import { ARCHETYPE_ROLE } from "../../config/balance";
 import {
@@ -12,7 +12,6 @@ import {
   sellPrice,
   featuredSpecies,
   queryCatalogue,
-  unlockedTier,
   TIER_UNLOCK,
 } from "../../economy/shop";
 import { canSell } from "../../growth/stages";
@@ -65,6 +64,8 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
   // through the catalogue does not reset the shelf.
   let search = "";
   let tier: number | null = null;
+  /** False shows everything; true shows only what is still gated. */
+  let onlyLocked = false;
   let element: string | null = null;
   let archetype: string | null = null;
   let page = 1;
@@ -91,7 +92,7 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
     const wrap = el("div");
 
     const searchRow = el("div", { class: "row", style: "gap:8px;margin-bottom:10px" });
-    const box = el("input", { class: "input grow", placeholder: `Tìm trong ${SPECIES.length} loài…` }) as HTMLInputElement;
+    const box = el("input", { class: "input grow", placeholder: "Tìm loài cây" }) as HTMLInputElement;
     box.value = search;
     box.addEventListener("input", () => {
       search = box.value;
@@ -107,11 +108,21 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
     searchRow.append(box);
     wrap.appendChild(searchRow);
 
-    // Tier chips — the progression gate made visible.
+    // Tier chips.
+    //
+    // Every tier is clickable, locked or not. They used to read "II locked" and be
+    // disabled, which meant the one control that could explain the gate did nothing.
+    // Locked species were also filtered out of the list, so there was nowhere left in
+    // the shop that answered "what do I need" — the complaint that started this.
+    //
+    // Selecting a locked tier shows its species with their requirement on each card.
     const tierRow = el("div", { class: "scrollx", style: "gap:6px;margin-bottom:8px" });
-    const maxTier = unlockedTier(store.state.breederLevel);
-    const tierChip = (label: string, value: number | null) => {
-      const b = el("button", { class: "btn xs" + (tier === value ? " primary" : "") }, [label]);
+    const tierChip = (label: string, value: number | null, title: string) => {
+      const b = el(
+        "button",
+        { class: "btn xs" + (tier === value ? " primary" : ""), title },
+        [label],
+      );
       b.addEventListener("click", () => {
         tier = value;
         page = 1;
@@ -119,12 +130,28 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
       });
       tierRow.appendChild(b);
     };
-    tierChip("Tất cả bậc", null);
+    tierChip("Tất cả bậc", null, "Mọi bậc, kể cả loài đang khoá");
     for (let t = 0; t < TIER_UNLOCK.length; t++) {
-      const locked = t > maxTier;
-      tierChip(`${"I".repeat(t + 1)}${locked ? " 🔒" : ""}`, locked ? null : t);
+      tierChip("I".repeat(t + 1), t, `Bậc ${t + 1} — xem cả loài đang khoá`);
     }
     wrap.appendChild(tierRow);
+
+    // "Only what I am working towards". A reasonable thing to want once locked
+    // stock is visible, and impossible to ask for while it was hidden.
+    const lockRow = el("div", { class: "scrollx", style: "gap:6px;margin-bottom:12px" });
+    const lockChip = (label: string, value: boolean) => {
+      const b = el("button", { class: "btn xs" + (onlyLocked === value ? " primary" : "") }, [label]);
+      b.addEventListener("click", () => {
+        onlyLocked = value;
+        page = 1;
+        repaint();
+      });
+      lockRow.appendChild(b);
+    };
+    lockChip("Tất cả", false);
+    lockChip("Chỉ loài đã mở", false);
+    lockChip("Chỉ loài đang khoá", true);
+    wrap.appendChild(lockRow);
 
     const optRow = el("div", { class: "scrollx", style: "gap:6px;margin-bottom:12px" });
     const optChip = (label: string, on: boolean, apply: () => void) => {
@@ -186,12 +213,15 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
       archetype,
       page,
       perPage: 24,
+      // Handed in rather than built here: the query needs the real nursery to
+      // tell a gated species from an open one.
+      progress: store.unlockContext(),
     });
     const box = el("div");
 
     box.appendChild(
       el("div", { class: "small", style: "font-weight:700;margin-bottom:8px" }, [
-        `📚 Danh mục · ${res.total.toLocaleString("vi-VN")} loài`,
+        "Danh mục",
       ]),
     );
 
@@ -202,7 +232,11 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
 
     // A grid, not a stack: 24 full cards in one column is a very long scroll.
     const grid = el("div", { class: "seed-grid", style: "margin-bottom:10px" });
-    for (const entry of res.entries) {
+    // Filtered in the view, not the query: it is a presentation choice about this
+    // screen, and putting it in the query would mean every caller had to think
+    // about a filter that only the shelf uses.
+    const shown = onlyLocked ? res.entries.filter((e) => e.locked) : res.entries;
+    for (const entry of shown) {
       const owned = store.state.seeds[entry.species] ?? 0;
       grid.appendChild(seedCard(getSpecies(entry.species), nav, owned));
     }
@@ -294,7 +328,12 @@ function seedCard(sp: SpeciesDef, nav: Navigate, ownedOverride?: number): HTMLEl
 
   const packPrice = Math.floor(sp.seedPrice * 10 * 0.95);
   const pack = el("button", { class: "btn sm", title: "Mua 10 hạt, giảm 5%" }, [`x10 · ${packPrice}🪙`]);
-  pack.disabled = store.state.leafCoin < packPrice;
+  // The pack inherits the same gate as the single seed. It used to check only the
+  // coin balance, so a locked species still showed a live “buy 10” button that
+  // accepted the tap and then refused in silence — the one dead affordance on a card
+  // whose entire purpose is to tell the player what they still have to do.
+  pack.disabled = store.state.leafCoin < packPrice || !gate.met;
+  if (!gate.met) pack.title = gate.summary;
   pack.addEventListener("click", () => {
     const r = store.buySeed(sp.id, 10);
     if (r.ok) {

@@ -29,11 +29,13 @@ import {
   accountServiceAvailable,
   changePassword,
   fetchSave,
+  googleSignIn as apiGoogleSignIn,
   login as apiLogin,
   pushSave,
   register as apiRegister,
   type AccountSession,
 } from "./api";
+import { forgetSessionKind, rememberSessionKind, type SessionKind } from "./kind";
 
 const TOKEN_KEY = "nong-trai-account-token";
 const EMAIL_KEY = "nong-trai-account-email";
@@ -185,12 +187,41 @@ export async function signUp(email: string, password: string): Promise<void> {
 
 export async function signIn(email: string, password: string): Promise<void> {
   const session: AccountSession = await apiLogin(email, password);
-  token = session.token;
-  localStorage.setItem(TOKEN_KEY, session.token);
+  adoptSession(session.token, email);
+  await pull(true);
+}
+
+/**
+ * Finish a sign-in that already has a token.
+ *
+ * Shared by the password path and the Google path so that "we have a token" means
+ * exactly the same thing in both — the same three localStorage writes, the same
+ * status event, the same first pull. Written twice, the two would drift, and the first
+ * thing that would break is the one nobody retests: signing in with Google on a device
+ * that already has a password session.
+ */
+function adoptSession(newToken: string, email: string, kind: SessionKind = "password"): void {
+  token = newToken;
+  localStorage.setItem(TOKEN_KEY, newToken);
   localStorage.setItem(EMAIL_KEY, email);
+  rememberSessionKind(kind);
   emit({ email, state: "idle", message: "Đã đăng nhập." });
   startAuto();
+}
+
+/**
+ * Sign in with Google.
+ *
+ * The browser only forwards an ID token; the Worker verifies it and is the only party
+ * that decides who this is. The session is then adopted exactly as a password session
+ * would be, including the initial pull, so a returning player lands on the garden they
+ * left rather than on a blank one.
+ */
+export async function signInWithGoogle(idToken: string): Promise<{ created: boolean; email: string }> {
+  const session = await apiGoogleSignIn(idToken);
+  adoptSession(session.token, session.email ?? session.name ?? "Google", "google");
   await pull(true);
+  return { created: session.created, email: session.email ?? "" };
 }
 
 export function signOut(): void {
@@ -201,6 +232,7 @@ export function signOut(): void {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(EMAIL_KEY);
     localStorage.removeItem(SEEN_KEY);
+    forgetSessionKind();
     emit({ email: null, state: "off", message: "Đã đăng xuất. Vườn vẫn còn trên máy này.", lastSyncedAt: null, serverWasNewer: false });
   });
 }

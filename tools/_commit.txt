@@ -1,0 +1,44 @@
+Shop
+- Locked species are listed with the requirement attached instead of being
+  filtered out. A shelf that omits what is locked cannot answer "what do I do
+  next", which is the only reason anyone browses a catalogue this size. Tier chips
+  are clickable when locked, and there is a filter for locked-only stock.
+- The registry size is no longer printed. It invites "how many have I not seen"
+  instead of the question the screen exists to answer.
+- The x10 pack button is gated like the single seed. It checked only the balance,
+  so a locked species showed a live button that accepted the tap and refused in
+  silence.
+
+Combat
+- Eight elements, eight behaviours: one particle system, distributed differently
+  per element (fire rises, water arcs back down, earth drops, shadow converges).
+  Verified rather than eyeballed - diag-element-fx fails if any two share all
+  three of direction class, vertical class and lopsidedness band.
+- Particles got a dark rim. Light (#fff3c4) and electric (#ffe45e) were the same
+  value as the arena behind them, so a light impact photographed as nothing.
+
+Breeding
+- Both parents are consumed. To keep that from being a pure tax, their growth
+  passes to the child.
+- The cost is named on screen before the button, including which two plants.
+- Five protocols, each with an explicit downside, gated by breeder level. The
+  odds shown are the odds the roll uses, checked by breeding 260 children per
+  protocol and comparing.
+
+Google sign-in
+- ID token verified in the Worker against Google's published keys: alg, signature,
+  kid, aud, iss, exp, email_verified. Exercised against real RS256 signatures.
+- Google and email accounts do not merge, even on the same address.
+
+Fixes found along the way
+- The breeding meta block used the "divider" class, a 1px hairline, as a
+  container. 70px of rows rendered inside a 1px box and spilled outside the card.
+  Invisible until something sat below it.
+- Protocol chips were disabled at every level: disabled: "" still sets the
+  attribute.
+- The cost notice never entered the DOM: Element.after() on a parentless node is a
+  silent no-op.
+- worker/src/index.ts had never been typechecked - its declared devDependency was
+  not installed. Installing it surfaced a real signature mismatch in b64.
+
+Tests 685 assertions / 12 suites. ui-audit 0 failures 0 warnings.

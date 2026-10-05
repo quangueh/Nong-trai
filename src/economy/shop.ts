@@ -4,6 +4,7 @@ import { Rng, clamp, round2 } from "../core/rng";
 import type { Plant } from "../core/types";
 import { SPECIES, STARTER_IDS, speciesAffinity, type SpeciesId, type SpeciesDef, type Archetype } from "../config/species";
 import { dominantElement } from "../config/elements";
+import { checkUnlock, type UnlockContext, type UnlockReq } from "../config/unlocks";
 import { RARITY_META, type Rarity } from "../config/rarity";
 import { canSell } from "../growth/stages";
 
@@ -44,6 +45,16 @@ export interface ShopEntry {
   archetype: Archetype;
   tier: number;
   element: string;
+  /**
+   * True when this species cannot be bought yet.
+   *
+   * Resolved here rather than in the view, because the view has no save state and
+   * an unlock rule evaluated in two places is one that eventually disagrees with
+   * itself.
+   */
+  locked: boolean;
+  /** The requirement verbatim, so the card prints it instead of describing it. */
+  unlock?: UnlockReq;
 }
 
 // --- catalogue (docs/16 §21) ------------------------------------------------
@@ -107,6 +118,15 @@ export function featuredSpecies(playerId: string, dayIndex: number, breederLevel
 export interface CatalogueQuery {
   playerId: string;
   breederLevel: number;
+  /**
+   * The player's progress, for judging unlock requirements.
+   *
+   * Supplied by the caller rather than built here: this module is pure, and it has
+   * no access to the nursery. Building a context from an empty one would mark every
+   * rule that needs plants, seeds or coins as unmet, i.e. the whole registry
+   * locked.
+   */
+  progress?: UnlockContext;
   search?: string;
   tier?: number | null;
   element?: string | null;
@@ -135,8 +155,22 @@ function searchable(text: string): string {
 export function queryCatalogue(q: CatalogueQuery): CataloguePage {
   const perPage = q.perPage ?? 24;
   const needle = q.search ? searchable(q.search.trim()) : "";
+  // Built once for the page rather than per entry — every card is judged against the
+  // same save state, and recomputing it would walk the nursery once per card.
+  const ctx: UnlockContext = q.progress ?? {
+    breederLevel: q.breederLevel,
+    plantCount: 0,
+    speciesCount: 0,
+    topGrowthLevel: 0,
+    awakenedCount: 0,
+    topGeneration: 0,
+    leafCoin: 0,
+  };
 
-  const matched = availableSpecies(q.breederLevel).filter((s) => {
+  // The whole registry, not `availableSpecies`. That helper is `tier <=
+  // unlockedTier`, which is the gate from before the per-species rules existed and
+  // no longer describes what can actually be bought.
+  const matched = SPECIES.filter((s) => {
     if (q.tier != null && s.tier !== q.tier) return false;
     if (q.archetype && s.archetype !== q.archetype) return false;
     if (q.element && dominantElement(speciesAffinity(s.id)).id !== q.element) return false;
@@ -153,17 +187,22 @@ export function queryCatalogue(q: CatalogueQuery): CataloguePage {
   const slice = matched.slice((page - 1) * perPage, page * perPage);
 
   return {
-    entries: slice.map((s) => ({
-      species: s.id,
-      name: s.name,
-      price: s.seedPrice,
-      blurb: s.blurb,
-      growMinutes: s.growMinutes,
-      owned: 0,
-      archetype: s.archetype,
-      tier: s.tier,
-      element: dominantElement(speciesAffinity(s.id)).id,
-    })),
+    entries: slice.map((s) => {
+      const gate = checkUnlock(ctx, s.unlock);
+      return {
+        species: s.id,
+        name: s.name,
+        price: s.seedPrice,
+        blurb: s.blurb,
+        growMinutes: s.growMinutes,
+        owned: 0,
+        archetype: s.archetype,
+        tier: s.tier,
+        element: dominantElement(speciesAffinity(s.id)).id,
+        locked: !gate.met,
+        unlock: s.unlock,
+      };
+    }),
     total,
     page,
     pages,

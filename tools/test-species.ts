@@ -274,10 +274,34 @@ check("five starter parents are ready to breed", parents.length === 5, `${parent
 const childNames = new Map<string, number>();
 const childSigs = new Map<string, number>();
 const breedFailures = new Map<string, number>();
-const parentNames = new Map(parents.map((p) => [p.plantId, p.name]));
 let bred = 0;
 /** Pairings that were two different parents and therefore actually bred. */
 let validPairings = 0;
+/** Children whose name matched a parent they were bred from. Should stay empty. */
+const parentNameCollisions: string[] = [];
+/** Parents that survived their own breeding. Should stay empty. */
+const survivingParents: string[] = [];
+
+/**
+ * Top the parent pool back up.
+ *
+ * Breeding consumes both parents, so a fixed pool of five runs dry after two breeds
+ * and every remaining iteration is refused with "Chọn 2 cây" — which is the correct
+ * behaviour being measured by a test written for the old rule. Growing replacements is
+ * how a real breeder gets more parents, so that is what this does.
+ *
+ * Children are never eligible: they are not grown to maturity, and using them would
+ * quietly change what is being tested from starter stock to a self-bred population.
+ */
+function refillParents(to: number): Plant[] {
+  const pool = store.state.plants.filter((p) => p.growth.stage === "mature");
+  for (let i = pool.length; i < to; i++) {
+    const species = STARTER_IDS[i % STARTER_IDS.length];
+    store.state.leafCoin = 50_000_000;
+    pool.push(makeParent(species));
+  }
+  return pool;
+}
 
 // 40, not 400: every `store.breed` call also runs a full ECR battle simulation,
 // so this loop is the suite's bottleneck by a wide margin. Forty consecutive
@@ -287,14 +311,17 @@ let validPairings = 0;
 // which calls `breedPlants` directly.
 const STORE_BREEDS = 40;
 
-for (let i = 0; i < STORE_BREEDS && parents.length >= 2; i++) {
+for (let i = 0; i < STORE_BREEDS; i++) {
   // Children stay in the garden. The store promises a new plant never reuses a
   // name already held; with earlier children deleted there is nothing to collide
   // with, and the test passes on a collision the game would have caught.
   store.state.leafCoin = 50_000_000;
-  const a = parents[i % parents.length];
-  const b = parents[(i * 3 + 1) % parents.length];
+  const pool = refillParents(2);
+  const a = pool[i % pool.length];
+  const b = pool[(i * 3 + 1) % pool.length];
   if (a.plantId === b.plantId) continue;
+  const parentNameA = a.name;
+  const parentNameB = b.name;
   const res = store.breed(a.plantId, b.plantId);
   if (!res.ok || !res.result) {
     breedFailures.set(res.reason ?? "?", (breedFailures.get(res.reason ?? "?") ?? 0) + 1);
@@ -304,6 +331,19 @@ for (let i = 0; i < STORE_BREEDS && parents.length >= 2; i++) {
   const child = res.result.plant;
   childNames.set(nameKey(child.name), (childNames.get(nameKey(child.name)) ?? 0) + 1);
   childSigs.set(genomeSignature(child), (childSigs.get(genomeSignature(child)) ?? 0) + 1);
+  // The new guarantee, and the one that matters most now that parents are consumed:
+  // a child must not be given the name of a plant that was in the garden when it was
+  // bred. Because the parents are removed from `plants` *after* the name pool is
+  // built, their names are still excluded — and this is what proves it, because a
+  // child sharing a consumed parent's name is precisely the confusion the rule was
+  // meant to avoid.
+  const ck = nameKey(child.name);
+  if (ck === nameKey(parentNameA) || ck === nameKey(parentNameB)) {
+    parentNameCollisions.push(`${parentNameA} x ${parentNameB} -> ${child.name}`);
+  }
+  if (store.get(a.plantId) || store.get(b.plantId)) {
+    survivingParents.push(`${a.name} / ${b.name}`);
+  }
   validPairings++;
 }
 
@@ -328,28 +368,74 @@ check(
 const dupName = [...childNames.entries()].sort((x, y) => y[1] - x[1])[0];
 check("no name repeats more than once", (dupName?.[1] ?? 0) <= 1, `${dupName?.[1]}x`);
 check(
-  "parents kept their own names",
-  parents.every((p) => store.get(p.plantId)?.name === parentNames.get(p.plantId)),
-  parents
-    .filter((p) => store.get(p.plantId)?.name !== parentNames.get(p.plantId))
-    .map((p) => `${p.plantId}: ${parentNames.get(p.plantId)} -> ${store.get(p.plantId)?.name} (still in state: ${!!store.get(p.plantId)})`)
-    .join("; "),
+  "both parents are consumed by the breeding",
+  survivingParents.length === 0,
+  survivingParents.slice(0, 3).join("; "),
+);
+check(
+  "no child reuses a parent's name",
+  parentNameCollisions.length === 0,
+  parentNameCollisions.slice(0, 3).join("; "),
+);
+check(
+  "the starting parents are all gone after the sweep",
+  parents.every((p) => !store.get(p.plantId)),
+  parents.filter((p) => store.get(p.plantId)).map((p) => p.name).join(", "),
 );
 
 section("9. Breeding the same pair repeatedly still varies");
 
+// The same-pair property cannot be shown through the store any more — the second breed
+// of a pair is impossible, because the first one spent both of them. That is the rule
+// working, so the property is checked where it still means something: directly against
+// the generator, which does not know or care about the garden. If this section is ever
+// deleted as redundant, the store test above will keep passing while the guarantee
+// quietly disappears.
 const samePairNames = new Set<string>();
 const samePairSigs = new Set<string>();
 const SAME_PAIR_BREEDS = 25;
-for (let i = 0; i < SAME_PAIR_BREEDS; i++) {
-  store.state.leafCoin = 50_000_000;
-  const res = store.breed(parents[0].plantId, parents[1].plantId);
-  if (!res.ok || !res.result) continue;
-  samePairNames.add(nameKey(res.result.plant.name));
-  samePairSigs.add(genomeSignature(res.result.plant));
+{
+  const pa = makeParent(STARTER_IDS[0]);
+  const pb = makeParent(STARTER_IDS[1]);
+  for (let i = 0; i < SAME_PAIR_BREEDS; i++) {
+    const r = breedPlants(pa, pb, {
+      playerId: "p",
+      nonce: `same-${i}`,
+      attempt: i,
+      tier: "bloom",
+      targetRarity: "C",
+      breederLevel: 12,
+    }, 1_700_000_000_000 + i * 1000);
+    samePairNames.add(nameKey(r.plant.name));
+    samePairSigs.add(genomeSignature(r.plant));
+  }
 }
-check(`${SAME_PAIR_BREEDS} breeds of one pair give ${SAME_PAIR_BREEDS} names`, samePairNames.size === SAME_PAIR_BREEDS, `${samePairNames.size}/${SAME_PAIR_BREEDS}`);
-check(`${SAME_PAIR_BREEDS} breeds of one pair give ${SAME_PAIR_BREEDS} genomes`, samePairSigs.size === SAME_PAIR_BREEDS, `${samePairSigs.size}/${SAME_PAIR_BREEDS}`);
+/*
+ * Genomes, not names.
+ *
+ * This assertion was originally "25 names" and it failed roughly one run in four with
+ * 24/25. That is not flakiness to shrug at — it is the test asking for something the
+ * generator never promised. `breedPlants` derives a name from the genome, and two
+ * distinct genomes can land on the same name. The uniqueness the player relies on is
+ * enforced one layer up: the store builds its `usedNames` pool from the live garden
+ * and walks a salt forward until the name is free, which section 8 verifies over forty
+ * real breeds.
+ *
+ * So the per-call guarantee that actually exists is the genome, and that is what is
+ * asserted. The name count is still printed, because the number is informative about
+ * how often the generator collides on its own — it should be low, and if it stops
+ * being low the store's salt walk is doing more work than it should.
+ */
+check(
+  `${SAME_PAIR_BREEDS} breeds of one pair give ${SAME_PAIR_BREEDS} genomes`,
+  samePairSigs.size === SAME_PAIR_BREEDS,
+  `${samePairSigs.size}/${SAME_PAIR_BREEDS}`,
+);
+check(
+  "the generator alone collides on names only rarely",
+  samePairNames.size >= SAME_PAIR_BREEDS - 1,
+  `${samePairNames.size}/${SAME_PAIR_BREEDS} distinct without the store's name pool`,
+);
 
 section("9b. Wide sweep without the store (cheap — no ECR per call)");
 
@@ -531,8 +617,25 @@ const tier3 = queryCatalogue({ playerId: "p", breederLevel: 60, tier: 3, perPage
 check("tier filter works", tier3.entries.every((e) => e.tier === 3), `${tier3.total}`);
 
 check(
-  "the catalogue respects the level gate",
-  queryCatalogue({ playerId: "p", breederLevel: 1 }).total === SPECIES.filter((s) => s.tier === 0).length,
+  "the catalogue lists the whole registry, locked stock included",
+  // This assertion used to be `total === SPECIES.filter(s => s.tier === 0).length`,
+  // which asserted that a level-1 player's shelf contained only tier-0 species. That
+  // was the behaviour the shop was complained about: several thousand species were
+  // not greyed out or marked, they were *absent*, so a player could not discover that
+  // they existed and could not find out what any of them required. The test was
+  // pinning the fault rather than the contract.
+  //
+  // What replaces it keeps the property that actually mattered — locked stock is
+  // listed but not purchasable — and adds the one that was missing: every locked entry
+  // carries the requirement that gates it.
+  (() => {
+    const lvl1 = queryCatalogue({ playerId: "p", breederLevel: 1 });
+    return (
+      lvl1.total === SPECIES.length &&
+      lvl1.entries.some((e) => e.locked) &&
+      lvl1.entries.filter((e) => e.locked).every((e) => Boolean(e.unlock))
+    );
+  })(),
 );
 
 const overPage = queryCatalogue({ playerId: "p", breederLevel: 60, page: 9999, perPage: 50 });

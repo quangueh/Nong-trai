@@ -3182,9 +3182,9 @@ body.planting {
 
 .fx-mote {
   position: absolute;
-  width: 7px;
-  height: 7px;
-  margin: -3.5px 0 0 -3.5px;
+
+
+
   border-radius: 50%;
   background: radial-gradient(circle, #fff, var(--c) 60%, transparent 76%);
   animation: fxGather 0.5s ease-in both;
@@ -5038,4 +5038,459 @@ body.planting {
   .account-sync.is-syncing .account-dot {
     animation: none;
   }
+}
+
+/* ==========================================================================
+   Elemental impacts (src/battle/elementImpact.ts)
+   --------------------------------------------------------------------------
+   One particle system with eight behaviours. What separates them is the shape of
+   the motion, so the element-specific rules below change the *particle form* and
+   the *ring direction*, while the flight path itself lives in one keyframe driven
+   by the per-particle custom properties written by the spawner.
+
+   All motion is transform/opacity: `translate`, `scale`, `rotate`. No width,
+   height, top or left, so an eight-particle impact cannot force layout.
+   ========================================================================== */
+
+.fx-elem {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.fx-elem-p {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--c, #fff);
+  /*
+   * Two shadows, and the first one is the important one.
+   *
+   * The arena is a pale field and the fighters stand on it, so a light-hued element —
+   * light at #fff3c4, electric at #ffe45e — drew particles that were literally the
+   * same value as the ground behind them. The first photograph of this effect showed
+   * a fire impact with visible embers and a light impact with nothing at all.
+   *
+   * A dark rim costs one shadow and makes every particle readable on every element's
+   * background, which is cheaper and more reliable than authoring a second colour per
+   * element for the two that happen to be pale.
+   */
+  box-shadow: 0 0 0 1.5px rgba(24, 18, 12, 0.42), 0 0 9px var(--glow, rgba(255, 255, 255, 0.5));
+  opacity: 0;
+  animation: fxElemFly var(--life, 700ms) cubic-bezier(0.18, 0.72, 0.32, 1) var(--delay, 0ms) both;
+}
+
+/*
+ * The whole set's flight. Start already at 0.2 scale and transparent so a delayed
+ * particle is invisible while it waits rather than sitting in the middle of the
+ * target as a dot — the earlier per-hit code had the same `delay` idea but the
+ * element did not exist to delay.
+ *
+ * `--fall` is the downward acceleration, added at the end of travel. Fire sets it
+ * small so embers keep rising; earth sets it large so debris falls; water sets it
+ * large so the arc comes back down. That one number is what separates a rise, an
+ * arc and a fall.
+ */
+@keyframes fxElemFly {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+  }
+  18% {
+    transform: translate(calc(-50% + var(--dx) * 0.22), calc(-50% + var(--dy) * 0.22)) scale(calc(var(--scale) * 1.15));
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + var(--fall))) scale(calc(var(--scale) * 0.35));
+    opacity: 0;
+  }
+}
+
+/* The ring. Expands for most elements, contracts for shadow. */
+.fx-elem-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  border: 3px solid var(--c, #fff);
+  box-shadow: 0 0 0 1.5px rgba(24, 18, 12, 0.3);
+  opacity: 0;
+  animation-name: fxElemRing;
+  animation-timing-function: cubic-bezier(0.16, 0.8, 0.3, 1);
+  animation-fill-mode: both;
+}
+
+/*
+ * The ring is present from the first frame rather than fading in.
+ *
+ * The first render of this effect had a ring that started at `scale(0.3)` and faded
+ * up from zero, and a fire impact photographed as nothing at all — its embers were
+ * the same hue as the plant's own leaves. An element needs something that is
+ * unmistakable on frame one, because a fight does not wait for the effect to arrive.
+ */
+@keyframes fxElemRing {
+  0% {
+    transform: scale(0.65);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(calc(3 * var(--power, 1)));
+    opacity: 0;
+  }
+}
+
+.fx-elem-glyph {
+  position: absolute;
+  left: 0;
+  top: -40px;
+  width: 34px;
+  height: 34px;
+  margin-left: -17px;
+  opacity: 0;
+  animation: fxElemGlyph 620ms ease-out both;
+}
+
+.fx-elem-glyph svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.fx-elem-glyph path {
+  fill: var(--c, #fff);
+  /* Dark outline for the same reason the particles have one — see `.fx-elem-p`. */
+  filter: drop-shadow(0 0 1.5px rgba(24, 18, 12, 0.75)) drop-shadow(0 0 6px var(--glow, rgba(255, 255, 255, 0.6)));
+}
+
+@keyframes fxElemGlyph {
+  0% {
+    transform: scale(0.5) translateY(6px);
+    opacity: 0;
+  }
+  26% {
+    transform: scale(1.15) translateY(0);
+    opacity: 1;
+  }
+  62% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.9) translateY(-6px);
+    opacity: 0;
+  }
+}
+
+/* --- per-element particle form -------------------------------------------
+   The flight is shared; only the mark changes. Narrower and rounder reads as a
+   spark, wider and squarer reads as a chip of matter, which is the difference
+   between a lightning hit and a rock hitting something.
+   ------------------------------------------------------------------------- */
+
+/* Fire: teardrop embers, taller than wide. */
+.fx-elem.is-fire .fx-elem-p {
+  width: 8px;
+  height: 12px;
+  margin: -6px 0 0 -4px;
+  border-radius: 50% 50% 50% 0;
+}
+
+/* Water: round droplets, the only set that arrives low and returns. */
+.fx-elem.is-water .fx-elem-p {
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(24, 18, 12, 0.35), 0 0 8px var(--glow, rgba(92, 200, 255, 0.5));
+}
+
+/* Electric: thin streaks, so a hit reads as a line rather than a puff. */
+.fx-elem.is-electric .fx-elem-p {
+  width: 17px;
+  height: 3.5px;
+  margin: -1.75px 0 0 -8.5px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1.5px rgba(24, 18, 12, 0.4), 0 0 10px var(--glow, rgba(255, 214, 102, 0.7));
+}
+
+/* Wood: leaf chips, wider than tall and heavily rotated by the spawner. */
+.fx-elem.is-wood .fx-elem-p {
+  width: 13px;
+  height: 7px;
+  margin: -3.5px 0 0 -6.5px;
+  border-radius: 60% 10% 60% 10%;
+}
+
+/* Earth: chunky, square-cornered, and the slowest to fade. */
+.fx-elem.is-earth .fx-elem-p {
+  width: 11px;
+  height: 9px;
+  margin: -4.5px 0 0 -5.5px;
+  border-radius: 1px;
+  box-shadow: 0 0 0 1.5px rgba(24, 18, 12, 0.4), 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* Poison: bubbles, drawn as a ring rather than a disc. The rim is the outline rather
+   than a shadow, since a transparent disc has nothing for a shadow to sit on. */
+.fx-elem.is-poison .fx-elem-p {
+  background: transparent;
+  border: 2.5px solid var(--c, #b6e34a);
+  box-shadow: 0 0 0 1.5px rgba(24, 18, 12, 0.35), 0 0 8px var(--glow, rgba(176, 108, 255, 0.5));
+}
+
+/* Light: the thinnest marks of the set - rays, so the fan reads at a glance. */
+.fx-elem.is-light .fx-elem-p {
+  width: 19px;
+  height: 3.5px;
+  margin: -1.75px 0 0 -9.5px;
+  border-radius: 2px;
+}
+
+/* Shadow: dark smudges that converge instead of scattering. */
+.fx-elem.is-shadow .fx-elem-p {
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: rgba(20, 12, 32, 0.85);
+  border: 2px solid var(--c, #a98bd8);
+  box-shadow: 0 0 10px rgba(20, 12, 32, 0.6);
+  animation-name: fxElemDrain;
+}
+
+/*
+ * Shadow is the one element that pulls its particles back to the contact point.
+ *
+ * This is the clearest signal that the element is doing something different: every
+ * other impact throws matter outward and this one takes it in, so it is legible
+ * even in a fast fight where the individual particles are unreadable.
+ */
+@keyframes fxElemDrain {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+  }
+  30% {
+    transform: translate(calc(-50% + var(--dx) * 0.7), calc(-50% + var(--dy) * 0.7)) scale(calc(var(--scale) * 1.2));
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(0.1);
+    opacity: 0;
+  }
+}
+
+/* Shadow's ring contracts too, for the same reason. */
+.fx-elem.is-shadow .fx-elem-ring {
+  animation-name: fxElemRingIn;
+}
+
+@keyframes fxElemRingIn {
+  0% {
+    transform: scale(calc(3 * var(--power, 1)));
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * Not `animation: none`. A blank impact would leave the hit reading as "nothing
+   * happened", which is worse than the original problem. The particles are held at
+   * the end of their travel so the element's shape is still legible as a still
+   * mark, and the glyph stays for its full life.
+   */
+  .fx-elem-p {
+    animation: none;
+    opacity: 0;
+  }
+
+  .fx-elem-ring {
+    animation: none;
+    opacity: 0.35;
+  }
+
+  .fx-elem-glyph {
+    animation: none;
+    opacity: 0.9;
+  }
+}
+
+/* ==========================================================================
+   Breeding protocol picker (src/genetics/protocols.ts)
+   --------------------------------------------------------------------------
+   A chip is one protocol. The three states have to be distinguishable at a glance
+   because they mean three different things: selected, available, and locked.
+
+   The locked state keeps its icon slot at the same width as the unlocked one. An
+   earlier version replaced the glyph with a padlock, which shifted every chip after
+   it by a character width and made the row visibly reflow on load.
+   ========================================================================== */
+
+.proto-box {
+  margin-top: 12px;
+}
+
+.proto-chip {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 78px;
+  padding: 7px 9px 6px;
+  border: 1px solid var(--line, #d8d2c6);
+  border-radius: 12px;
+  background: #fffdf8;
+  color: var(--ink, #2b2620);
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.12s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.proto-chip:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: var(--brand, #2f7d46);
+}
+
+.proto-chip.is-on {
+  border-color: var(--brand, #2f7d46);
+  border-width: 2px;
+  background: #eef7f0;
+  box-shadow: 0 1px 0 rgba(47, 125, 70, 0.18);
+}
+
+.proto-chip:disabled,
+.proto-chip.is-locked {
+  cursor: default;
+  opacity: 0.62;
+  background: #f3f0e9;
+  border-style: dashed;
+}
+
+.proto-ico {
+  font-size: 17px;
+  line-height: 1.1;
+}
+
+.proto-name {
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.proto-fee {
+  font-size: 10px;
+  color: var(--muted, #6b6355);
+}
+
+.proto-chip.is-on .proto-fee {
+  color: var(--brand, #2f7d46);
+  font-weight: 700;
+}
+
+/* Shown only on a locked chip. Kept as its own line so an unlocked row keeps a
+   uniform height and the strip does not jump when nothing is locked. */
+.proto-lock {
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: #9a8f7c;
+}
+
+/* ==========================================================================
+   Breeding cost notice
+   --------------------------------------------------------------------------
+   Sits directly under the button it qualifies. Warm amber rather than red: it is a
+   cost the player has accepted by being here, not an error, and a red block would
+   read as "you did something wrong".
+   ========================================================================== */
+
+.proto-cost {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #f4f1e9;
+  border: 1px solid var(--line, #d8d2c6);
+}
+
+.proto-cost.is-live {
+  background: #fdf3e2;
+  border-color: #e6c98d;
+}
+
+.proto-cost.is-live .tiny:first-child {
+  /* 4.5:1 on this background, not merely "brownish". The audit caught #8a5a09 at
+     3.50:1, which clears the large-text threshold and misses the small-text one. */
+  color: #6d4406;
+}
+
+/* The tradeoff line on the selected protocol's card. Same value as above, for the
+   same reason: this is body-sized text, not a heading. */
+.proto-box .card .tiny:last-child {
+  color: #6d4406;
+}
+
+/* ==========================================================================
+   Google sign-in (src/account/google.ts)
+   --------------------------------------------------------------------------
+   The button is Google's own component in an iframe, so what is styled here is the
+   space around it and the state when it does not arrive.
+   ========================================================================== */
+
+.account-google {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+/* Google's iframe centres itself, but the container needs the height or the sheet
+   jumps when the script finishes loading. */
+.account-google > div[style*="width"] {
+  margin: 0 auto;
+}
+
+/* The divider between the Google and email halves. */
+.account-sep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 8px;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+.account-sep::before,
+.account-sep::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line, #d8d2c6);
+}
+
+/* Shown when the GIS script is blocked. Says what happened and what still works,
+   rather than leaving an unexplained gap where a button should be. */
+.google-fallback {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #f4f1e9;
+  border: 1px dashed var(--line, #d8d2c6);
+  text-align: center;
 }

@@ -22,6 +22,18 @@ id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
 [vars]
 PBKDF2_ROUNDS = "150000"
 
+# GOOGLE_CLIENT_ID is the OAuth client ID of the web app in Google Cloud console.
+# It is a var, not a secret: it is public by design and ships in the game's bundle.
+# Without it, /api/google answers 503 google_not_configured and password sign-in
+# is unaffected.
+#
+#   npx wrangler secret put GOOGLE_CLIENT_ID
+#
+# It does NOT need to be a secret. What matters is that it matches
+# VITE_GOOGLE_CLIENT_ID in the game's .env, because the token's "aud" claim is
+# checked against it and a mismatch refuses every sign-in.
+GOOGLE_CLIENT_ID = ""
+
 # Note on the KV tier: the free plan allows roughly 1,000 writes per day. The
 # client syncs on login, on demand, and occasionally — not on every mutation —
 # because saving per action would exhaust that in an afternoon.

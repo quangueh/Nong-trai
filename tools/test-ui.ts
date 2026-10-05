@@ -236,7 +236,12 @@ await render("breeding renders", () => navigate("breeding"));
   check("it names the child it produced", ($(".fusion-caption")?.textContent ?? "") === (store.state.plants[store.state.plants.length - 1]?.name ?? "X"), $(".fusion-caption")?.textContent ?? "");
   await render("tapping the ceremony continues", () => click($(".fusion-overlay")));
   check("tapping it moves on to the report", !$(".fusion-overlay") && !!$(".sheet"));
-  check("a child plant was created", store.state.plants.length === countBefore + 1, `${countBefore} -> ${store.state.plants.length}`);
+  // Breeding spends both parents, so the garden loses two and gains one: net -1.
+  check(
+    "a child plant was created and both parents were spent",
+    store.state.plants.length === countBefore - 1,
+    `${countBefore} -> ${store.state.plants.length}`,
+  );
 }
 
 section("6. Mutation report");
@@ -346,7 +351,13 @@ await render("lab renders", () => navigate("lab"));
   check("offers seed packs", t.includes("x10 ·"), "per-card bulk buy, 5% off");
 
   const coinsBefore = store.state.leafCoin;
-  await render("buy a seed", () => click(byText(".screen .btn", "🪙") ?? $$(".screen .btn").find((b) => b.textContent?.includes("🪙"))!));
+  // Must be an *enabled* button. The shelf now lists locked species, and their buy
+  // buttons carry the coin glyph and are disabled — so the first matching button is
+  // no longer a buyable one, and this line was clicking a dead control and reporting
+  // that buying does not work.
+  const buyable = $$(".screen .btn").find((b) => b.textContent?.includes("🪙") && !(b as HTMLButtonElement).disabled);
+  check("the shelf offers at least one purchasable seed", !!buyable, `${$$(".screen .btn").filter((b) => b.textContent?.includes("🪙") && !(b as HTMLButtonElement).disabled).length} enabled`);
+  await render("buy a seed", () => click(buyable!));
   check("buying deducts coins", store.state.leafCoin < coinsBefore, `${coinsBefore} -> ${store.state.leafCoin}`);
 
   await render("switch to items tab", () => click(byText(".screen .btn", "Vật tư")));

@@ -96,6 +96,38 @@ export async function login(email: string, password: string): Promise<AccountSes
   return { token: res.token, playerId: res.playerId };
 }
 
+/**
+ * Sign in with a Google ID token.
+ *
+ * The client does not decide anything about the token — it forwards it and takes the
+ * Worker's word. `created` distinguishes a first sign-in from a return visit so the UI
+ * can say "welcome" rather than "welcome back", which is the only difference the player
+ * can actually observe.
+ */
+export async function googleSignIn(idToken: string): Promise<AccountSession & {
+  created: boolean;
+  name?: string;
+  email?: string;
+  picture?: string;
+}> {
+  const res = await call<{
+    token: string;
+    playerId: string;
+    created: boolean;
+    name?: string;
+    email?: string;
+    picture?: string;
+  }>("/api/google", { method: "POST", body: JSON.stringify({ idToken }) });
+  return {
+    token: res.token,
+    playerId: res.playerId,
+    created: res.created,
+    name: res.name,
+    email: res.email,
+    picture: res.picture,
+  };
+}
+
 /** Which save the server holds, or null when there is not one yet. */
 export async function fetchSave(token: string): Promise<CloudSave | null> {
   try {

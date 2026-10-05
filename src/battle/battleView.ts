@@ -301,7 +301,8 @@ export class BattleView {
           // same action, so a trap that armed and then erupts erupts as a trap.
           const fresh = cast && performance.now() - cast.at < 400;
           const delivery: Delivery = fresh ? cast.delivery : "melee";
-          const colour = fresh ? cast.colour : elementColour(dominantElement(this.session.side(attacker).snap.elements).id);
+          const element = dominantElement(this.session.side(attacker).snap.elements).id;
+          const colour = fresh ? cast.colour : elementColour(element);
           this.lastCast = null;
 
           this.sides[victim].hurt();
@@ -316,6 +317,11 @@ export class BattleView {
             draw: () => {
               this.fx.strike(attacker, victim, delivery, "damage", colour, weight === "crit" || weight === "kill");
               this.fx.impact(victim, weight === "kill" || weight === "crit" ? "crit" : "hit", undefined, weight);
+              // The element's own impact, in addition to the generic burst above: the
+              // burst carries magnitude, this carries cause. Without it every element
+              // looked like every other one and the element a plant fought with was
+              // only visible as a log line.
+              this.fx.elementalHit(victim, element, amount / maxHp, weight);
               this.fx.float(victim, `-${Math.round(amount)}`, ev.isCrit ? "crit" : "dmg", weight);
             },
           });

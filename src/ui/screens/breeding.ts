@@ -2,6 +2,13 @@
 
 import { playFusion, stagger } from "../fusion";
 import { sfx } from "../../audio/audio";
+import {
+  DEFAULT_PROTOCOL,
+  PROTOCOLS,
+  getProtocol,
+  protocolUnlocked,
+  type ProtocolId,
+} from "../../genetics/protocols";
 import { el, toast, oddsBar, probabilityRows, rarityTag, traitChips, plantThumb, archetypeRadar, fmt } from "../components";
 import { store } from "../app";
 import type { Plant } from "../../core/types";
@@ -19,6 +26,8 @@ export function renderBreeding(nav: Navigate): HTMLElement {
 
   let slotA: string | null = null;
   let slotB: string | null = null;
+  /** The protocol the breeder will run. Defaults to the free one. */
+  let protocol: ProtocolId = DEFAULT_PROTOCOL;
 
   const title = el("div", { class: "sec-title" });
   title.append(el("span", {}, ["🧬 Phòng lai tạo"]));
@@ -33,8 +42,23 @@ export function renderBreeding(nav: Navigate): HTMLElement {
   const info = el("div", { class: "card", style: "margin-top:12px" });
   root.appendChild(info);
 
+  // The protocol picker sits directly above the button it modifies. Anything further
+  // away and the odds bar below it stops being a readout of the thing being chosen.
+  const protocolBox = el("div", { class: "proto-box" });
+  root.appendChild(protocolBox);
+
   const breedBtn = el("button", { class: "btn primary block", style: "margin-top:12px" }, ["🧬 Lai tạo"]);
   root.appendChild(breedBtn);
+
+  // The spend is irreversible, so it is named before it happens. Hidden until the
+  // press, it is a trap; stated here, it is a rule.
+  //
+  // Placed *after* the button is appended. `breedBtn.after(cost)` on a parentless node
+  // is a silent no-op, so an earlier version attached the notice right after the button
+  // was constructed and it never entered the DOM at all — it rendered nowhere, and
+  // because the call was not an error nothing said so.
+  const cost = el("div", { class: "proto-cost" });
+  breedBtn.after(cost);
 
   const candidates = store.state.plants.filter((p) => p.growth.stage === "mature" || p.growth.stage === "awakened");
 
@@ -45,6 +69,7 @@ export function renderBreeding(nav: Navigate): HTMLElement {
       () => openPicker((id) => {
         slotA = id;
         paintSlots();
+        paintCost();
       }),
       "cây A",
     );
@@ -54,10 +79,74 @@ export function renderBreeding(nav: Navigate): HTMLElement {
       () => openPicker((id) => {
         slotB = id;
         paintSlots();
+        paintCost();
       }),
       "cây B",
     );
     paintInfo();
+  };
+
+  const paintProtocols = () => {
+    protocolBox.replaceChildren();
+    protocolBox.appendChild(el("div", { class: "sec-title", style: "font-size:12px;padding:0 0 6px" }, [
+      el("span", {}, ["🧪 Phương lai"]),
+    ]));
+
+    const chips = el("div", { class: "scrollx", style: "gap:6px;padding-bottom:6px" });
+    for (const p of PROTOCOLS) {
+      const unlocked = protocolUnlocked(p.id, store.state.breederLevel);
+      const on = protocol === p.id;
+      const chip = el(
+        "button",
+        {
+          class: "proto-chip" + (on ? " is-on" : "") + (unlocked ? "" : " is-locked"),
+          title: unlocked ? p.blurb + " " + p.tradeoff : "Mở khi cấp nhà lai tạo " + p.levelRequired,
+        },
+        [
+          el("span", { class: "proto-ico" }, [unlocked ? p.icon : "🔒"]),
+          el("span", { class: "proto-name" }, [p.label]),
+          el("span", { class: "proto-fee mono" }, [
+            p.feeMultiplier === 1 ? "Miễn phí" : "x" + p.feeMultiplier,
+          ]),
+        ],
+      );
+      if (!unlocked) {
+        chip.appendChild(el("span", { class: "proto-lock mono" }, ["cấp " + p.levelRequired]));
+      }
+      /*
+       * Disabled as a *property*, after the element exists.
+       *
+       * `el`'s attribute map writes every value with `setAttribute`, so passing
+       * `disabled: unlocked ? "" : "disabled"` produced `disabled=""` for the unlocked
+       * case — which is a present boolean attribute, so every chip was disabled at
+       * every level. An empty string is not the absence of a value to `setAttribute`,
+       * and the failure is invisible until someone taps the chip.
+       */
+      chip.disabled = !unlocked;
+      chip.addEventListener("click", () => {
+        protocol = p.id;
+        sfx.play("tap");
+        paintProtocols();
+        paintInfo();
+      });
+      chips.appendChild(chip);
+    }
+    protocolBox.appendChild(chips);
+
+    // The selected protocol's benefit and its cost, both in full. Never abbreviated:
+    // the tradeoff line is the only place the player learns that Đồn nhân can
+    // produce a plant that is weird rather than strong.
+    const chosen = getProtocol(protocol);
+    const detail = el("div", { class: "card", style: "margin:2px 0 0;padding:9px 10px" });
+    detail.append(
+      el("div", { class: "small", style: "font-weight:700" }, [chosen.icon + " " + chosen.label]),
+      el("div", { class: "tiny", style: "margin-top:3px" }, [chosen.blurb]),
+      // The colour lives in the stylesheet: it was an inline `#b06a12` here that failed the
+      // contrast audit at 3.50:1, and an inline value is not where anyone looks to fix a
+      // contrast problem.
+      el("div", { class: "tiny proto-tradeoff", style: "margin-top:3px" }, ["⚠ " + chosen.tradeoff]),
+    );
+    protocolBox.appendChild(detail);
   };
 
   const paintInfo = () => {
@@ -75,7 +164,10 @@ export function renderBreeding(nav: Navigate): HTMLElement {
       breedBtn.disabled = true;
       return;
     }
-    const weights = store.breedingPreview(a.plantId, b.plantId);
+    // Both of these follow the selected protocol. They used to be read straight off
+    // the parent pair, which meant the screen showed the odds of a breeding the
+    // player was never going to run.
+    const weights = store.breedingPreview(a.plantId, b.plantId, protocol);
     if (!weights) return;
     info.append(
       el("div", { class: "tiny muted", style: "margin-bottom:6px" }, ["Xác suất độ hiếm của cây con:"]),
@@ -87,10 +179,30 @@ export function renderBreeding(nav: Navigate): HTMLElement {
 
     // meta
     const effLevel = Math.floor((a.growth.level + b.growth.level) / 2);
-    const fee = Math.floor((sellPriceOf(a) + sellPriceOf(b)) * 0.2);
-    const meta = el("div", { class: "divider" });
+    const fee = store.breedingFee(a.plantId, b.plantId, protocol);
+    /*
+ * A plain container, preceded by an actual divider.
+ *
+ * This was `el("div", { class: "divider" })`. `divider` is a hairline rule in this
+ * stylesheet — `height: 1px` — and using it as a wrapper put 70-odd pixels of meta
+ * rows inside a one-pixel box. They still rendered, because the overflow is visible,
+ * so nothing looked broken; they simply painted outside the card they belonged to.
+ *
+ * That went unnoticed for as long as nothing sat directly underneath. Adding the
+ * protocol picker below made the spill land on it, and the two drew over each other.
+ */
+info.appendChild(el("div", { class: "divider", style: "margin:10px 0 8px" }));
+const meta = el("div");
     meta.appendChild(el("div", { class: "row between tiny muted" }, [el("span", {}, ["Cấp cha mẹ trung bình"]), el("span", { class: "mono" }, [String(effLevel)])]));
-    meta.appendChild(el("div", { class: "row between tiny muted" }, [el("span", {}, ["Phí lai"]), el("span", { class: "mono" }, [`${fee}🪙`])]));
+    meta.appendChild(el("div", { class: "row between tiny muted" }, [el("span", {}, ["Phí lai (hệ số ×" + getProtocol(protocol).feeMultiplier + ")"]), el("span", { class: "mono" }, [`${fee}🪙`])]));
+    {
+      // The two promises the protocol makes, stated numerically. A ceiling of
+      // "no higher than major" is easier to trust than "mutates less", and it is
+      // what the code actually does.
+      const ceilingIndex = 3 + getProtocol(protocol).tierCeilingShift;
+      const ceiling = ceilingIndex >= 3 ? "tái bảc cao nhất" : ["vi mối", "nhỏ", "cao", "tái cao nhất"][ceilingIndex];
+      meta.appendChild(el("div", { class: "row between tiny muted" }, [el("span", {}, ["Đột biến cao nhất"]), el("span", { class: "mono" }, [ceiling])]));
+    }
     meta.appendChild(el("div", { class: "row between tiny muted" }, [el("span", {}, ["Độ đa dạng gene"]), el("span", { class: "mono" }, [diversityLabel(a, b)])]));
     meta.appendChild(el("div", { class: "row between tiny muted" }, [el("span", {}, ["Chu kỳ lai"]), el("span", { class: "mono" }, [String(store.state.pity.totalBreeds)])]));
     info.appendChild(meta);
@@ -98,7 +210,7 @@ export function renderBreeding(nav: Navigate): HTMLElement {
 
   breedBtn.addEventListener("click", () => {
     if (!slotA || !slotB) return;
-    const res = store.breed(slotA, slotB);
+    const res = store.breed(slotA, slotB, protocol);
     if (!res.ok || !res.result) {
       sfx.play("error");
       toast(res.reason ?? "Lai thất bại");
@@ -112,6 +224,27 @@ export function renderBreeding(nav: Navigate): HTMLElement {
     });
   });
 
+  const paintCost = () => {
+    const a = slotA ? store.get(slotA) : undefined;
+    const b = slotB ? store.get(slotB) : undefined;
+    if (!a || !b || a.plantId === b.plantId) {
+      cost.className = "proto-cost";
+      cost.replaceChildren(el("div", { class: "tiny muted" }, ["Chịn hai cây trưởng thành để lai. Cây con sẽ là cây mối."]));
+      return;
+    }
+    cost.className = "proto-cost is-live";
+    cost.replaceChildren(
+      el("div", { class: "tiny", style: "font-weight:700" }, ["⚠ Cây cha mẹ sẽ mất đến vào vốn"]),
+      el("div", { class: "tiny" }, [a.name]),
+      el("div", { class: "tiny" }, [b.name]),
+      el("div", { class: "tiny muted", style: "margin-top:3px" }, ["Kinh nghiệm cha mẹ sẽ chuyển thành kinh nghiệm của cây con."]),
+    );
+  };
+
+  // Protocols first: the odds bar and the fee in `paintInfo` both read the selected
+  // protocol, so the picker has to be painted before the slots it is priced against.
+  paintProtocols();
+  paintCost();
   paintSlots();
 
   if (!candidates.length) {

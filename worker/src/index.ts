@@ -6,6 +6,7 @@
  *
  *   POST /api/register   { email, password }        -> { token, player }
  *   POST /api/login      { email, password }        -> { token, player }
+ *   POST /api/google     { idToken }                -> { token, player, created }
  *   GET  /api/save                                  -> { savedAt, state } | 404
  *   PUT  /api/save       { savedAt, state }         -> { savedAt }
  *   POST /api/password   { token, current, next }   -> { ok }
@@ -32,6 +33,8 @@
  * no KV read. That matters because the read is the eventual-consistent one.
  */
 
+import { googleAccountKey, googleSaveKey, verifyGoogleIdToken } from "./google";
+
 export interface Env {
   /** KV namespace holding both accounts and saves. */
   DB: KVNamespace;
@@ -39,6 +42,15 @@ export interface Env {
   TOKEN_SECRET: string;
   /** PBKDF2 rounds. Higher is slower to attack and slower to log in. */
   PBKDF2_ROUNDS?: string;
+  /**
+   * The Google OAuth client ID the game is published under.
+   *
+   * Required for `/api/google` and nothing else: without it that route answers
+   * `google_not_configured` and password sign-in is unaffected. The worker's own client
+   * secret is deliberately not used or needed — the client ID token is verified with
+   * Google's published public keys, so there is no secret on this side to leak.
+   */
+  GOOGLE_CLIENT_ID?: string;
 }
 
 interface Account {
@@ -67,9 +79,19 @@ const RKO = (code: string, status = 400, extra: Record<string, unknown> = {}): R
 
 const enc = new TextEncoder();
 
-const b64 = (buf: ArrayBuffer): string => {
+/*
+ * Accepts either an `ArrayBuffer` or a `Uint8Array`.
+ *
+ * The signature used to be `ArrayBuffer` alone while the body immediately wrapped its
+ * argument in `new Uint8Array(...)`. Callers pass both kinds: `stretch` returns an
+ * `ArrayBuffer` from `crypto.subtle.deriveBits`, while `TextEncoder.encode` returns a
+ * `Uint8Array`. That mismatch was invisible because `@cloudflare/workers-types` had
+ * never been installed under `worker/`, so `tsc` had never actually run over this file.
+ * Installing the declared devDependency is what surfaced it.
+ */
+const b64 = (bytes: ArrayBuffer | Uint8Array): string => {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   let s = "";
-  const b = new Uint8Array(buf);
   for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
   return btoa(s);
 };
@@ -85,6 +107,22 @@ const randomBytes = (n: number): Uint8Array => {
   const b = new Uint8Array(n);
   crypto.getRandomValues(b);
   return b;
+};
+
+/**
+ * A short random identifier, for a `playerId` minted on the server.
+ *
+ * Not a UUID: the id is stored inside every save blob and compared on every sync, so
+ * it is kept short. 12 bytes of `crypto.getRandomValues` is far more than enough to
+ * make guessing one pointless, and it is not derived from anything guessable about the
+ * account — the point of minting it here rather than accepting it from the client is
+ * that a caller cannot attach a Google identity to a garden that is not its own.
+ */
+const randomHex = (bytes: number): string => {
+  const b = randomBytes(bytes);
+  let s = "";
+  for (let i = 0; i < b.length; i++) s += b[i].toString(16).padStart(2, "0");
+  return s;
 };
 
 async function stretch(password: string, salt: Uint8Array, rounds: number): Promise<ArrayBuffer> {
@@ -118,7 +156,25 @@ async function sign(payload: object, secret: string): Promise<string> {
   return `${body}.${sig}`;
 }
 
-async function verify(token: string, secret: string): Promise<{ email: string } | null> {
+interface Session {
+  /** Present for password accounts. */
+  email?: string;
+  /** Present for Google accounts. Google's stable account id. */
+  sub?: string;
+  exp: number;
+}
+
+/**
+ * Verify one of our own HMAC session tokens.
+ *
+ * Returns the subject without touching KV, which is the whole point of signing rather
+ * than looking the account up: KV is eventually consistent, so a read after a write can
+ * miss, and a login that appeared to fail because of it would be maddening.
+ *
+ * Either `email` or `sub` is set, never both — see the note on `googleAccountKey` for why
+ * the two namespaces are kept apart rather than merged on address.
+ */
+async function verify(token: string, secret: string): Promise<Session | null> {
   const dot = token.indexOf(".");
   if (dot < 0) return null;
   const body = token.slice(0, dot);
@@ -137,9 +193,13 @@ async function verify(token: string, secret: string): Promise<{ email: string } 
   if (!ok) return null;
 
   try {
-    const payload = JSON.parse(new TextDecoder().decode(unb64(body))) as { email: string; exp: number };
+    const payload = JSON.parse(new TextDecoder().decode(unb64(body))) as Session;
     if (typeof payload.exp !== "number" || payload.exp < Date.now()) return null;
-    return { email: payload.email };
+    // Exactly one subject, or the token names an account that cannot be looked up.
+    const hasEmail = typeof payload.email === "string" && payload.email.length > 0;
+    const hasSub = typeof payload.sub === "string" && payload.sub.length > 0;
+    if (hasEmail === hasSub) return null;
+    return payload;
   } catch {
     return null;
   }
@@ -147,6 +207,26 @@ async function verify(token: string, secret: string): Promise<{ email: string } 
 
 const accountKey = (email: string): string => `acct:${email}`;
 const saveKey = (email: string): string => `save:${email}`;
+
+/** Ninety days, matching the password session. */
+const SESSION_MS = 1000 * 60 * 60 * 24 * 90;
+
+/**
+ * A Google-backed account.
+ *
+ * A separate shape from `Account` rather than a variant of it, because the two have
+ * nothing in common but a `playerId`: there is no salt and no hash here, and pretending
+ * otherwise would invite code that reads `account.hash` on a record that has none.
+ */
+interface GoogleAccount {
+  sub: string;
+  email: string;
+  name: string;
+  picture?: string;
+  playerId: string;
+  createdAt: number;
+  writes: number;
+}
 
 // --- a small fixed-window limiter ------------------------------------------
 
@@ -222,8 +302,85 @@ async function handleLogin(req: Request, env: Env): Promise<Response> {
   return ROK({ token, playerId: account.playerId });
 }
 
-async function handleGetSave(auth: { email: string }, env: Env): Promise<Response> {
-  const raw = await env.DB.get(saveKey(auth.email));
+/**
+ * Sign in with a Google ID token.
+ *
+ * Verifies the token, then issues one of our own session tokens. The account is created
+ * on first sight — there is no separate "link your Google" step, because a player
+ * pressing "sign in with Google" expects to be in, not to be asked to prove they are
+ * also a password user.
+ *
+ * No password is stored and none can be set on this path. `handleChangePassword` reads
+ * `account.hash`, which is absent here, so it refuses; the client hides the row. That is
+ * a real limitation rather than an oversight and the account sheet says so, because
+ * "my password does not work" is a much worse experience than "this account has no
+ * password".
+ */
+async function handleGoogleSignIn(req: Request, env: Env): Promise<Response> {
+  const clientId = String(env.GOOGLE_CLIENT_ID ?? "").trim();
+  if (!clientId) return RKO("google_not_configured", 503);
+
+  const body = (await req.json().catch(() => null)) as { idToken?: string } | null;
+  const idToken = String(body?.idToken ?? "").trim();
+  if (!idToken) return RKO("missing");
+
+  const verdict = await verifyGoogleIdToken(idToken, clientId);
+  // The reason goes to the server log, not to the client: it names which check failed,
+  // which is useful for whoever is deploying this and is free reconnaissance for anyone
+  // probing the endpoint.
+  if (!verdict.ok) {
+    console.warn("google sign-in refused:", verdict.reason);
+    return RKO("google_rejected", 401);
+  }
+
+  const claims = verdict.claims;
+  const key = googleAccountKey(claims.sub);
+  const existing = await env.DB.get(key);
+
+  if (existing) {
+    const account = JSON.parse(existing) as GoogleAccount;
+    const token = await sign({ sub: account.sub, exp: Date.now() + SESSION_MS }, env.TOKEN_SECRET);
+    return ROK({
+      token,
+      playerId: account.playerId,
+      name: account.name,
+      email: account.email,
+      picture: account.picture,
+      created: false,
+    });
+  }
+
+  // A first sign-in. `playerId` is minted here rather than accepted from the client,
+  // so a caller cannot attach a Google account to a save that is not its own.
+  const playerId = `g_${randomHex(12)}`;
+  const account: GoogleAccount = {
+    sub: claims.sub,
+    email: claims.email,
+    name: claims.name ?? claims.email,
+    picture: claims.picture,
+    playerId,
+    createdAt: Date.now(),
+    writes: 0,
+  };
+  await env.DB.put(key, JSON.stringify(account));
+
+  const token = await sign({ sub: claims.sub, exp: Date.now() + SESSION_MS }, env.TOKEN_SECRET);
+  return ROK({
+    token,
+    playerId,
+    name: account.name,
+    email: account.email,
+    picture: account.picture,
+    created: true,
+  });
+}
+
+/** The save key for whichever kind of session this is. */
+const keyFor = (auth: Session, env: Env): string =>
+  auth.sub ? googleSaveKey(auth.sub) : saveKey(auth.email!);
+
+async function handleGetSave(auth: Session, env: Env): Promise<Response> {
+  const raw = await env.DB.get(keyFor(auth, env));
   if (!raw) return RKO("no_save", 404);
   const rec = JSON.parse(raw) as { savedAt: number; state: unknown };
   return ROK(rec);
@@ -237,11 +394,11 @@ async function handleGetSave(auth: { email: string }, env: Env): Promise<Respons
  * of which save was actually newer. Comparing the timestamps makes the newer game
  * the survivor, and the response says so either way so the client can warn.
  */
-async function handlePutSave(req: Request, auth: { email: string }, env: Env): Promise<Response> {
+async function handlePutSave(req: Request, auth: Session, env: Env): Promise<Response> {
   const body = (await req.json().catch(() => null)) as { savedAt?: number; state?: unknown } | null;
   if (typeof body?.savedAt !== "number" || body.state === undefined) return RKO("bad_body");
 
-  const key = saveKey(auth.email);
+  const key = keyFor(auth, env);
   const existing = await env.DB.get(key);
   if (existing) {
     const prev = JSON.parse(existing) as { savedAt: number };
@@ -250,23 +407,34 @@ async function handlePutSave(req: Request, auth: { email: string }, env: Env): P
     }
   }
 
-  const accountRaw = await env.DB.get(accountKey(auth.email));
-  const writes = accountRaw ? (JSON.parse(accountRaw) as Account).writes + 1 : 1;
+  // The write counter is a nicety for password accounts and has no meaning for Google
+  // ones — there is exactly one client per Google account and no password to protect.
+  // It is not tracked rather than tracked as zero, so a future dashboard reading it
+  // cannot mistake "not counted" for "never written".
+  const accountKeyFor = auth.sub ? googleAccountKey(auth.sub) : accountKey(auth.email!);
+  const accountRaw = await env.DB.get(accountKeyFor);
+  const writes = accountRaw ? (JSON.parse(accountRaw) as { writes?: number }).writes! + 1 : 1;
 
-  await Promise.all([
-    env.DB.put(key, JSON.stringify({ savedAt: body.savedAt, state: body.state })),
-    accountRaw && env.DB.put(accountKey(auth.email), JSON.stringify({ ...(JSON.parse(accountRaw) as Account), writes })),
-  ]);
+  const puts: Promise<unknown>[] = [env.DB.put(key, JSON.stringify({ savedAt: body.savedAt, state: body.state }))];
+  if (accountRaw) {
+    puts.push(env.DB.put(accountKeyFor, JSON.stringify({ ...(JSON.parse(accountRaw) as object), writes })));
+  }
+  await Promise.all(puts);
   return ROK({ savedAt: body.savedAt, kept: "yours", writes });
 }
 
-async function handleChangePassword(req: Request, auth: { email: string }, env: Env): Promise<Response> {
+async function handleChangePassword(req: Request, auth: Session, env: Env): Promise<Response> {
+  // A Google session has no password to change, and its account record has no `hash`.
+  // Refused here with its own code rather than failing later on a missing field, so the
+  // client can hide the row instead of showing an error the player can do nothing about.
+  if (auth.sub) return RKO("no_password", 400);
+
   const body = (await req.json().catch(() => null)) as { current?: string; next?: string } | null;
   const current = String(body?.current ?? "");
   const next = String(body?.next ?? "");
   if (next.length < 8) return RKO("weak_password", 400, { min: 8 });
 
-  const raw = await env.DB.get(accountKey(auth.email));
+  const raw = await env.DB.get(accountKey(auth.email!));
   if (!raw) return RKO("no_account", 404);
   const account = JSON.parse(raw) as Account;
 
@@ -275,7 +443,7 @@ async function handleChangePassword(req: Request, auth: { email: string }, env: 
 
   const salt = randomBytes(16);
   const hash = await stretch(next, salt, Number(env.PBKDF2_ROUNDS ?? 150000));
-  await env.DB.put(accountKey(auth.email), JSON.stringify({ ...account, salt: b64(salt.buffer as ArrayBuffer), hash: b64(hash) }));
+  await env.DB.put(accountKey(auth.email!), JSON.stringify({ ...account, salt: b64(salt.buffer as ArrayBuffer), hash: b64(hash) }));
   return ROK({ ok: true });
 }
 
@@ -305,6 +473,8 @@ export default {
         res = await handleRegister(req, env);
       } else if (path === "/api/login" && req.method === "POST") {
         res = await handleLogin(req, env);
+      } else if (path === "/api/google" && req.method === "POST") {
+        res = await handleGoogleSignIn(req, env);
       } else if (path === "/api/save" && req.method === "GET") {
         const auth = await readAuth(req, env);
         if (!auth) res = RKO("unauthorised", 401);
@@ -334,7 +504,7 @@ export default {
   },
 };
 
-async function readAuth(req: Request, env: Env): Promise<{ email: string } | null> {
+async function readAuth(req: Request, env: Env): Promise<Session | null> {
   const header = req.headers.get("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
   if (!token) return null;

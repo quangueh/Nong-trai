@@ -7,6 +7,7 @@
 import { Rng, clamp, round2, seedToken } from "./rng";
 import type { Plant } from "./types";
 import { createSeedPlant, breedPlants, genomeSignature, validateGenome, estimatePower, type BreedingContext, type BreedingResult } from "../genetics/genomeGenerator";
+import { applyCatalyst, getProtocol, protocolDiversity, protocolUnlocked, type ProtocolId } from "../genetics/protocols";
 import { plantName, nameKey } from "../genetics/names";
 import { computeEcr } from "../genetics/ecrCalculator";
 import { applyCare, gainXp } from "../growth/care";
@@ -418,33 +419,67 @@ export class GameStore {
 
   // --- breeding --------------------------------------------------------
 
-  breedingPreview(parentAId: string, parentBId: string): Record<Rarity, number> | null {
+  breedingPreview(parentAId: string, parentBId: string, protocol?: ProtocolId): Record<Rarity, number> | null {
     const a = this.get(parentAId);
     const b = this.get(parentBId);
     if (!a || !b) return null;
-    return finalRarityWeights(a.growth.level, b.growth.level, a.rarity, b.rarity, {
+    const base = finalRarityWeights(a.growth.level, b.growth.level, a.rarity, b.rarity, {
       breederLevel: this.state.breederLevel,
-      geneDiversity: lineageDiversity(a, b),
+      geneDiversity: protocol ? protocolDiversity(protocol, lineageDiversity(a, b)) : lineageDiversity(a, b),
       careQuality: 0.5,
       pity: this.state.pity,
     });
+    return protocol ? applyCatalyst(base, protocol) : base;
   }
 
-  breed(parentAId: string, parentBId: string): { ok: boolean; reason?: string; result?: BreedingResult } {
+  /**
+   * The breeding fee for a parent pair under a protocol.
+   *
+   * A named method rather than a number the screen recomputes, because the screen and
+   * `breed` both need it and a fee shown to the player must be the fee charged. When
+   * the two disagreed, the player would be told one price and charged another.
+   */
+  breedingFee(parentAId: string, parentBId: string, protocol?: ProtocolId): number {
+    const a = this.get(parentAId);
+    const b = this.get(parentBId);
+    if (!a || !b) return 0;
+    const base = Math.floor((sellPrice(a) + sellPrice(b)) * 0.2);
+    return protocol ? Math.floor(base * getProtocol(protocol).feeMultiplier) : base;
+  }
+
+  breed(
+    parentAId: string,
+    parentBId: string,
+    protocol?: ProtocolId,
+  ): { ok: boolean; reason?: string; result?: BreedingResult } {
     const a = this.get(parentAId);
     const b = this.get(parentBId);
     if (!a || !b) return { ok: false, reason: "Chọn 2 cây" };
     if (a.plantId === b.plantId) return { ok: false, reason: "Không thể tự lai" };
     if (a.growth.stage !== "mature" && a.growth.stage !== "awakened") return { ok: false, reason: "Cây A chưa trưởng thành" };
     if (b.growth.stage !== "mature" && b.growth.stage !== "awakened") return { ok: false, reason: "Cây B chưa trưởng thành" };
-    if (this.state.plants.length >= this.state.nurseryCap) return { ok: false, reason: "Vườn đã đầy" };
+    // Breeding now spends the parents, so the cap has to leave room for the child.
+    // `>= nurseryCap` was right when the parents survived: the child took a plot the
+    // parents' plots were freed by, so the count did not grow. With both parents gone
+    // the garden grows by one every time, and checking `>= cap` let a breed push the
+    // garden one plant past the cap it was validated against.
+    if (this.state.plants.length + 1 > this.state.nurseryCap) return { ok: false, reason: "Vườn đã đầy" };
+    if (protocol && !protocolUnlocked(protocol, this.state.breederLevel)) {
+      return {
+        ok: false,
+        reason: `${getProtocol(protocol).label} mở ở cấp ${getProtocol(protocol).levelRequired}`,
+      };
+    }
 
     // Breeding fee.
-    const fee = Math.floor((sellPrice(a) + sellPrice(b)) * 0.2);
+    const fee = this.breedingFee(parentAId, parentBId, protocol);
     if (!this.debit(fee, "Phí lai tạo")) return { ok: false, reason: "Không đủ LeafCoin cho phí lai" };
 
     // Roll the target rarity band from final weights.
-    const weights = this.breedingPreview(parentAId, parentBId)!;
+    //
+    // Read through the same call the screen's odds bar used, so the roll and the
+    // published odds cannot come from two different distributions.
+    const weights = this.breedingPreview(parentAId, parentBId, protocol)!;
     const rng = new Rng(seedToken(a.plantId, b.plantId, this.state.pity.totalBreeds, Date.now()));
     const targetRarity = rollWeighted(rng, weights);
     const tier: CombatTier = tierForLevel(Math.max(a.growth.level, b.growth.level));
@@ -454,6 +489,7 @@ export class GameStore {
       tier,
       targetRarity,
       breederLevel: this.state.breederLevel,
+      protocol,
     };
 
     // --- every breeding must yield a new kind -----------------------------
@@ -497,12 +533,27 @@ export class GameStore {
     result.report.rarityScore = result.plant.rarityScore;
     result.report.rarity = result.plant.rarity;
 
-    // XP to parents + pity.
-    this.addPlantXp(a, 25);
-    this.addPlantXp(b, 25);
+    // --- the parents are spent -----------------------------------------------
+    //
+    // Two mature plants go into the fusion and do not come out. This changes what
+    // breeding *is*: it stops being a free roll you can repeat and becomes a decision
+    // you spend two plants to make.
+    //
+    // A rule that only takes needs something to give, or the correct strategy becomes
+    // "never breed anything you like". The parents' accumulated growth passes into the
+    // child, so a pair of level-30 plants produces a child that starts well ahead of one
+    // from a pair of level-1s. The parent's XP used to be granted to the parent itself
+    // (`addPlantXp(a, 25)`), which is now pointless — the plant is about to be removed.
+    const inheritedXp = Math.round(((a.growth.level + b.growth.level) / 2) * 6) + 50;
     this.updatePity(result.plant.rarity);
 
     this.state.plants.push(result.plant);
+    this.addPlantXp(result.plant, inheritedXp);
+    // Removed by id rather than by index, and through the same shape `sell` uses, so
+    // there is one way a plant leaves the garden.
+    this.state.plants = this.state.plants.filter(
+      (p) => p.plantId !== a.plantId && p.plantId !== b.plantId,
+    );
     this.state.discovery.breeds++;
     this.recordPlantDiscovery(result.plant);
     this.advanceGoal("breed", 1);

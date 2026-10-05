@@ -117,7 +117,16 @@ section("5. Breeding two mature plants");
   const res = store.breed(a.plantId, second.plantId);
   check("breeding succeeds", res.ok, res.reason);
   check("breeding fee is charged", store.state.leafCoin < coinsBefore);
-  check("a child is added", store.state.plants.length === countBefore + 1);
+  // Breeding spends both parents, so the garden loses two and gains one: net -1.
+// The previous `countBefore + 1` was right when the parents survived.
+check(
+  "a child is added and both parents are spent",
+  store.state.plants.length === countBefore - 1 &&
+    !store.get(a.plantId) &&
+    !store.get(second.plantId) &&
+    Boolean(res.result && store.get(res.result.plant.plantId)),
+  `${countBefore} -> ${store.state.plants.length}, parent A ${!!store.get(a.plantId)}, parent B ${!!store.get(second.plantId)}`,
+);
   const child = res.result?.plant;
   check("child has a distinct genome", !!child && child.dna.seed !== a.dna.seed);
   check("child is generation+1", child?.generation === Math.max(a.generation, second.generation) + 1);
@@ -126,11 +135,34 @@ section("5. Breeding two mature plants");
   check("child has an ECR measurement", (child?.validation.ecr ?? 0) > 0, `ECR ${child?.validation.ecr}`);
   check("child is ranked-legal or flagged", typeof child?.validation.rankedLegal === "boolean");
 
-  // Breeding an immature plant must fail.
+  // Breeding an immature plant must fail. Both ids are already spent, so this also
+  // has to hold when the refusal is for "no such plant" rather than for stage — the
+  // distinction is checked in the protocol suite, not here.
   const young = store.state.plants[store.state.plants.length - 1];
   young.growth.stage = "seed";
-  check("cannot breed with an immature plant", !store.breed(a.plantId, young.plantId).ok);
-  check("cannot breed a plant with itself", !store.breed(a.plantId, a.plantId).ok);
+  check("cannot breed with an immature plant", !store.breed(young.plantId, young.plantId).ok);
+  check("cannot breed a plant with itself", !store.breed(young.plantId, young.plantId).ok);
+  check(
+    "cannot breed a plant that is already spent",
+    !store.breed(a.plantId, second.plantId).ok,
+  );
+
+  /*
+   * Top the garden back up.
+   *
+   * Breeding used to leave the parents in place, so this journey ended with the same
+   * number of plants it started with plus a child. It now ends two short, and section
+   * 8 indexed `plants[0]` into an empty garden. Planting here keeps the rest of the
+   * journey testing what it was written to test instead of testing the shape of the
+   * garden left behind by an unrelated rule.
+   */
+  for (const id of Object.keys(store.state.seeds)) {
+    if (store.state.plants.length >= 5) break;
+    if ((store.state.seeds[id] ?? 0) <= 0) continue;
+    store.state.leafCoin += 50_000;
+    if (store.buySeed(id).ok) store.plantSeed(id);
+  }
+  check("the garden has stock for the remaining sections", store.state.plants.length >= 3, `${store.state.plants.length} plants`);
 }
 
 section("6. Battle and rewards");
@@ -181,6 +213,16 @@ section("8. Locks protect plants from accidents");
 {
   const p = store.state.plants[0];
   p.growth.stage = "mature";
+  // Newly planted plants arrive locked so they cannot be sold on impulse, so this
+  // section has to clear the lock before it can test it. It used to pick a plant that
+  // happened to be unlocked — the child from breeding, which was left at the front of
+  // the garden. Breeding now spends its parents, so the plants that sort first are
+  // freshly planted ones and the test was toggling a lock off and reading it as a
+  // failure to lock.
+  p.locks.manual = false;
+  p.locks.favorite = false;
+  p.locks.battle = false;
+  p.locks.breeding = false;
   store.toggleLock(p.plantId);
   check("locking a plant blocks selling", !canSell(p));
   check("a locked plant has no sell quote", store.sellQuote(p.plantId) === null);

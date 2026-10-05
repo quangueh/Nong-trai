@@ -16,6 +16,7 @@ import { TRAITS, TRAITS_BY_ID, TRAIT_ELEMENTS, type TraitDef } from "../config/t
 import { GENE_PACKAGES, type GenePackage } from "../config/genePackages";
 import { STAT_COST, TIER_META, TIER_ORDER, type CombatTier, type Stats } from "../config/balance";
 import { MUTATION_TIER_META, RARITY_META, RARITY_REQUIREMENT, rarityFromScore, type MutationTier, type Rarity } from "../config/rarity";
+import { getProtocol, type ProtocolId } from "./protocols";
 import { buildSkillsFromGenes } from "./skillGenerator";
 import { plantName } from "./names";
 import { emptyCareMemory, emptyStress } from "../core/types";
@@ -28,6 +29,14 @@ export interface BreedingContext {
   targetRarity?: Rarity;
   breederLevel?: number;
   catalystBonus?: number;
+  /**
+   * The protocol the breeder ran.
+   *
+   * Read in three places below — mutation chance, the mutation tier ceiling and the
+   * element blend — and nowhere else, so a protocol's whole effect can be read by
+   * grepping for this one field.
+   */
+  protocol?: ProtocolId;
 }
 
 export interface BreedingResult {
@@ -223,16 +232,26 @@ export function breedPlants(parentA: Plant, parentB: Plant, ctx: BreedingContext
   const rngMutation = rng.fork("mutation");
   const rngTrait = rng.fork("trait");
 
+  // The protocol is resolved once, here, and its knobs are read from this object for
+  // the rest of the function. Resolving it per use-site would let two sites disagree
+  // about what the player asked for.
+  const protocol = ctx.protocol ? getProtocol(ctx.protocol) : null;
+
   // --- element mixture -------------------------------------------------
   const elementGenes = {} as Record<ElementId, number>;
   const crossover = rngGenes.next() < 0.5 ? "first" : "second";
+  // `blendCeiling` is how far the recessive parent's contribution may reach.
+  // Thối luyện scales it down, so the child inherits the dominant parent's
+  // element sharply and becomes a specialist rather than a generalist. A scale on
+  // the default rather than an absolute, so the two can never drift apart.
+  const blendCeiling = 0.62 * (protocol?.elementBlendScale ?? 1);
   for (const el of ELEMENTS) {
     const va = parentA.dna.elementGenes[el] ?? 0;
     const vb = parentB.dna.elementGenes[el] ?? 0;
     const dominant = crossover === "first" ? va : vb;
     const recessive = crossover === "first" ? vb : va;
     // Recessive alleles stay latent but can be expressed by a mutation.
-    const blended = mixGene(dominant, recessive, 0.06, 0.62, rngGenes);
+    const blended = mixGene(dominant, recessive, 0.06, blendCeiling, rngGenes);
     elementGenes[el] = round2(clamp(blended * 1.35, 0, 1));
   }
   const elementTotal = ELEMENTS.reduce((a, el) => a + elementGenes[el], 0) || 1;
@@ -249,11 +268,16 @@ export function breedPlants(parentA: Plant, parentB: Plant, ctx: BreedingContext
   }
 
   // --- body genes ------------------------------------------------------
+  //
+  // The protocol's contribution is inside the sum rather than applied to the result,
+  // so it is still subject to the same 0.03..0.85 clamp. A protocol cannot push
+  // mutation past the cap, and stability cannot reduce it below the floor.
   const mutationChance = clamp(
     0.06 +
       parentA.dna.mutationGenes.instability * 0.28 +
       parentB.dna.mutationGenes.instability * 0.28 +
       (ctx.catalystBonus ?? 0) +
+      (protocol?.mutationChanceDelta ?? 0) +
       ((parentA.hidden.mutationDebt + parentB.hidden.mutationDebt) / 2) * 0.1 -
       ((parentA.dna.mutationGenes.purity + parentB.dna.mutationGenes.purity) / 2 - 0.6) * 0.1,
     0.03,
@@ -267,20 +291,27 @@ export function breedPlants(parentA: Plant, parentB: Plant, ctx: BreedingContext
   }
 
   // --- mutation tier roll ----------------------------------------------
+  //
+  // The protocol's tier ceiling is a clamp on the *result*, not on the weights. Zeroing
+  // a weight would change the shape of the distribution and silently reallocate the
+  // probability; clamping the roll is equivalent to discarding an outcome the player
+  // was told was unavailable, which is the promise the protocol actually makes.
+  const TIER_ORDER: MutationTier[] = ["micro", "minor", "major", "chaotic"];
   const tierWeights = mutationTierWeights(mutationChance, ctx.tier, ctx.breederLevel ?? 1);
-  const tierIdx = weightedPick(tierWeights, rngMutation);
-  const mutationTier = (["micro", "minor", "major", "chaotic"] as MutationTier[])[tierIdx];
+  let tierIdx = weightedPick(tierWeights, rngMutation);
+  const tierCeiling = clamp(3 + (protocol?.tierCeilingShift ?? 0), 0, 3);
+  if (tierIdx > tierCeiling) tierIdx = tierCeiling;
+  const mutationTier = TIER_ORDER[tierIdx];
 
   // A rare target band pushes the mutation tier up; it never raises the budget.
+  //
+  // Note this block does nothing: it reads `tierIdx`, finds it below `forced`, and
+  // the body is a comment saying it is handled elsewhere. That is accurate — the
+  // target reaches `buildSkillsFromGenes`, `assignTraits` and `computeRarityScore`,
+  // which is why the dead floor here has never been a visible bug. It is left alone
+  // deliberately: making it live would change what every existing breed produces, and
+  // that is a balance decision rather than a cleanup.
   const targetRarity = ctx.targetRarity ?? "C";
-  const targetIndex = ["C", "B", "A", "S", "SS", "SSS"].indexOf(targetRarity);
-  if (targetIndex >= 3) {
-    // Force at least a major mutation for S and above.
-    const forced = targetIndex >= 5 ? 3 : 2;
-    if (tierIdx < forced) {
-      // handled below by tierWeightIndex override
-    }
-  }
 
   // --- archetype vector ------------------------------------------------
   const archetype = emptyArchetype();

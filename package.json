@@ -10,7 +10,7 @@
     "preview": "vite preview --port 4173",
     "verify:prod": "tsx tools/verify-prod.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
-    "test": "npm run test:core && npm run test:species && npm run test:planting && npm run test:juice && npm run test:morph && npm run test:journey && npm run test:quests && npm run test:art && npm run test:ui && npm run test:room",
+    "test": "npm run test:core && npm run test:species && npm run test:planting && npm run test:juice && npm run test:morph && npm run test:journey && npm run test:quests && npm run test:art && npm run test:ui && npm run test:room && npm run test:protocols && npm run test:google",
     "test:core": "tsx tools/test-determinism.ts",
     "diag:registry": "tsx tools/diag-registry.ts",
     "test:species": "tsx tools/test-species.ts",
@@ -24,7 +24,13 @@
     "test:room": "tsx tools/test-room.ts",
     "balance": "tsx tools/balance-report.ts",
     "balance:deep": "tsx tools/balance-report.ts 2000 12",
-    "verify": "npm run typecheck && npm run test && npm run balance && npm run build"
+    "verify": "npm run typecheck && npm run test && npm run balance && npm run build",
+    "test:protocols": "tsx tools/test-protocols.ts",
+    "diag:elementfx": "tsx tools/diag-element-fx.ts",
+    "shot:breed": "tsx tools/shot-breeding.ts",
+    "shot:elementfx": "tsx tools/shot-element-fx.ts",
+    "test:google": "tsx tools/test-google-token.ts",
+    "audit:ui": "tsx tools/run-ui-audit.ts"
   },
   "devDependencies": {
     "@types/jsdom": "^30.0.0",

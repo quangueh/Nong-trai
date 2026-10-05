@@ -86,3 +86,77 @@ the Worker. Once the production host is known, replace the `*` in
 
 **`playerId`** is returned on register and login but the game does not depend on
 it being stable. The player's identity for save purposes is their email.
+
+## Google sign-in
+
+The player can sign in with a Google account instead of a password. The game never
+sees a Google password and never holds an OAuth client secret; it asks Google for an
+**ID token** and hands that to this Worker, which verifies it against Google's
+published keys. **This Worker is the only party that decides anything** — a token
+checked in the browser would be worth nothing, because the browser is the untrusted
+side.
+
+### Setup
+
+1. **Google Cloud console** → *APIs & Services* → *Credentials* → *Create credentials*
+   → *OAuth client ID* → **Web application**.
+   - **Authorised JavaScript origins** must include the game's real origin, e.g.
+     `https://your-game.pages.dev` and `http://localhost:5173` for local work.
+     A trailing slash matters; an origin without one is rejected by Google.
+   - Leave *Authorised redirect URIs* empty. The One Tap / GIS popup flow does not use
+     one, and an unused entry is a liability rather than a convenience.
+2. Put the client ID in the **Worker's** `wrangler.toml` as `GOOGLE_CLIENT_ID` (already
+   present, empty).
+3. Put the **same** client ID in the game's `.env`:
+
+   ```
+   VITE_ACCOUNT_API=https://your-worker.workers.dev
+   VITE_GOOGLE_CLIENT_ID=1234567890-abcdefg.apps.googleusercontent.com
+   ```
+
+   The two must match. The token's `aud` claim is checked against the Worker's value,
+   and a mismatch refuses *every* sign-in with no useful message to the player — so if
+   sign-in "just does not work", compare these two strings first.
+
+4. `npx wrangler secret put TOKEN_SECRET` and `npm run deploy` from `worker/`.
+
+Nothing else is needed. There is no client secret to configure and no consent screen to
+approve.
+
+### What is checked on every token
+
+| Check | Why |
+| --- | --- |
+| `alg` is `RS256` | Rules out `alg: none` and HMAC-with-the-public-key, the two classic JWT forgeries. Checked *before* the key fetch. |
+| signature over `header.payload` | The token really was minted by Google. |
+| `kid` is in Google's JWKS | An unknown key is refused. A refetch is tried first, so a key rotation does not lock anyone out for an hour. |
+| `aud` equals `GOOGLE_CLIENT_ID` | Otherwise a token minted for a *different* app the player is signed into would be accepted here. |
+| `iss` is `accounts.google.com` | Not minted by someone who learned our client id. |
+| `exp` in the future, ±2 min | Tokens are short-lived; the tolerance covers clock skew and no more. |
+| `email_verified === true` | An unverified address would let anyone assert someone else's save. |
+
+Deliberately **not** checked:
+
+- `nonce` — binds a token to one browser session. The token is spent within seconds of
+  arriving over TLS and is useless afterwards, so the replay window is small. Adding
+  nonce would mean stateful single-use tracking, which costs a KV write per sign-in on a
+  namespace with a ~1,000 writes/day budget.
+- `hd` — only present for Google Workspace accounts. Checking it would lock out every
+  ordinary Gmail player.
+
+`tools/test-google-token.ts` exercises all of this against a real RSA signature, not a
+stubbed verify function — a verifier that ignored the signature would pass every
+"claims are checked" test and be completely insecure.
+
+### Deliberate limitations
+
+- **No password on a Google account.** `/api/password` answers `no_password`. The
+  account sheet shows a sentence instead of the form, so nobody types a password that
+  cannot work. This is a real limitation, not an oversight.
+- **Google and email accounts do not merge.** A Google sign-in is stored under
+  `google:<sub>` and an email account under `acct:<email>`, even when the addresses
+  match. Merging them silently would let whoever signed in last see the other's garden,
+  and the player has no way to tell which happened. Consequence: signing in with Google
+  on a device that previously used a password starts a *new*, empty garden.
+- **No `hd` check**, so a Workspace and a personal Gmail account with the same address
+  are still two accounts — consistent with the point above.

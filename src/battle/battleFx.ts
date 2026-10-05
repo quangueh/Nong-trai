@@ -19,6 +19,8 @@ import { el } from "../ui/components";
 import type { Delivery, EffectKind } from "../config/skills";
 import { DELIVERIES } from "../config/skills";
 import type { ElementId } from "../config/elements";
+import { ELEMENT_INFO } from "../config/elements";
+import { ELEMENT_MOTION, elementClasses, elementPower, particleOffset } from "./elementImpact";
 
 export type FxSide = "a" | "b";
 
@@ -31,6 +33,15 @@ interface Anchor {
 }
 
 const TICK_MS = 1000 / 30;
+
+/**
+ * How hard a hit landed.
+ *
+ * Named type rather than a repeated union of four literals at each call site, because
+ * it is now the parameter of two methods and one local — and a union spelled out three
+ * times is a union that will be spelled wrong once.
+ */
+export type ImpactWeight = "light" | "heavy" | "crit" | "kill";
 
 /**
  * Effects are absolutely positioned inside the arena, so they need the arena's
@@ -275,7 +286,7 @@ export class FxLayer {
     to: FxSide,
     kind: "hit" | "crit" | "heal" | "shield" | "status" | "miss" | "dot" | "death",
     status?: string,
-    weight: "light" | "heavy" | "crit" | "kill" = "light",
+    weight: ImpactWeight = "light",
   ): void {
     const at = this.anchor(to);
     // Shard count by weight. A fixed count is what made every hit look the same.
@@ -354,6 +365,67 @@ export class FxLayer {
   }
 
   /**
+   * The impact, dressed as the element that dealt it.
+   *
+   * Called alongside `impact`, never instead of it: the generic burst and number stay
+   * because they carry the *magnitude*, and this carries the *cause*. Folding the two
+   * together would have meant the number became unreadable on a busy impact.
+   *
+   * `fraction` is the hit's share of the victim's max HP, which scales both count and
+   * reach so a chip and a crit do not throw the same amount of everything.
+   */
+  elementalHit(to: FxSide, element: ElementId, fraction: number, weight: ImpactWeight): void {
+    const m = ELEMENT_MOTION[element];
+    const at = this.anchor(to);
+    const power = elementPower(fraction) * (weight === "kill" ? 1.35 : weight === "crit" ? 1.2 : 1);
+    const n = Math.round(m.count * Math.min(1.5, power));
+
+    // The layer is one node holding every particle, because they share a colour and a
+    // class; spawning `n` siblings on the arena would put `n` more elements in the DOM
+    // for the life of a single hit.
+    const layer = el("div", { class: elementClasses(element) });
+    layer.style.left = `${at.cx}px`;
+    layer.style.top = `${at.cy}px`;
+    layer.style.setProperty("--power", power.toFixed(3));
+    layer.style.setProperty("--c", ELEMENT_INFO[element].color);
+    layer.style.setProperty("--glow", ELEMENT_INFO[element].glow);
+    layer.style.setProperty("--i", String(n));
+
+    for (let i = 0; i < n; i++) {
+      const off = particleOffset(m, i, n, power);
+      const p = el("i", { class: "fx-elem-p" });
+      p.style.setProperty("--dx", `${off.dx.toFixed(1)}px`);
+      p.style.setProperty("--dy", `${off.dy.toFixed(1)}px`);
+      p.style.setProperty("--rot", `${Math.round(off.rot)}deg`);
+      p.style.setProperty("--fall", `${(m.fall * power).toFixed(1)}px`);
+      p.style.setProperty("--delay", `${Math.round(i * m.stagger)}ms`);
+      p.style.setProperty("--life", `${Math.round(m.life)}ms`);
+      p.style.setProperty("--scale", (m.scale * (0.75 + Math.random() * 0.5)).toFixed(2));
+      layer.appendChild(p);
+    }
+
+    // A ring in the element's colour, scaled by how hard the element reads at a glance.
+    // Shadow's ring is the only one that contracts, which is in the CSS, not here.
+    if (m.ring > 0) {
+      const ring = el("div", { class: "fx-elem-ring" });
+      ring.style.animationDuration = `${Math.round(m.life * 0.8)}ms`;
+      layer.appendChild(ring);
+    }
+
+    // The glyph, once. `word` is the label the log already uses, so the picture and
+    // the text agree instead of inventing a second vocabulary.
+    if (m.glyph) {
+      const mark = el("div", {
+        class: "fx-elem-glyph",
+        html: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${m.glyph}"/></svg>`,
+      });
+      layer.appendChild(mark);
+    }
+
+    this.spawn(layer, m.life + 260);
+  }
+
+  /**
    * Debris thrown off the contact point.
    *
    * Direction and distance are randomised per shard, which is the difference
@@ -388,7 +460,7 @@ export class FxLayer {
    * It is the one kind that does not read as a quantity, which is why it is
    * spelled differently from the damage kinds rather than reusing one of them.
    */
-  float(to: FxSide, text: string, kind: "dmg" | "crit" | "heal" | "shield" | "hi", weight: "light" | "heavy" | "crit" | "kill" = "light"): void {
+  float(to: FxSide, text: string, kind: "dmg" | "crit" | "heal" | "shield" | "hi", weight: ImpactWeight = "light"): void {
     const at = this.anchor(to);
     // Bigger numbers for bigger hits, so magnitude is readable at a glance rather
     // than only by counting digits.
