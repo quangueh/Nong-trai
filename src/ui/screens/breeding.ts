@@ -16,6 +16,7 @@ import type { Plant } from "../../core/types";
 import { MUTATION_TIER_META } from "../../config/rarity";
 
 import { dominantArchetype } from "../../core/types";
+import { plantDisplayName } from "../../core/plantNames";
 import { ARCHETYPE_ROLE } from "../../config/balance";
 import { DRAWBACK_LABEL, COUNTER_TAG_LABEL } from "../../config/genePackages";
 import type { BreedingResult } from "../../genetics/genomeGenerator";
@@ -160,7 +161,7 @@ export function renderBreeding(nav: Navigate): HTMLElement {
     }
     breedBtn.disabled = false;
     if (a.plantId === b.plantId) {
-      info.appendChild(el("div", { class: "notice bad" }, ["Không thể tự lai cùng một cây."]));
+      info.appendChild(el("div", { class: "callout bad" }, ["Không thể tự lai cùng một cây."]));
       breedBtn.disabled = true;
       return;
     }
@@ -278,7 +279,12 @@ function paintSlot(slot: HTMLElement, plant: Plant | undefined, onClick: () => v
     thumb.innerHTML = plantThumb(plant, 120).innerHTML;
     thumb.style.width = "120px";
     thumb.style.height = "120px";
-    const name = el("div", { class: "small", style: "font-weight:700;line-height:1.2" }, [plant.name]);
+    // Both parent slots print against the whole garden, because that is the set the
+    // player is choosing from and breeding destroys both of these plants. Two slots
+    // reading "Rễ Gai hạt" is a way to destroy the wrong plant.
+    const name = el("div", { class: "small", style: "font-weight:700;line-height:1.2" }, [
+      plantDisplayName(plant, store.state.plants),
+    ]);
     const meta = el("div", { class: "tiny muted" }, [`Đời ${plant.generation} · Cấp ${plant.growth.level}`]);
     slot.append(thumb, rarityTag(plant.rarity), name, meta);
   } else {
@@ -306,7 +312,10 @@ function openPicker(onPick: (id: string) => void) {
     const card = el("div", { class: "plantcard", style: "flex:none;width:120px" });
     card.appendChild(plantThumb(p, 70));
     const n = el("div", { class: "name", style: "font-size:11px" });
-    n.textContent = p.name;
+    // Two plants of one species are indistinguishable here without this, and picking the
+    // wrong one is irreversible. Resolved against the whole garden, so the name matches
+    // the one the same plant carries on every other screen.
+    n.textContent = plantDisplayName(p, store.state.plants);
     card.appendChild(n);
     card.appendChild(el("div", { class: "tiny muted mono" }, [`Lv${p.growth.level} · D${p.generation}`]));
     card.addEventListener("click", () => {
@@ -432,7 +441,7 @@ export function openMutationReport(result: BreedingResult, onClose: () => void) 
   content.appendChild(assess);
 
   // est. sell
-  const est = el("div", { class: "notice", style: "margin-top:10px" });
+  const est = el("div", { class: "callout", style: "margin-top:10px" });
   est.textContent = `Giá bán ước tính: ~${fmt(sellPriceOf(plant))}🪙 · ECR ${plant.validation.ecr.toFixed(3)} · Thi đấu: ${plant.validation.rankedLegal ? "hợp lệ" : "không hợp lệ"}`;
   content.appendChild(est);
 

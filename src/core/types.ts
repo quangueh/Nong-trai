@@ -189,7 +189,24 @@ export interface Plant {
   parents: { a: string | null; b: string | null };
   archetype: Record<Archetype, number>;
   tier: CombatTier;
-  battleRecord: { wins: number; losses: number; draws: number; scars: number };
+  /**
+   * This plant's fighting history.
+   *
+   * `streak` and `bestStreak` are what turn a win into a reason to fight again: the
+   * reward scales with the run, so losing one is a thing to go and win back rather than
+   * a number that only ever goes up. Read `battleStreakBonus` for the multiplier so the
+   * screen and the payout cannot disagree about it.
+   */
+  battleRecord: {
+    wins: number;
+    losses: number;
+    draws: number;
+    scars: number;
+    /** Consecutive wins. Reset by a loss or a draw. */
+    streak: number;
+    /** The longest run this plant has had, kept so the number on screen can rise. */
+    bestStreak: number;
+  };
   careMemory: CareMemory;
   stress: StressMap;
   mood: Mood;

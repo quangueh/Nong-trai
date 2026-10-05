@@ -45,6 +45,19 @@ export interface GooglePanelResult {
   errorSlot: HTMLElement;
 }
 
+export interface GooglePanelOptions {
+  /**
+   * Bring the styled button back if Google's does not respond.
+   *
+   * Only for the gate. The watchdog cannot observe Google's button at all, so it has to
+   * be armed on a timer, and a timer that fires while the player is merely *looking* at
+   * the account sheet would greet them with "Google's button is not responding" before
+   * they had pressed anything. At the gate there is no other way in, so a stalled button
+   * really is a dead end and the fallback is worth surfacing on its own.
+   */
+  fallbackOnStall?: boolean;
+}
+
 /**
  * Build the panel.
  *
@@ -52,7 +65,12 @@ export interface GooglePanelResult {
  * repaint hook inside this module because the sheet that owns the panel is the thing
  * that knows how to redraw itself.
  */
-export function googlePanel(onSignedIn: () => void, onFailure: (message: string) => void): GooglePanelResult {
+export function googlePanel(
+  onSignedIn: () => void,
+  onFailure: (message: string) => void,
+  options: GooglePanelOptions = {},
+): GooglePanelResult {
+  const fallbackOnStall = options.fallbackOnStall === true;
   const errorSlot = el("p", { class: "account-err" });
   /*
    * Progress lives here rather than inside `attempt`, so it is appended with the rest
@@ -86,6 +104,36 @@ export function googlePanel(onSignedIn: () => void, onFailure: (message: string)
   const slot = el("div", { class: "gpanel-slot" }, [action, inner]);
   action.addEventListener("click", () => void attempt());
 
+  /*
+   * The watchdog, and why there is one.
+   *
+   * Hiding this button when Google's paints removed the only fallback. Google's button
+   * handles its own clicks, so nothing here can tell whether it worked, and a button that
+   * silently does nothing leaves the player at the gate with no way in but the email form
+   * - for a third-party failure they can do nothing about.
+   *
+   * So it comes back on its own: if a click has not moved the flow within a few seconds,
+   * this is revealed again with a note saying why. Invisible when things work, which is
+   * the only time anyone looks at it.
+   */
+  let watchdog: number | undefined;
+  const reviveFallback = (): void => {
+    if (!action.hidden) return;
+    action.hidden = false;
+    errorSlot.textContent =
+      "Nút của Google không phản hồi. Dùng nút bên dưới — nó gọi cùng một luồng.";
+  };
+  const armWatchdog = (): void => {
+      if (!fallbackOnStall) return;
+      if (watchdog !== undefined) window.clearTimeout(watchdog);
+      watchdog = window.setTimeout(reviveFallback, 6000);
+    };
+  const disarmWatchdog = (): void => {
+    if (watchdog === undefined) return;
+    window.clearTimeout(watchdog);
+    watchdog = undefined;
+  };
+
   let busy = false;
   async function attempt(): Promise<void> {
     if (busy) return;
@@ -103,11 +151,15 @@ export function googlePanel(onSignedIn: () => void, onFailure: (message: string)
     };
 
     action.classList.add("is-busy");
+    armWatchdog();
     try {
       setStep("Đang mở cửa sổ đăng nhập Google…");
       const idToken = await requestGoogleIdToken();
 
       setStep("Đang xác thực với máy chủ…");
+      // The token came back, so whichever button was used did its job. Disarm before the
+      // Worker call, which is a different server and says nothing about the button.
+      disarmWatchdog();
       const session = await signInWithGoogle(idToken);
 
       setStep("Đang đồng bộ vườn…");
@@ -158,6 +210,16 @@ export function googlePanel(onSignedIn: () => void, onFailure: (message: string)
         return;
       }
       action.hidden = true;
+      /*
+       * Armed the moment Google's button appears, not on a click.
+       *
+       * It cannot be armed on a click: Google's button is a cross-origin iframe, so a
+       * click inside it never reaches a listener on our container, and by the time we
+       * could see one the fallback would already be hidden and the attempt already
+       * over. Arming at paint covers the whole window where the player is looking at a
+       * button that may do nothing.
+       */
+      armWatchdog();
     });
   }
 

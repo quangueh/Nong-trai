@@ -11,6 +11,8 @@ import { RoomClient, HostRoom, type RoomSnapshot, type RoomMessage } from "../..
 import { addSkillXp } from "../../genetics/skillGenerator";
 import { gainXp } from "../../growth/care";
 import type { Stance } from "../../battle/engine";
+import { advanceStreak, battleStreakBonus, streakCoinPreview, STREAK_CAP } from "../../core/streak";
+import { plantDisplayName } from "../../core/plantNames";
 import { SPECIES } from "../../config/species";
 import type { Navigate } from "./types";
 
@@ -49,33 +51,42 @@ function renderMenu(nav: Navigate): HTMLElement {
 
   const ready = store.state.plants.filter((p) => canBattle(p));
 
-  const pve = el("button", { class: "btn primary block", style: "margin-bottom:10px;text-align:left" });
-  pve.append(
-    el("div", { style: "font-size:22px" }, ["🎯"]),
-    el("div", { style: "font-weight:800;margin-top:4px" }, ["Đấu với AI"]),
-    el("div", { class: "tiny", style: "opacity:.85;font-weight:500" }, ["Hệ thống tìm đối thủ cùng cấp độ lực chiến"]),
-  );
+  // A wide button: the label and its explanation are stacked in one column beside the
+  // icon. As three sibling flex items they sat in a row, and on a phone the label was
+  // the one that gave way - "Đấu với AI" broke across two lines while the explanation it
+  // was explaining stayed on one. The label is the thing being read.
+  function wideAction(icon: string, label: string, note: string, primary: boolean): HTMLButtonElement {
+    const btn = el("button", {
+      class: `btn block${primary ? " primary" : ""}`,
+      style: "margin-bottom:10px;text-align:left",
+    });
+    const text = el("div", { class: "btn-stack" });
+    text.append(
+      el("div", { class: "btn-stack-label" }, [label]),
+      el("div", { class: "btn-stack-note" }, [note]),
+    );
+    btn.append(el("div", { class: "btn-stack-icon" }, [icon]), text);
+    return btn;
+  }
+
+  const pve = wideAction("🎯", "Đấu với AI", "Hệ thống tìm đối thủ cùng cấp độ lực chiến", true);
   pve.disabled = !ready.length;
   pve.addEventListener("click", () => pickPlant(nav, (plant) => nav("arena", { plantId: plant.plantId })));
   root.appendChild(pve);
 
-  const create = el("button", { class: "btn block", style: "margin-bottom:10px;text-align:left" });
-  create.append(
-    el("div", { style: "font-size:22px" }, ["🏠"]),
-    el("div", { style: "font-weight:800;margin-top:4px" }, ["Tạo phòng"]),
-    el("div", { class: "tiny", style: "opacity:.7;font-weight:500" }, ["Sinh mã 6 ký tự để mời đối thủ"]),
-  );
+  const create = wideAction("🏠", "Tạo phòng", "Sinh mã 6 ký tự để mời đối thủ", false);
   create.addEventListener("click", () => pickPlant(nav, (plant) => renderRoomHost(nav, plant)));
   root.appendChild(create);
 
   const joinBox = el("div", { class: "card" });
   joinBox.appendChild(el("div", { class: "small", style: "font-weight:700;margin-bottom:8px" }, ["🔑 Nhập mã phòng"]));
-  const input = el("input", { placeholder: "ABC123", maxlength: "6" }) as HTMLInputElement;
+  // A 20px monospace placeholder, letter-spaced, read as a broken field rather than as a
+  // hint - the eye took it for rendered content. Small and quiet now, with the box
+  // carrying the spacing instead.
+  const input = el("input", { class: "codeinput", placeholder: "ABC123", maxlength: "6" }) as HTMLInputElement;
   input.style.textTransform = "uppercase";
-  input.style.letterSpacing = "0.24em";
   input.style.textAlign = "center";
   input.style.fontFamily = "JetBrains Mono, monospace";
-  input.style.fontSize = "20px";
   input.addEventListener("input", () => {
     input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
   });
@@ -88,10 +99,18 @@ function renderMenu(nav: Navigate): HTMLElement {
     }
     pickPlant(nav, (plant) => renderRoomGuest(nav, code, plant));
   });
-  joinBox.append(input, joinBtn, el("div", { class: "notice", style: "margin-top:8px" }, ["Mở game ở tab hoặc cửa sổ khác rồi nhập mã để vào phòng. Máy chủ quyết định toàn bộ kết quả trận."]));
+  joinBox.append(input, joinBtn, el("div", { class: "callout", style: "margin-top:8px" }, ["Mở game ở tab hoặc cửa sổ khác rồi nhập mã để vào phòng. Máy chủ quyết định toàn bộ kết quả trận."]));
   root.appendChild(joinBox);
 
-  // record
+  // --- the fighters, and what fighting is worth --------------------------
+  //
+  // The screen used to be three buttons, a code box and a table of zeros. Nothing on
+  // it answered the two questions a player actually arrives with - who am I taking into
+  // this, and what do I get for it - and the table of zeros is the least motivating
+  // thing a screen can show someone on their first visit.
+  //
+  // So: the roster first, with each fighter's power and streak, and the payout printed
+  // before the fight rather than only on the receipt afterwards.
   const record = store.state.plants.reduce(
     (acc, p) => {
       acc.w += p.battleRecord.wins;
@@ -102,6 +121,56 @@ function renderMenu(nav: Navigate): HTMLElement {
     { w: 0, l: 0, d: 0 },
   );
   const total = record.w + record.l + record.d;
+
+  if (ready.length) {
+    const best = ready.slice().sort((a, b) => b.powerRating - a.powerRating)[0];
+    const bestStreak = ready.reduce((m, p) => Math.max(m, p.battleRecord.streak), 0);
+    const base = 60;
+    const now = Math.round(base * battleStreakBonus(bestStreak));
+
+    root.appendChild(el("div", { class: "sec-title", style: "margin-top:14px" }, ["Đội hình"]));
+
+    const roster = el("div", { class: "roster" });
+    for (const p of ready.slice(0, 6)) {
+      const card = el("button", { class: "roster-card" });
+      const thumb = el("div", { class: "roster-thumb" });
+      thumb.innerHTML = plantThumb(p, 54).innerHTML;
+      card.append(
+        thumb,
+        // Resolved against the whole garden, not the battle-ready subset shown here, so
+        // a plant carries the same name here as it does in the shop. Two rows reading
+        // "Rễ Gai hạt" is a choice made blind, and this strip is where it is made.
+        el("div", { class: "roster-name" }, [plantDisplayName(p, store.state.plants)]),
+        el("div", { class: "tiny muted mono" }, [`Lực ${fmt(p.powerRating)}`]),
+      );
+      // A live streak is the one thing on this card that changes between visits, so it
+      // is the one thing that gets a badge.
+      if (p.battleRecord.streak > 0) {
+        card.appendChild(el("div", { class: "roster-streak" }, [`🔥${p.battleRecord.streak}`]));
+      }
+      card.addEventListener("click", () => nav("arena", { plantId: p.plantId }));
+      roster.appendChild(card);
+    }
+    root.appendChild(roster);
+
+    const pay = el("div", { class: "card", style: "margin-top:10px" });
+    pay.append(
+      el("div", { class: "kv" }, [
+        el("span", { class: "kv-k" }, ["Thắng với " + plantDisplayName(best, store.state.plants)]),
+        el("span", { class: "kv-v mono", style: "color:var(--accent-2);font-weight:700" }, [`+${now}🪙 +5🧺`]),
+      ]),
+      el("div", { class: "kv", style: "margin-top:5px" }, [
+        el("span", { class: "kv-k" }, ["Chuỗi thắng hiện tại"]),
+        el(
+          "span",
+          { class: "kv-v mono", style: bestStreak > 0 ? "color:var(--accent)" : "" },
+          [bestStreak > 0 ? `${bestStreak}/${STREAK_CAP} · ×${battleStreakBonus(bestStreak).toFixed(2)}` : "0 — thắng liên tiếp để nhân thưởng"],
+        ),
+      ]),
+    );
+    root.appendChild(pay);
+  }
+
   const hist = el("div", { class: "card", style: "margin-top:14px" });
   hist.append(
     el("div", { class: "sec-title" }, ["Thành tích"]),
@@ -109,11 +178,17 @@ function renderMenu(nav: Navigate): HTMLElement {
     el("div", { class: "row between small" }, [el("span", { class: "muted" }, ["Thắng"]), el("span", { class: "mono", style: "color:var(--accent)" }, [String(record.w)])]),
     el("div", { class: "row between small" }, [el("span", { class: "muted" }, ["Thua"]), el("span", { class: "mono", style: "color:var(--danger)" }, [String(record.l)])]),
     el("div", { class: "row between small" }, [el("span", { class: "muted" }, ["Tỉ lệ thắng"]), el("span", { class: "mono" }, [total ? `${Math.round((record.w / total) * 100)}%` : "—"])]),
+    // The record of the best run, which is the number worth showing a cold player: it
+    // says the thing exists before they have done anything.
+    el("div", { class: "row between small" }, [
+      el("span", { class: "muted" }, ["Chuỗi tốt nhất"]),
+      el("span", { class: "mono" }, [String(ready.reduce((m, p) => Math.max(m, p.battleRecord.bestStreak), 0))]),
+    ]),
   );
   root.appendChild(hist);
 
   if (!ready.length) {
-    root.appendChild(el("div", { class: "notice warn", style: "margin-top:12px" }, ["Chưa có cây trưởng thành. Chăm cây cho tới khi lớn rồi đem đi đấu."]));
+    root.appendChild(el("div", { class: "callout warn", style: "margin-top:12px" }, ["Chưa có cây trưởng thành. Chăm cây cho tới khi lớn rồi đem đi đấu."]));
   }
   return root;
 }
@@ -136,7 +211,9 @@ function pickPlant(nav: Navigate, onPick: (plant: Plant) => HTMLElement | void) 
     const card = el("div", { class: "plantcard", style: "flex:none;width:118px" });
     card.appendChild(plantThumb(p, 68));
     const n = el("div", { class: "name", style: "font-size:11px" });
-    n.textContent = p.name;
+    // An unresolvable "Rễ Gai hạt" here is a choice made blind, so the name is resolved
+    // against the whole garden - the same name the arena roster showed a moment ago.
+    n.textContent = plantDisplayName(p, store.state.plants);
     card.append(n, el("div", { class: "tiny muted mono" }, [`Lực ${fmt(p.powerRating)}`]));
     card.addEventListener("click", () => {
       overlay.remove();
@@ -236,7 +313,7 @@ function renderPickOpponent(nav: Navigate, plant: Plant): HTMLElement {
     ]),
   );
   if (Math.abs(diff) > plant.powerRating * 0.25) {
-    preview.appendChild(el("div", { class: "notice warn", style: "margin-top:8px" }, ["Chênh lệch lực chiến lớn — trận này có thể không công bằng."]));
+    preview.appendChild(el("div", { class: "callout warn", style: "margin-top:8px" }, ["Chênh lệch lực chiến lớn — trận này có thể không công bằng."]));
   }
   root.appendChild(preview);
 
@@ -258,8 +335,8 @@ function renderPickOpponent(nav: Navigate, plant: Plant): HTMLElement {
       onFinish: ({ winner, a }) => {
         const won = winner === "a";
         const draw = winner === "draw";
-        reward(plant, won, draw, won ? 60 : draw ? 25 : 18, won ? 18 : draw ? 12 : 10, a.damageDealt);
-        showResult(root, nav, plant, foe, winner, a, () => nav("arena"), won, draw);
+        const payout = reward(plant, won, draw, won ? 60 : draw ? 25 : 18, won ? 18 : draw ? 12 : 10, a.damageDealt);
+        showResult(root, nav, plant, foe, winner, a, () => nav("arena"), payout);
       },
     });
     // A local, not the module-level `activeView`: this one belongs to the modal
@@ -275,18 +352,42 @@ function renderPickOpponent(nav: Navigate, plant: Plant): HTMLElement {
   return root;
 }
 
+/**
+ * Pay out a finished fight.
+ *
+ * The coin figure scales with the plant's win streak, paid on the streak *already held*,
+ * so the first win of a run pays the base rate and each one after it pays more. Both
+ * numbers are computed here rather than by the caller, because the result screen prints
+ * what was paid, and a payout and its own receipt computed in different places is how
+ * they come to disagree.
+ */
 function reward(plant: Plant, won: boolean, draw: boolean, coins: number, xp: number, damage: number) {
+  const bonus = battleStreakBonus(plant.battleRecord.streak);
+  const paid = Math.round(coins * bonus);
+  advanceStreak(plant.battleRecord, won ? "win" : draw ? "draw" : "loss");
   const items = won ? 5 : draw ? 3 : 2;
-  store.state.leafCoin += coins;
+  store.state.leafCoin += paid;
   store.state.items += items;
   store.state.discovery.battles++;
-  store.state.ledger.push({ at: Date.now(), delta: coins, reason: won ? "Thắng trận" : draw ? "Hòa" : "Tham gia trận" });
+  store.state.ledger.push({
+    at: Date.now(),
+    delta: paid,
+    reason:
+      (won ? "Thắng trận" : draw ? "Hòa" : "Tham gia trận") +
+      // Only noted when there was one. A ledger line reading "chuỗi x1.00" is noise.
+      (bonus > 1 ? " · chuỗi ×" + bonus.toFixed(2) : ""),
+  });
   gainXp(plant, xp);
   plant.battleRecord[won ? "wins" : draw ? "draws" : "losses"]++;
   for (const s of plant.skills) addSkillXp(s, 6 + Math.round(damage / 45));
   if (Math.random() < 0.15) plant.battleRecord.scars++;
   store.addBreederXp(6);
   store.save();
+
+  // Returned so the result screen shows what was actually paid. It used to print the
+  // base figure from its own table, which was correct only while the payout was the base
+  // figure — the moment a streak could change it, the receipt stopped matching.
+  return { paid, items, bonus, streak: plant.battleRecord.streak };
 }
 
 function showResult(
@@ -297,12 +398,12 @@ function showResult(
   winner: string,
   a: BattleSummary,
   onExit: () => void,
-  won: boolean,
-  draw: boolean,
+  payout: { paid: number; items: number; bonus: number; streak: number },
 ) {
   container.replaceChildren();
+  const won = winner === "a";
+  const draw = winner === "draw";
   const card = el("div", { class: "card pop", style: "text-align:center" });
-  const itemReward = won ? 5 : draw ? 3 : 2;
   card.append(
     el("div", { style: "font-size:34px;font-weight:900;margin-top:6px" }, [draw ? "🤝 HÒA" : won ? "🏆 THẮNG!" : "💀 THUA"]),
     el("div", { class: "tiny muted", style: "margin-top:4px" }, [`${mine.name} VS ${foe.name}`]),
@@ -316,8 +417,23 @@ function showResult(
       ],
     ),
     el("div", { class: "divider" }),
-    el("div", { class: "row between small" }, [el("span", { class: "muted" }, ["Phần thưởng"]), el("span", { class: "mono", style: "color:var(--accent-2)" }, [`+${won ? 60 : draw ? 25 : 18}🪙 +${itemReward}🧺`])]),
+    el("div", { class: "row between small" }, [
+      el("span", { class: "muted" }, ["Phần thưởng"]),
+      el("span", { class: "mono", style: "color:var(--accent-2)" }, [`+${payout.paid}🪙 +${payout.items}🧺`]),
+    ]),
   );
+
+  // The streak, said either way. A win names what the run is now worth; a loss says what
+  // it was, so the number the player just lost is on screen rather than gone.
+  if (won && payout.streak > 0) {
+    card.appendChild(
+      el("div", { class: "streak-note" }, [
+        `🔥 Chuỗi ${payout.streak}${payout.streak >= STREAK_CAP ? " · tối đa" : ""} — trận sau +${streakCoinPreview(60, payout.streak)}🪙`,
+      ]),
+    );
+  } else if (!won) {
+    card.appendChild(el("div", { class: "streak-note is-lost" }, ["Chuỗi thắng đã đứt. Thắng lại để lấy lại."]));
+  }
   const top = mine.skills.slice().sort((x, y) => y.level - x.level)[0];
   if (top) {
     card.appendChild(el("div", { class: "row between small" }, [el("span", { class: "muted" }, ["Chiêu mạnh nhất"]), el("span", { class: "mono" }, [`${top.name} Lv${top.level}`])]));
@@ -563,7 +679,7 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
   const battleHost = el("div", { style: "margin-top:12px" });
   root.appendChild(battleHost);
 
-  const note = el("div", { class: "notice", style: "margin-top:12px" }, [
+  const note = el("div", { class: "callout", style: "margin-top:12px" }, [
     "Chủ phòng điều khiển mô phỏng trận. Bạn vẫn bấm chiêu và đổi stance — máy chủ kiểm tra và áp dụng, kết quả do máy chủ chốt.",
   ]);
   root.appendChild(note);

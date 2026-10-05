@@ -151,7 +151,7 @@ export function createBenchmarkPlant(id: BenchmarkId, tier: CombatTier = "bloom"
     parents: { a: null, b: null },
     archetype: archetype as never,
     tier,
-    battleRecord: { wins: 0, losses: 0, draws: 0, scars: 0 },
+    battleRecord: { wins: 0, losses: 0, draws: 0, scars: 0, streak: 0, bestStreak: 0 },
     careMemory: { recent: [], counts: {}, lastAction: null },
     stress: {},
     mood: "calm",

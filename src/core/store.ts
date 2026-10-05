@@ -9,6 +9,7 @@ import type { Plant } from "./types";
 import { createSeedPlant, breedPlants, genomeSignature, validateGenome, estimatePower, type BreedingContext, type BreedingResult } from "../genetics/genomeGenerator";
 import { applyCatalyst, getProtocol, protocolDiversity, protocolUnlocked, type ProtocolId } from "../genetics/protocols";
 import { plantName, nameKey } from "../genetics/names";
+import { emptyStreakFields } from "./streak";
 import { computeEcr } from "../genetics/ecrCalculator";
 import { applyCare, gainXp } from "../growth/care";
 import type { CareActionId } from "../config/careActions";
@@ -952,6 +953,15 @@ function loadOrCreate(rawOverride?: string): PlayerState {
       if (parsed && Array.isArray(parsed.plants)) {
         // Repair missing pity.
         parsed.pity = { ...emptyPity(), ...parsed.pity };
+        // Repair plants saved before battle streaks existed. Done per plant because
+        // the streak lives on the fighter, and a save written by an older build has no
+        // such field on any of them. Read as 0 rather than undefined so the arena screen
+        // can print a number instead of "undefined" for a returning player.
+        for (const pl of parsed.plants) {
+          pl.battleRecord = { ...emptyStreakFields(), ...pl.battleRecord };
+          pl.battleRecord.streak = Number(pl.battleRecord.streak) || 0;
+          pl.battleRecord.bestStreak = Number(pl.battleRecord.bestStreak) || 0;
+        }
         parsed.gardenDay = parsed.gardenDay ?? createGardenDay(dayKey(Date.now()), undefined, parsed.breederLevel ?? 1, parsed.playerId ?? "player");
         parsed.discovery = repairDiscovery(parsed.discovery);
         for (const plant of parsed.plants) {

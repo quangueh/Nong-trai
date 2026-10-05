@@ -65,9 +65,15 @@ export function showSignInGateIfNeeded(options: SignInGateOptions): void {
     enter();
   });
 
-  const google = googlePanel(enter, () => {
-    // The panel writes its own message.
-  });
+  const google = googlePanel(
+    enter,
+    () => {
+      // The panel writes its own message.
+    },
+    // The gate is the one place with no alternative way in, so a stalled Google button
+    // is a dead end rather than an inconvenience.
+    { fallbackOnStall: true },
+  );
 
   const skip = el("button", { class: "gate-skip", type: "button" }, [
     "Chơi không cần tài khoản (chỉ lần này)",

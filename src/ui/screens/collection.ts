@@ -5,6 +5,7 @@ import { store, navigate } from "../app";
 
 import { RARITY_ORDER, type Rarity } from "../../config/rarity";
 import { canSell } from "../../growth/stages";
+import { plantDisplayName } from "../../core/plantNames";
 import { sellPrice } from "../../economy/shop";
 import { openDetail } from "./garden";
 import type { Navigate } from "./types";
@@ -70,7 +71,7 @@ export function renderCollection(nav: Navigate): HTMLElement {
   root.appendChild(el("div", { class: "sec-title", style: "margin-top:18px" }, ["Bán cây"]));
   if (!sellable.length) {
     root.appendChild(
-      el("div", { class: "notice" }, ["Chỉ cây trưởng thành, không khoá, không yêu thích mới bán được. Bỏ khoá trong chi tiết cây."]),
+      el("div", { class: "callout" }, ["Chỉ cây trưởng thành, không khoá, không yêu thích mới bán được. Bỏ khoá trong chi tiết cây."]),
     );
   } else {
     const list = el("div", { class: "card" });
@@ -78,7 +79,14 @@ export function renderCollection(nav: Navigate): HTMLElement {
       const row = el("div", { class: "row", style: "padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)" });
       const info = el("div", { class: "grow" });
       info.append(
-        el("div", { class: "small", style: "font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, [p.name]),
+        el(
+          "div",
+          { class: "small", style: "font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" },
+          // Selling is permanent, and this list is the only thing distinguishing two
+          // plants that happen to share a name. Resolved against the whole garden so the
+          // plant carries the same name on the screen above this one.
+          [plantDisplayName(p, store.state.plants)],
+        ),
         el("div", { class: "tiny muted" }, [`Đời ${p.generation} · Cấp ${p.growth.level} · Chăm ${p.economy.careCycles} lần`]),
       );
       const price = el("div", { class: "mono", style: "color:var(--accent-2);font-weight:700" });

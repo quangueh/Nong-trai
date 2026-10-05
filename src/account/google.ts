@@ -65,6 +65,7 @@ declare global {
             display?: "popup";
             context?: "signin" | "signup" | "continue";
             auto_select?: boolean;
+            fedcm?: boolean;
           }) => void;
           renderButton: (
             parent: HTMLElement,
@@ -76,6 +77,12 @@ declare global {
            * to open the account chooser when it is not on screen.
            */
           prompt: () => void;
+          /**
+           * Turns off FedCM, which otherwise makes GIS render the account chooser inline
+           * in the page instead of in a popup. Optional: older builds of the script omit
+           * it, hence the `?.` at every call site.
+           */
+          disable_fedcm_prompt?: () => void;
         };
       };
     };
@@ -153,6 +160,21 @@ async function initGis(): Promise<boolean> {
       display: "popup",
       context: "signin",
       auto_select: false,
+      /*
+       * FedCM off.
+       *
+       * With FedCM on, GIS renders the account chooser **inline in the page** rather than
+       * in a popup - the account chip that appeared inside the sign-in card with the
+       * player's own name and email. Choosing an account there does not complete the
+       * flow, so the player picked an account and then nothing happened.
+       *
+       * Google's documented opt-out is the `disable_fedcm_prompt` method, which this
+       * build of the script does not have: the methods it exposes are PromptMoment
+       * Notification, cancel, disableAutoSelect, initialize, prompt, renderButton,
+       * revoke, setLogLevel and storeCredential. Called through `?.` it would have been
+       * a silent no-op, which is why the flag below carries the weight instead.
+       */
+      fedcm: false,
       callback: (r: TokenResponse) => {
         const pending = inFlight;
         inFlight = null;
@@ -167,6 +189,26 @@ async function initGis(): Promise<boolean> {
         pending.resolve(token);
       },
     });
+    /*
+     * FedCM off, deliberately.
+     *
+     * With FedCM enabled, GIS renders the account chooser **inline in the page** rather
+     * than in a popup - the account chip that appeared inside the sign-in card. Selecting
+     * an account there does not complete the flow, so the player picked an account and
+     * then nothing happened. Google's own guidance is to call `disable_fedcm_prompt`
+     * when the inline prompt is not wanted, which restores the classic popup that works
+     * everywhere.
+     *
+     * Wrapped because it is the one call that has been known to be missing from older
+     * builds of the GIS script, and a sign-in that dies on a missing function is worse
+     * than one that merely renders inline.
+     */
+    try {
+      window.google.accounts.id.disable_fedcm_prompt?.();
+    } catch {
+      // Older script. The popup still works; only FedCM stays available.
+    }
+
     initialised = true;
     return true;
   } catch {

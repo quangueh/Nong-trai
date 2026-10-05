@@ -4,6 +4,7 @@ import { sfx } from "../../audio/audio";
 import { MAX_PLOTS, RULE_LABEL, checkUnlock, plotStatuses } from "../../config/unlocks";
 import { el, toast, fmt, seedChip, seedIcon } from "../components";
 import { store } from "../app";
+import { plantDisplayName } from "../../core/plantNames";
 import { getSpecies, type SpeciesDef } from "../../config/species";
 import { ELEMENTS, ELEMENT_INFO } from "../../config/elements";
 import { ARCHETYPE_ROLE } from "../../config/balance";
@@ -73,7 +74,7 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
   const list = el("div");
   const tools = el("div", { style: "margin-bottom:12px" });
   body.append(
-    el("div", { class: "notice", style: "margin-bottom:12px" }, [
+    el("div", { class: "callout", style: "margin-bottom:12px" }, [
       "Cửa hàng chỉ bán hạt độ hiếm C. Cây hiếm phải tự lai tạo, không mua bằng tiền.",
     ]),
     tools,
@@ -226,7 +227,7 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
     );
 
     if (res.total === 0) {
-      box.appendChild(el("div", { class: "notice" }, ["Không có loài nào khớp bộ lọc."]));
+      box.appendChild(el("div", { class: "callout" }, ["Không có loài nào khớp bộ lọc."]));
       return box;
     }
 
@@ -384,7 +385,7 @@ function paintItems(body: HTMLElement, nav: Navigate) {
   body.appendChild(card);
 
   body.appendChild(
-    el("div", { class: "notice", style: "margin-top:12px" }, [
+    el("div", { class: "callout", style: "margin-top:12px" }, [
       "Vật tư chỉ hoàn lại 10-25% khi bán cây. Đây là chi phí cơ hội để bạn phải chọn cây nào đem đấu, cây nào bán.",
     ]),
   );
@@ -480,7 +481,7 @@ function paintLand(body: HTMLElement, nav: Navigate) {
 
 function paintOrders(body: HTMLElement, nav: Navigate) {
   const orders = generateOrders(store.state.playerId, Date.now());
-  body.appendChild(el("div", { class: "notice", style: "margin-bottom:12px" }, ["Đơn hàng NPC trả thêm tới 1,5 lần giá bán thường. Mỗi ngày có 3-5 đơn, làm mới theo giờ máy chủ."]));
+  body.appendChild(el("div", { class: "callout", style: "margin-bottom:12px" }, ["Đơn hàng NPC trả thêm tới 1,5 lần giá bán thường. Mỗi ngày có 3-5 đơn, làm mới theo giờ máy chủ."]));
 
   const sellable = store.state.plants.filter((p) => canSell(p));
   for (const order of orders) {
@@ -498,7 +499,13 @@ function paintOrders(body: HTMLElement, nav: Navigate) {
       const sel = el("select");
       sel.appendChild(el("option", { value: "" }, ["Chọn cây"]));
       for (const p of sellable) {
-        sel.appendChild(el("option", { value: p.plantId }, [`${p.name} (${p.rarity}) · ~${fmt(sellPrice(p) * order.rewardMultiplier)}🪙`]));
+        // Handing a plant to an NPC order is permanent, and this menu is the only thing
+        // telling two same-named plants apart. Resolved against the whole garden.
+        sel.appendChild(
+          el("option", { value: p.plantId }, [
+            `${plantDisplayName(p, store.state.plants)} (${p.rarity}) · ~${fmt(sellPrice(p) * order.rewardMultiplier)}🪙`,
+          ]),
+        );
       }
       const go = el("button", { class: "btn sm primary block", style: "margin-top:8px" }, ["Giao hàng"]);
       go.addEventListener("click", () => {

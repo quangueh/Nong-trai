@@ -303,7 +303,7 @@ function seedBelt(nav: Navigate): HTMLElement {
   }
 
   if (listed.length === 0) {
-    wrap.appendChild(el("div", { class: "notice" }, ["Túi hạt đang trống. Mở Cửa hàng để mua hạt đầu tiên."]));
+    wrap.appendChild(el("div", { class: "callout" }, ["Túi hạt đang trống. Mở Cửa hàng để mua hạt đầu tiên."]));
   }
 
   const rail = el("div", { class: "seed-rail" });
@@ -847,7 +847,7 @@ export function openDetail(plant: Plant, nav: Navigate, shell: Element) {
     statRow("Mood", MOOD_LABEL[plant.mood]),
   );
   if (v.warnings.length) {
-    bal.appendChild(el("div", { class: "notice warn", style: "margin-top:6px" }, [`Cảnh báo: ${v.warnings.join(", ")}`]));
+    bal.appendChild(el("div", { class: "callout warn", style: "margin-top:6px" }, [`Cảnh báo: ${v.warnings.join(", ")}`]));
   }
   content.appendChild(bal);
 
@@ -988,7 +988,7 @@ export function openCare(plant: Plant, nav: Navigate, shell: Element) {
   // combo hint
   content.appendChild(el("div", { class: "sec-title", style: "margin-top:12px" }, ["Combo gợi ý"]));
   content.appendChild(
-    el("div", { class: "notice" }, ["Combo không bắt buộc. Người mới chỉ cần chăm 1-2 lần, đợi cây trưởng thành, rồi đem đi đấu để nhận thêm xu và vật tư."]),
+    el("div", { class: "callout" }, ["Combo không bắt buộc. Người mới chỉ cần chăm 1-2 lần, đợi cây trưởng thành, rồi đem đi đấu để nhận thêm xu và vật tư."]),
   );
 
   const { overlay, sheet: s } = sheet(content, () => {

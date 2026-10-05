@@ -69,6 +69,43 @@ for (const p of store.state.plants) {
   p.growth.stageReadyAt = Date.now();
   p.locks.manual = false;
 }
+/*
+ * A fixed sample for the renderer measurements.
+ *
+ * These assertions are about the renderer, so the sample must not depend on whatever
+ * the garden happens to hold. It used to be `store.state.plants`, which changed shape
+ * with every rule that touched breeding: parents are now consumed, so ten breeds remove
+ * twenty plants and add ten, and how many actually succeeded depends on the cap, on
+ * which pairings were distinct, and on whether a child came out mature. The path-count
+ * check then asserted "more than three distinct counts" over a sample that was sometimes
+ * three plants wide - a statistical threshold on a variable sample, which failed roughly
+ * one run in four.
+ *
+ * Six known species, planted and matured here, so the assertion has the same inputs
+ * every time. The wider garden above is left intact for the tests that want variety.
+ */
+const SAMPLE_SPECIES: SpeciesId[] = ["thornroot", "emberleaf", "voltvine", "gloomcap", "dewbud", "ashbark"];
+const sample: Plant[] = [];
+for (const s of SAMPLE_SPECIES) {
+  store.state.seeds[s] = 4;
+  const res = store.plantSeed(s);
+  if (!res.ok) throw new Error(`could not plant the sample species ${s}: ${res.reason}`);
+  const p = store.get(res.plantId!);
+  if (!p) throw new Error(`planted ${s} but it is not in the garden`);
+  p.growth.stage = "mature";
+  p.growth.stageReadyAt = Date.now();
+  p.growth.level = 12;
+  p.locks.manual = false;
+  // Kept in planting order so a failure can be reproduced from this list alone.
+  sample.push(p);
+}
+check("the fixed sample is six distinct species", new Set(sample.map((p) => p.plantId)).size === sample.length);
+/*
+ * The garden, which now provably contains at least the six planted above.
+ *
+ * Not `plants` appended to `sample`: they are the same objects, and counting each twice
+ * made ten of sixteen silhouettes identical and failed the uniqueness check on every run.
+ */
 const all = store.state.plants;
 
 section("1. Geometry primitives");
