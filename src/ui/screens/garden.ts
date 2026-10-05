@@ -340,8 +340,14 @@ function seedBelt(nav: Navigate): HTMLElement {
  */
 function emptyPlot(nav: Navigate, index: number): HTMLElement {
   const plot = el("button", { class: "plot empty-plot" });
+  // The number goes in the corner tag where every planted plot keeps its, and the
+  // middle of the soil gets a seed hole instead. This tile used to carry one large
+  // brown pill doing both jobs, which meant an empty plot had a different silhouette
+  // from a full one - and the tile a new player taps first should not look like a
+  // different object from the twenty-three around it.
   plot.append(
     el("div", { class: "soil-mark" }, [String(index)]),
+    el("div", { class: "plot-hole" }, ["\u{1F331}"]),
     el("strong", {}, ["Chọn hạt để gieo"]),
     el("small", {}, ["Bấm vào ô đất này"]),
   );

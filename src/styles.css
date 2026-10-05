@@ -1410,27 +1410,39 @@ h4 {
    spreadsheet with plants on it. Now this is the ground, and a plot is a hollow
    in it. The gap between beds shows grass, which is what a real garden has
    between its rows. */
+/* --- the sky the garden hangs in ----------------------------------------
+
+   Sky rather than lawn. A graded blue-to-cream field with three soft cloud masses
+   behind it, so the space between the islands is not empty but distant - which is the
+   whole reason the islands read as floating.
+
+   The clouds are painted, not animated. A drifting background behind twenty-four
+   interactive cards is motion the player cannot look away from and did not ask for; the
+   parallax that matters here comes from the shadows, which do move when a card is
+   pressed. */
 .plots {
   position: relative;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 7px;
-  padding: 12px;
-  border-radius: 24px;
+  /* Wide enough for the root under each island to hang into without touching its
+     neighbour. A 7px gap - what this started with - left nowhere for a slab to go, let
+     alone a root, which is why the first version had neither. */
+  gap: 40px 16px;
+  padding: 18px 16px 44px;
+  border-radius: 26px;
   background:
-    /* uneven growth, so the lawn is not a flat wash */
-    radial-gradient(72% 46% at 18% 6%, rgba(178, 222, 132, 0.55), transparent 72%),
-    radial-gradient(64% 40% at 88% 34%, rgba(132, 186, 92, 0.45), transparent 74%),
-    radial-gradient(58% 36% at 34% 92%, rgba(190, 228, 146, 0.4), transparent 72%),
-    /* Deliberately the dullest green in the game. The soil and the plants are
-       what the eye is for; a lawn brighter than either competes with them. */
-    linear-gradient(178deg, #8fbc6f 0%, #7cae5d 52%, #6d9e4e 100%);
-  border: 1px solid #6b9448;
-  /* A hollow, not a raised card: light from the top edge, shadow at the bottom. */
+    /* Cloud masses, placed off-centre and at different scales so the sky is not a
+       pattern. Two are behind the grid and one below the horizon line. */
+    radial-gradient(58% 26% at 14% 12%, rgba(255, 255, 255, 0.92), transparent 70%),
+    radial-gradient(44% 20% at 78% 26%, rgba(255, 255, 255, 0.78), transparent 72%),
+    radial-gradient(70% 22% at 46% 78%, rgba(255, 255, 255, 0.6), transparent 74%),
+    /* High sky, then a warm haze low down where the sun would be. */
+    linear-gradient(178deg, #a8d8f2 0%, #c3e6f7 38%, #e2f2f6 68%, #f6efdc 100%);
+  border: 1px solid rgba(120, 168, 196, 0.5);
   box-shadow:
-    inset 0 3px 9px rgba(44, 72, 24, 0.28),
-    inset 0 -2px 0 rgba(255, 255, 255, 0.14),
-    0 10px 24px rgba(80, 104, 53, 0.2);
+    inset 0 3px 10px rgba(58, 110, 148, 0.16),
+    inset 0 -14px 26px rgba(255, 244, 214, 0.5),
+    0 14px 30px rgba(70, 110, 140, 0.22);
 }
 
 @media (min-width: 680px) {
@@ -1439,30 +1451,37 @@ h4 {
   }
 }
 
-/* A hedge around the lawn.
+/* A high-sun rim: light along the top edge, none at the bottom.
 
-   The garden needs an edge to be a place rather than a region. Drawn as a soft
-   dark-green ring just inside the border so it reads as foliage standing behind
-   the grass rather than as an outline someone drew. */
+   This replaced a hedge. A sky has nothing to grow at its edge, and a green ring around
+   a field of floating islands reads as a fence drawn around a poster. */
 .plots::before {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  box-shadow: inset 0 0 0 3px rgba(74, 112, 46, 0.34);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.6);
   z-index: 0;
 }
 
 /* --- one bed of turned earth ---------------------------------------------- */
 
+/* --- one island ----------------------------------------------------------
+
+   A crown of soil with a slab of earth under it. The depth is three box-shadows: a
+   mid-tone side, a deeper narrower one below that, and the shadow the whole thing casts
+   into the cloud. No extra elements, because a garden screen can hold twenty-four of
+   these and every node is paid for twenty-four times. */
 .plot {
   position: relative;
   z-index: 1;
-  /* A bed in a field is rectangular. The heavy blob radius this had was the other
-     half of what made twenty-four of them read as separate objects. */
-  border-radius: 8px;
-  padding: 10px 10px 11px;
+  /* Rounded at the crown, and less so at the foot: an island seen from above has a
+     broad top and a tapering underside. Generous on purpose - at twenty pixels on a
+     two-hundred-pixel card the corners read as barely-there, and a barely-there corner
+     is a rectangle. */
+  border-radius: 30px 30px 16px 16px / 26px 26px 14px 14px;
+  padding: 9px 10px 10px;
   cursor: pointer;
   overflow: visible;
   border: none;
@@ -1475,71 +1494,141 @@ h4 {
       rgba(255, 250, 235, 0.1) 3px 7px
     ),
     /* Pale sand at the crown, warmer loam at the edges. */
-    radial-gradient(86% 74% at 50% 30%, #eddcb6 0%, #e0c99b 48%, #c9a877 82%, #b08a58 100%);
-  /* No rim, no outer glow: the only separation is the furrow of darker soil the
-     grid gap leaves between neighbours. */
-  box-shadow: inset 0 3px 8px rgba(74, 48, 22, 0.2);
-  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+    radial-gradient(86% 74% at 50% 30%, #eddcb6 0%, #e0c99b 48%, #c9a877 82%, #b08a58 100%),
+    /* Light on the top lip and a dark line at the soil's turn - which is what used to be
+       an inset rim, and is better as light falling on the surface. The rim was moved into
+       this stack when the pseudo-element became the root. */
+    linear-gradient(180deg, rgba(255, 250, 235, 0.34) 0 7px, transparent 7px),
+    linear-gradient(180deg, transparent 0 55%, rgba(104, 74, 42, 0.14) 100%);
+  /* The slab. Two hard-edged shadows below the island read as the sides of a block of
+     earth, which is what a raised bed has and a painted rectangle does not.
+
+     Held in a variable because every state below adds a glow to it. Written out in each
+     state instead, and the first mature plant on the garden silently loses its
+     thickness - which is exactly the kind of thing that looks fine until you put a
+     seedling next to it. */
+  /* No slab shadow any more: the root is drawn as an element now, because a shadow
+     cannot taper. What is left here is the shadow the whole island casts into the cloud
+     - wide, low and set further down than the eye expects, since a shadow sitting
+     directly against its object reads as a second object. */
+  box-shadow: 0 34px 24px rgba(48, 78, 100, 0.3);
+  transition:
+    transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Contact shadow only. A bed dug into soil has no hard rim; what separates it
-   from its neighbour is the shadow the rim of earth casts into the furrow. */
+/* The grass cap, and the single detail that makes these islands rather than beds.
+
+   It is wider than the soil on both sides and sits *above* the crown, so the dirt's
+   silhouette curves inward underneath it. That overhang is what the eye reads as
+   "floating"; grass drawn inside the outline is just a coloured stripe, which is what
+   the first attempt looked like. */
 .plot::before {
   content: "";
   position: absolute;
-  left: 5%;
-  right: 5%;
-  /* Entirely below the bed. At `top: 6%` the top of the blur sat above the bed
-     and read as a brown shelf lying across it — a shadow with no light source. */
-  top: calc(100% - 2px);
-  bottom: -7px;
-  border-radius: 10px;
-  background: rgba(44, 60, 24, 0.2);
-  filter: blur(6px);
+  /* Inside the box; the overhang is the spread shadow below. A pseudo-element positioned
+     past its parent's edge is painted outside the box *and* counted in the parent's
+     scrollWidth, which turns a deliberate decoration into a layout overflow that the
+     screen audit then has to be told to ignore. Spread shadows are painted outside the
+     box without taking part in layout, so this is the same edge for free. */
+  left: 6%;
+  right: 6%;
+  top: 2px;
+  height: 15px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #93cf66 0%, #74b452 52%, #56913a 100%);
+  /* Six pixels of grass past the soil on every side: the overhang itself. Then two
+     smaller lobes so the silhouette is not a single even arc, and a soft shadow under
+     the whole cap. */
+  box-shadow:
+    0 0 0 6px #74b452,
+    -11px 7px 0 -3px #80bb57,
+    13px 8px 0 -4px #76b351,
+    0 6px 10px rgba(46, 84, 30, 0.28);
   z-index: -1;
   pointer-events: none;
 }
 
-/* The furrow: a darker line of turned earth around each bed, which is what the
-   eye uses to count the beds instead of a card border. */
+/* The root: earth narrowing to a point below the island.
+
+   This is the whole difference between "card with a shadow" and "floating island". It
+   tapers to nothing rather than ending on a flat edge, and it is narrower than the plot,
+   so the soil's silhouette curves inward the way the underside of something suspended
+   would. */
 .plot::after {
   content: "";
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
+  /* Narrower and shorter than a first attempt. At 16% insets and thirty pixels this
+     was a wide dark bowl hung under each island, and the eye read the bowl as the
+     object with the soil balanced on top - which is not what an island is. */
+  left: 27%;
+  right: 27%;
+  top: calc(100% - 2px);
+  height: 24px;
+  border-radius: 0 0 42% 42% / 0 0 86% 86%;
+  /* Light enough to stay attached to the soil above it. The bottom is a shade *lighter*
+     than the middle, because soil catches light on the underside of an overhang. */
+  background: linear-gradient(180deg, #9c7048 0%, #7d5734 46%, #8a5f3a 100%);
+  /* A pair of root threads hanging out of the point, because a perfectly smooth cone
+     reads as a drop of chocolate rather than as soil. */
+  box-shadow:
+    -8px 15px 0 -7px #6b4826,
+    9px 17px 0 -8px #63421f;
+  z-index: -1;
   pointer-events: none;
-  box-shadow: inset 0 0 0 1px rgba(104, 74, 42, 0.22);
 }
 
+/* Pressed: the island settles toward its own shadow rather than merely shrinking.
+   The slab is shortened as well, so pressing reads as pushing the island *down* through
+   the cloud instead of shrinking a picture of one. */
+/* Pressed: the island settles into its own shadow rather than merely shrinking.
+   The root shortens with it, so pressing reads as pushing the island down through the
+   cloud rather than shrinking a picture of one. */
 .plot:active {
-  transform: scale(0.975);
+  transform: translateY(9px) scale(0.985);
+  box-shadow: 0 22px 16px rgba(48, 78, 100, 0.3);
 }
 
 .plot:hover {
-  border-color: rgba(47, 159, 98, 0.44);
+  box-shadow: 0 38px 28px rgba(48, 78, 100, 0.34);
 }
 
+/* Ready to fight: a green light along the crown, added to the island's own shadow rather
+   than replacing it. */
 .plot.ready {
-  border-color: rgba(47, 159, 98, 0.5);
-  box-shadow: 0 0 0 1px rgba(47, 159, 98, 0.16), 0 10px 24px rgba(80, 104, 53, 0.2);
+  box-shadow: 0 0 0 2px rgba(47, 159, 98, 0.36), 0 34px 26px rgba(48, 78, 100, 0.32);
 }
+
+/* Ready to breed: gold, and a little prouder - it is the state a player is aiming for, so
+   it is allowed to stand taller than the rest. */
 .plot.bred {
-  border-color: rgba(217, 143, 36, 0.48);
+  box-shadow: 0 0 0 2px rgba(217, 143, 36, 0.44), 0 40px 30px rgba(48, 78, 100, 0.36);
 }
 
 .plot .bed {
   position: relative;
   z-index: 1;
-  aspect-ratio: 1 / 0.92;
+  /* Taller than it is wide, because a plant is mostly vertical and a square bed crops
+     the one thing worth cropping least. The plant is also allowed to overflow the bed
+     slightly: an island with a tree standing proud of it reads as scale. */
+  aspect-ratio: 1 / 1.06;
   display: grid;
   place-items: center;
-  margin: -2px 0 2px;
+  /* Vertical overhang only. The horizontal version pushed the bed three pixels wider than
+     the island, which the screen audit reports as an overflow - correctly, because the
+     plant really was hanging off the edge of its own plot. */
+  margin: -8px 0 2px;
 }
 
 .plot .bed svg {
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45));
+  /* Clipped to the plant's own box. Its geometry is solved inside a 100x100 budget and a
+     few stems and leaf tips finish a hair outside it, which is invisible when the SVG
+     clips and is counted as a layout overflow when it does not - the card measured three
+     pixels wider than its content purely because of ink. */
+  overflow: hidden;
+  filter: drop-shadow(0 5px 7px rgba(58, 40, 20, 0.34));
   /* `transform-box` matters: without it the SVG's own origin (0 0) is used for
      transform-origin percentages, and a sway would orbit the whole art. */
   transform-box: fill-box;
@@ -1906,25 +1995,74 @@ h4 {
   /* Unplanted, not unfinished. A dashed outline said "form to fill in"; a paler,
      softer bed says "soil waiting". The dashed border that was here resolved to
      black once .plot stopped declaring one. */
+  /* Soil waiting rather than soil worked: the same island, a shade paler and with
+     the furrows spread out, so an empty plot reads as untended and not as unfinished.
+     The shadow is left alone, because that is the cloud shadow the island casts and an
+     empty island casts it too. */
   background-image:
-    repeating-linear-gradient(180deg, rgba(122, 88, 52, 0.05) 0 4px, transparent 4px 9px),
-    radial-gradient(86% 74% at 50% 30%, #e6dcbe 0%, #d8c9a5 50%, #c2ae82 84%, #b09665 100%);
-  box-shadow: inset 0 2px 6px rgba(74, 48, 22, 0.14);
+    repeating-linear-gradient(180deg, rgba(122, 88, 52, 0.05) 0 6px, transparent 6px 13px),
+    radial-gradient(86% 74% at 50% 30%, #efe6ca 0%, #ddd0ae 50%, #c7b389 84%, #b39b6d 100%),
+    linear-gradient(180deg, rgba(255, 250, 235, 0.34) 0 7px, transparent 7px),
+    linear-gradient(180deg, transparent 0 55%, rgba(104, 74, 42, 0.12) 100%);
 }
 
-.empty-plot .soil-mark {
-  width: 74px;
-  height: 46px;
+/* The plot number. A small tag standing on the crown rather than a number printed in
+   a corner - on a sky it has to belong to the island, and it has to be readable against
+   both soil and grass. */
+.plot .soil-mark {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  z-index: 3;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
   display: grid;
   place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #4a3316;
+  background: linear-gradient(180deg, #fdf3d8, #ecd7a4);
+  border-radius: 999px;
+  box-shadow: 0 2px 4px rgba(58, 40, 20, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.plot .soil-mark.dim {
+  opacity: 0.72;
+}
+
+/* The empty plot keeps its own, much larger, soil mark - that is the number of the plot
+   being offered, not a label sitting on a bed. */
+/* The seed hole: a circle pressed into untended soil.
+
+   Dashed rather than solid, because a solid rim reads as a hole that has already been
+   dug and planted. The sprout inside is dim and slightly blurred, so the slot looks
+   like it is waiting for something rather than showing one. */
+.plot-hole {
+  position: relative;
+  z-index: 1;
+  width: 78px;
+  height: 78px;
+  display: grid;
+  place-items: center;
+  margin: 6px 0 2px;
   border-radius: 50%;
-  background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.13) 0 2px, transparent 2px 7px),
-    linear-gradient(180deg, #9a6540, #704629);
-  color: rgba(255, 253, 241, 0.74);
-  font-weight: 900;
-  font-size: 20px;
-  box-shadow: inset 0 4px 12px rgba(38, 24, 14, 0.2);
+  border: 2.5px dashed rgba(120, 92, 54, 0.5);
+  background: radial-gradient(70% 70% at 50% 38%, rgba(96, 70, 38, 0.16), rgba(96, 70, 38, 0.06));
+  /* Pressed in, so it is a shadow in the soil rather than a disc laid on it. */
+  box-shadow:
+    inset 0 3px 7px rgba(74, 48, 22, 0.22),
+    inset 0 -1px 0 rgba(255, 250, 235, 0.4);
+  font-size: 26px;
+  opacity: 0.5;
+  filter: blur(0.4px);
+  transition: opacity 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.empty-plot:hover .plot-hole {
+  opacity: 0.78;
+}
 }
 
 .empty-plot strong {

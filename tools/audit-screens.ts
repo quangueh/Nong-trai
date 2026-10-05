@@ -77,6 +77,23 @@ for (const vp of VIEWPORTS) {
     // first - seven currency pills overflowed it on a phone and pushed the settings
     // button off the right edge, which this harness reported as clean because it only
     // ever looked inside the screen.
+    /* Measured with animation off.
+
+       Every plant in a garden plot runs a sway keyframe whose transform leans the whole
+       SVG, and a transformed descendant widens its parent's scroll area - so a card whose
+       layout is perfectly correct measures five pixels too wide while the plant is
+       leaning. Pausing is not enough, because pausing holds whatever pose the animation
+       was in, and rewinding is not enough either, because the pose at 0% is also a lean.
+
+       So the animations are switched off outright. Everything they animate here is a
+       transform or an opacity, neither of which participates in layout, so what is left is
+       the layout being measured on its own terms - which is the thing an overflow check
+       is supposed to be about. */
+    await page.addStyleTag({
+      content: `*, *::before, *::after { animation: none !important; transition: none !important; }`,
+    });
+    await page.waitForTimeout(80);
+
     const report = (await page.evaluate(`(() => {
       const doc = document.documentElement;
       const scope = ".screen *, .topbar *, .bottomnav *";
