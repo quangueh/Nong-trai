@@ -16,5 +16,17 @@
   Cache-Control: no-cache
 
 /*
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
+
+# The Cross-Origin-Opener-Policy value is not "same-origin". Google's popup sets
+# COOP: same-origin itself, so a page that also says same-origin lands in a separate
+# browsing context group and the browser refuses the postMessage that carries the
+# credential back - which is the console line "Cross-Origin-Opener-Policy policy would
+# block the window.postMessage call".
+#
+# same-origin-allow-popups is the value that isolates this document while still letting
+# a popup keep a handle on its opener. It is the documented requirement for Google
+# Identity Services, and it is the default here so nobody has to remember it: a game
+# with no sign-in would work either way, and one with sign-in would break loudly.

@@ -172,6 +172,24 @@ const devHandle = await page.evaluate(`(() => typeof window.__game)()`);
 const handleLeaked = devHandle !== "undefined";
 console.log(`dev handle in production: ${JSON.stringify(devHandle)}${handleLeaked ? " (LEAKED)" : " (stripped, correct)"}`);
 
+/*
+ * Cross-Origin-Opener-Policy.
+ *
+ * Asserted because a missing value is invisible until Google sign-in runs in a real
+ * browser: the site worked, the account sheet worked, and the failure was one console
+ * line that reads like a warning. `same-origin` would be worse than absent, because it
+ * isolates the document and blocks the postMessage that carries the credential back.
+ */
+const coopHeader = (await page.request.get(URL)).headers()["cross-origin-opener-policy"] ?? "";
+const coopOk = coopHeader === "same-origin-allow-popups";
+console.log(
+  `cross-origin-opener-policy: ${coopHeader || "(not set)"}` +
+    (coopOk
+      ? " (correct)"
+      : " -- REPORTED, NOT FATAL: vite preview never serves host headers, so this is" +
+        " always absent locally. Check it against a real deployment."),
+);
+
 console.log("failed requests:", failedRequests.length ? failedRequests.join(" | ") : "none");
 console.log(
   "third-party failures (not fatal):",
