@@ -90,7 +90,20 @@ const { store, navigate } = await import("../src/ui/app");
 section("0. Boot");
 await render("app boots", () => boot(w.document.getElementById("app")!));
 check("shell is created", !!$(".shell"));
-check("bottom nav has 5 tabs", $$(".navitem").length === 5, `${$$(".navitem").length}`);
+/* Six, since the PvE ladder joined the nav - and checked against the nav's own column count
+   rather than a second literal, because a check that repeats the number it is checking only
+   catches someone forgetting to update it, not someone breaking the layout. */
+check("bottom nav has 6 tabs", $$(".navitem").length === 6, `${$$(".navitem").length}`);
+check(
+  "and the nav is sized for as many columns as it has tabs",
+  $$(".bottomnav .navitem").length === Number($(".bottomnav")?.style.getPropertyValue("--tab-count") || 0),
+  `tabs ${$$(".bottomnav .navitem").length}, columns ${$(".bottomnav")?.style.getPropertyValue("--tab-count")}`,
+);
+check(
+  "every tab lands on one row",
+  new Set($$(".navitem").map((n) => Math.round(n.getBoundingClientRect().top))).size === 1,
+  `${new Set($$(".navitem").map((n) => Math.round(n.getBoundingClientRect().top))).size} distinct rows`,
+);
 check("topbar shows currency", ($(".topbar")?.textContent ?? "").includes("1."));
 
 section("1. Garden screen");

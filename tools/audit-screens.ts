@@ -19,7 +19,9 @@ const VIEWPORTS = [
   { name: "phone", width: 390, height: 844 },
 ] as const;
 
-const SCREENS = ["garden", "collection", "breeding", "arena", "lab"] as const;
+// `ascent` included because it is a real screen that ships, and an audit that only knows
+// about the screens someone remembered to add is an audit that misses the new ones.
+const SCREENS = ["garden", "collection", "breeding", "arena", "ascent", "lab"] as const;
 
 const b = await chromium.launch();
 const allErrors: string[] = [];

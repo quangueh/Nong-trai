@@ -6,6 +6,7 @@ import { renderGarden } from "./screens/garden";
 import { renderCollection } from "./screens/collection";
 import { renderBreeding } from "./screens/breeding";
 import { renderArena, currentBattleView } from "./screens/arena";
+import { renderAscent } from "./screens/ascent";
 import { renderLab } from "./screens/lab";
 import { sfx } from "../audio/audio";
 import { accountStatus, initAccount, isSignedIn, onAccountStatus } from "../account/sync";
@@ -36,6 +37,7 @@ const TABS: { id: Screen; label: string; icon: string }[] = [
   { id: "collection", label: "Sưu tầm", icon: "📖" },
   { id: "breeding", label: "Lai tạo", icon: "🧬" },
   { id: "arena", label: "Đại chiến", icon: "⚔️" },
+  { id: "ascent", label: "Vượt ải", icon: "🏔" },
   { id: "lab", label: "Cửa hàng", icon: "🛒" },
 ];
 
@@ -80,6 +82,7 @@ function paint(params?: unknown) {
     collection: renderCollection,
     breeding: renderBreeding,
     arena: renderArena,
+    ascent: renderAscent,
     lab: renderLab,
   }[current];
   screenHost.appendChild(view(navigate, params));
@@ -443,6 +446,10 @@ export function boot(root: HTMLElement) {
 
   // --- nav ---
   navHost = el("div", { class: "bottomnav" });
+  // Published so the stylesheet can size its columns from the tab count. Hard-coding the
+  // number in CSS meant adding a sixth screen left the nav one column short, which put the
+  // last item on a second row with no indication of it in either file.
+  navHost.style.setProperty("--tab-count", String(TABS.length));
   for (const tab of TABS) {
     const b = el("button", { class: "navitem" + (tab.id === current ? " active" : ""), "data-screen": tab.id });
     b.append(el("span", { class: "ico" }, [tab.icon]), el("span", {}, [tab.label]));

@@ -582,7 +582,16 @@ function pickPackages(rng: Rng, archetype: Record<Archetype, number>, count: num
  * Budget fitting happens *after* generation (see `fitToBudget`) — never before,
  * otherwise every plant is generated weak and the budget check is meaningless.
  */
-function statsFromGenes(dna: Dna, tierOrLevel: CombatTier | number, expression?: Record<string, number>, packages: GenePackage[] = []): Stats {
+/**
+ * The stat line a genome expresses.
+ *
+ * Exported because the PvE monsters are genomes too. `pve/monster.ts` picks genes at
+ * random for every stage and then solves `expression` to land on the stage's target stat
+ * line, rather than inventing its own formula - a monster scaled by a different equation
+ * than a player's plant would drift away from the rest of the game's balance the moment
+ * either side was retuned.
+ */
+export function statsFromGenes(dna: Dna, tierOrLevel: CombatTier | number, expression?: Record<string, number>, packages: GenePackage[] = []): Stats {
   const tier: CombatTier = typeof tierOrLevel === "number" ? "seedling" : tierOrLevel;
   const ref = TIER_META[tier].reference;
   const expr: Record<string, number> = expression ?? (Object.fromEntries(STAT_GENES.map((g) => [g, 1])) as Record<string, number>);
@@ -809,7 +818,8 @@ function buildValueOf(plant: Plant, tier: (typeof TIER_META)[CombatTier]): numbe
   return statValue + nonStatValueOf(plant, tier) - computeSynergyTax(plant);
 }
 
-function potentialFromGenes(dna: Dna, tier: CombatTier = "bloom"): Record<string, PotentialStat> {
+/** Exported for the same reason as `statsFromGenes`: a monster is a genome. */
+export function potentialFromGenes(dna: Dna, tier: CombatTier = "bloom"): Record<string, PotentialStat> {
   const ref = TIER_META[tier].reference;
   const out: Record<string, PotentialStat> = {};
   for (const g of STAT_GENES) {
@@ -820,7 +830,8 @@ function potentialFromGenes(dna: Dna, tier: CombatTier = "bloom"): Record<string
   return out;
 }
 
-function visualFromDna(dna: Dna, rng: Rng, tier: MutationTier = "micro"): VisualGenes {
+/** Exported for the same reason as `statsFromGenes`: a monster is a genome. */
+export function visualFromDna(dna: Dna, rng: Rng, tier: MutationTier = "micro"): VisualGenes {
   const dom = dominantElement(dna.elementGenes);
   const baseHue = ELEMENT_HUE[dom.id] ?? 110;
   const complexity = clamp(

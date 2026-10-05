@@ -684,7 +684,10 @@ body {
   right: 0;
   bottom: 0;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  /* Driven by the tab count rather than hard-coded, so adding a screen cannot silently leave
+     the nav short a column and stack the last item onto a second row. Six tabs at 1fr each is
+     the tightest this gets; the labels are short enough to sit on two lines below ~64px. */
+  grid-template-columns: repeat(var(--tab-count, 6), minmax(0, 1fr));
   gap: 2px;
   padding: 8px 8px calc(env(safe-area-inset-bottom) + 8px);
   background: rgba(255, 248, 226, 0.94);

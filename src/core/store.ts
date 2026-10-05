@@ -19,6 +19,17 @@ import {
   type CurrencyId,
 } from "./currency";
 import { EMBER_DAILY_CAP, rollDrops, type DropRoll } from "./drops";
+import {
+  describeStage,
+  monsterFor,
+  stageExtraDrop,
+  stageIsOpen,
+  stageReward,
+  type MonsterSpec,
+  type StageBrief,
+  type StageReward,
+} from "../pve";
+
 import { getActiveAccountId, saveSlotKey } from "./saveSlot";
 import { computeEcr } from "../genetics/ecrCalculator";
 import { applyCare, gainXp } from "../growth/care";
@@ -235,6 +246,34 @@ export interface PlayerState {
   seenGenes: string[];
   gardenDay: GardenDayState;
   discovery: DiscoveryState;
+  /**
+   * The PvE ladder: how far this player has climbed.
+   *
+   * Nested because it is one coherent thing with several parts that always travel together -
+   * the record, the day the record was set on, and the run of attempts on the stage that
+   * stopped them. Flat fields would make `ascent.stage = n` able to leave `ascentDay` pointing
+   * at a different day, and the daily escalation would then apply to the wrong stage.
+   */
+  ascent: AscentState;
+}
+
+/** Everything the ladder needs to remember about a player. */
+export interface AscentState {
+  /** Highest stage cleared. 0 means none, so `stage 1` is the first thing anyone sees. */
+  highest: number;
+  /** Attempts at `highest + 1`, for the diminishing consolation reward. */
+  attempts: number;
+  /** Clears, for the ledger line on the screen. */
+  cleared: number;
+  /** Day the record was set, so a new day resets the attempt counter. */
+  day: string;
+  /** Best monster power beaten, which is the player's own record to see. */
+  bestPower: number;
+}
+
+/** A fresh ladder. Also what `loadOrCreate` repairs an older save to. */
+export function emptyAscent(day: string): AscentState {
+  return { highest: 0, attempts: 0, cleared: 0, day, bestPower: 0 };
 }
 
 /* Every read and write of the save goes through `saveSlotKey` from ./saveSlot, because
@@ -885,6 +924,174 @@ private announcePlantLevelUp(plant: Plant, levels: number) {
 
   // --- battle ----------------------------------------------------------
 
+  /* --- the ladder --------------------------------------------------------- */
+
+  /**
+   * The strongest plant this player owns, by `powerRating`.
+   *
+   * Read here rather than by the screen, because the answer changes mid-session whenever a
+   * plant levels and the screen would otherwise have cached a stale best - and the stage card
+   * compares every stage against it.
+   *
+   * 0 when the garden is empty, which the ladder handles: the first stage has to be winnable
+   * by a plant the player does not have yet, or a new account opens onto an unwinnable stage.
+   */
+  bestFighter(): Plant | null {
+    let best: Plant | null = null;
+    for (const p of this.state.plants) {
+      if (p.growth.stage !== "mature" && p.growth.stage !== "awakened") continue;
+      if (!best || p.powerRating > best.powerRating) best = p;
+    }
+    return best;
+  }
+
+  /** Whether the garden has anything that can fight. The screen says so rather than hiding. */
+  canFight(): boolean {
+    return this.bestFighter() !== null;
+  }
+
+  /** Today's ladder state, with the attempt counter reset if the date moved. */
+  private ascentToday(): AscentState {
+    const today = dayKey(Date.now());
+    const a = this.state.ascent ?? (this.state.ascent = emptyAscent(today));
+    if (a.day !== today) {
+      // Only the counter resets. The record is the player's, not the day's.
+      a.day = today;
+      a.attempts = 0;
+    }
+    return a;
+  }
+
+  /**
+   * How many distinct days this player has come back on.
+   *
+   * The daily escalation term, and it is a *count of days*, not a countdown from an
+   * anniversary: the garden's own `streak` already tracks consecutive days and resets on a
+   * miss, and a player who takes a week off should not find the world weaker for it.
+   *
+   * Derived rather than stored, from `createdAt`, so it cannot drift from the calendar. A
+   * player created today has day 0; one who has been here a week has day 7.
+   */
+  ascentDayIndex(): number {
+    const start = this.state.createdAt ?? Date.now();
+    const days = Math.floor((Date.now() - start) / 86_400_000);
+    return Math.max(0, days);
+  }
+
+  /** The brief for a stage, for the screen. */
+  stageBrief(stage: number): StageBrief {
+    const best = this.bestFighter();
+    return describeStage(stage, best?.powerRating ?? 0, this.state.playerId, this.ascentDayIndex());
+  }
+
+  /** The monster guarding a stage. Built fresh each call, so nothing is stored to go stale. */
+  stageMonster(stage: number): MonsterSpec {
+    const brief = this.stageBrief(stage);
+    return monsterFor(this.state.playerId, stage, brief.targetPower, this.ascentDayIndex(), Date.now());
+  }
+
+  /**
+   * Fight a stage, and pay it.
+   *
+   * Separate from `runQuickBattle` rather than a parameter on it, because the two disagree
+   * about what a fight is worth: quick battles pay a flat 40 coins because they are a
+   * side activity, while a stage pays a reward that climbs with the stage number and is the
+   * main progression axis. Folding them together would mean either the ladder pays arena rates
+   * or the arena pays ladder rates.
+   *
+   * The consolation reward is halved per consecutive loss on the same stage, so being stuck
+   * is uncomfortable rather than farmable - but never zero, because a loss that pays nothing
+   * is a loss the player learns to stop attempting.
+   */
+  runAscentStage(
+    plantId: string,
+    stage: number,
+  ): {
+    ok: boolean;
+    reason?: string;
+    result?: BattleResult;
+    won?: boolean;
+    monster?: MonsterSpec;
+    reward?: StageReward;
+    drops?: DropRoll[];
+    nextUnlocked?: number;
+  } {
+    const me = this.get(plantId);
+    if (!me) return { ok: false, reason: "Không tìm thấy cây" };
+    if (me.growth.stage !== "mature" && me.growth.stage !== "awakened") {
+      return { ok: false, reason: "Cây chưa trưởng thành" };
+    }
+    const ascent = this.ascentToday();
+    if (!stageIsOpen(stage, ascent.highest)) {
+      return { ok: false, reason: `Ải ${stage} chưa mở. Hãy vượt ải ${ascent.highest + 1} trước.` };
+    }
+
+    const monster = this.stageMonster(stage);
+    // Simulated here and the result handed back, so the store is the only thing that decides
+    // an outcome. The screen replays this event log rather than running its own battle - two
+    // fights with two seeds would settle differently, and a player who watched a fight they
+    // won get marked as a loss is not coming back.
+    const result = simulateBattle(me, monster.plant, {
+      seed: seedToken(me.plantId, monster.plant.plantId, stage, Date.now()),
+      maxSeconds: 90,
+      arena: "sunny",
+    });
+    const won = result.winner === "a";
+
+    const attempt = won ? 0 : ascent.attempts;
+    const reward = stageReward(stage, won, attempt);
+
+    this.credit(reward.leafCoin, won ? `Vượt ải ${stage}` : `Thử ải ${stage}`);
+    for (const id of ["nectar", "pollen"] as const) {
+      const amount = reward[id];
+      if (amount > 0) this.creditCurrency(id, amount, `Vượt ải ${stage}`);
+    }
+    if (reward.geneCrystal > 0) this.state.geneCrystal += reward.geneCrystal;
+    this.state.items += reward.items;
+
+    // The arena's own drop table, so the odds it prints and the odds it pays are one thing.
+    const drops = won ? this.awardDrops("win") : [];
+    // Ladder-only extra: Pollen and Nectar on top of the table, never Ember, because Ember
+    // already has a daily cap in `drops.ts` and a second source would quietly break it.
+    const extra = stageExtraDrop(stage, won);
+    if (extra) {
+      this.creditCurrency(extra.currency, extra.amount, `Vượt ải ${stage}`);
+    }
+
+    const levels = this.addPlantXp(me, reward.plantXp);
+    for (const s of me.skills) addSkillXp(s, won ? 12 : 4);
+
+    me.battleRecord.wins += won ? 1 : 0;
+    me.battleRecord.losses += won ? 0 : 1;
+    this.state.discovery.battles++;
+
+    let nextUnlocked: number | undefined;
+    if (won) {
+      ascent.cleared++;
+      if (stage >= ascent.highest) {
+        ascent.highest = stage;
+        ascent.attempts = 0;
+        ascent.bestPower = Math.max(ascent.bestPower, monster.power);
+        nextUnlocked = stage + 1;
+      } else {
+        ascent.attempts = 0;
+      }
+    } else {
+      ascent.attempts++;
+    }
+
+    this.advanceGoal("battle", 1);
+    if (won) this.advanceGoal("win", 1);
+    this.commit("ascent");
+    this.pushNotice({
+      kind: "level",
+      title: won ? `🏆 Vượt ải ${stage}: thắng` : `Ải ${stage}: thua`,
+      body: `${monster.name} · +${reward.leafCoin} 🪙` + (levels > 0 ? ` · ${me.name} lên ${levels} cấp` : ""),
+    });
+
+    return { ok: true, result, won, monster, reward, drops, nextUnlocked };
+  }
+
   runQuickBattle(plantId: string, opponent: Plant): { result: BattleResult; won: boolean } {
     const me = this.get(plantId);
     if (!me) throw new Error("no plant");
@@ -1202,6 +1409,18 @@ function loadOrCreate(rawOverride?: string): PlayerState {
         }
         parsed.gardenDay = parsed.gardenDay ?? createGardenDay(dayKey(Date.now()), undefined, parsed.breederLevel ?? 1, parsed.playerId ?? "player");
         parsed.discovery = repairDiscovery(parsed.discovery);
+        // Repair the ladder. Field by field rather than spreading a whole object over it,
+        // because a save written by a build that had the ladder but not the daily escalation
+        // has an `ascent` with no `day`, and a default that spread would reset the record to
+        // whatever today's date is - silently wiping a player's furthest stage.
+        const ascent = (parsed.ascent ?? {}) as Partial<AscentState>;
+        parsed.ascent = {
+          highest: Number.isFinite(ascent.highest) ? ascent.highest! : 0,
+          attempts: Number.isFinite(ascent.attempts) ? ascent.attempts! : 0,
+          cleared: Number.isFinite(ascent.cleared) ? ascent.cleared! : 0,
+          bestPower: Number.isFinite(ascent.bestPower) ? ascent.bestPower! : 0,
+          day: typeof ascent.day === "string" ? ascent.day : dayKey(Date.now()),
+        };
         for (const plant of parsed.plants) {
           for (const species of plant.baseLineage) addUnique(parsed.discovery.species, species);
           for (const [element, value] of Object.entries(plant.dna.elementGenes as Record<string, number>)) {
@@ -1245,6 +1464,7 @@ function loadOrCreate(rawOverride?: string): PlayerState {
     seenGenes: [],
     gardenDay: createGardenDay(dayKey(now), undefined, 1, playerId),
     discovery: emptyDiscovery(),
+    ascent: emptyAscent(dayKey(now)),
   };
   // Seed the first plant.
   const first = createSeedPlant("thornroot", playerId, seedToken(now, "first"), now);
