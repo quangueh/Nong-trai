@@ -12,10 +12,23 @@ import { accountStatus, initAccount, isSignedIn, onAccountStatus } from "../acco
 import { showSignInGateIfNeeded } from "./signInGate";
 import { openAccount } from "./accountSheet";
 import { SPECIES_BY_ID } from "../config/species";
+import { onSlotChange, restoreActiveAccount } from "../core/saveSlot";
 
 import type { Screen } from "./screens/types";
 
+// Which garden this browser holds, decided *before* the store is constructed.
+//
+// The store's constructor reads the save, so there is no second chance to be in the
+// right slot. Without this, a returning player boots into the anonymous garden, the gate
+// lets them straight through on the grace period without a sign-in, and they watch their
+// own account's plants get replaced by a stranger's - or their own, one key too late.
+restoreActiveAccount();
+
 export const store = new GameStore();
+
+// The slot module announces a change; the store owns the save. One wiring point, so
+// neither has to import the other and no call site has to remember to ask for a reload.
+onSlotChange(() => store.reload());
 
 const TABS: { id: Screen; label: string; icon: string }[] = [
   { id: "garden", label: "Vườn", icon: "🌱" },

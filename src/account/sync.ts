@@ -37,6 +37,7 @@ import {
 } from "./api";
 import { forgetSessionKind, rememberSessionKind, type SessionKind } from "./kind";
 import { forgetSignIn, rememberSignIn } from "./stamp";
+import { setActiveAccountId } from "../core/saveSlot";
 
 const TOKEN_KEY = "nong-trai-account-token";
 const EMAIL_KEY = "nong-trai-account-email";
@@ -188,7 +189,7 @@ export async function signUp(email: string, password: string): Promise<void> {
 
 export async function signIn(email: string, password: string): Promise<void> {
   const session: AccountSession = await apiLogin(email, password);
-  adoptSession(session.token, email);
+  adoptSession(session.token, email, session.playerId);
   // Bounded for the same reason as the Google path: a slow Worker must not be able to
   // keep a player out of the game they have just signed in to.
   await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull(true));
@@ -198,16 +199,29 @@ export async function signIn(email: string, password: string): Promise<void> {
  * Finish a sign-in that already has a token.
  *
  * Shared by the password path and the Google path so that "we have a token" means
- * exactly the same thing in both — the same three localStorage writes, the same
- * status event, the same first pull. Written twice, the two would drift, and the first
- * thing that would break is the one nobody retests: signing in with Google on a device
- * that already has a password session.
+ * exactly the same thing in both — the same slot switch, the same three localStorage
+ * writes, the same status event, the same first pull. Written twice, the two would drift,
+ * and the first thing that would break is the one nobody retests: signing in with Google
+ * on a device that already has a password session.
  */
-function adoptSession(newToken: string, email: string, kind: SessionKind = "password"): void {
+function adoptSession(newToken: string, email: string, playerId: string, kind: SessionKind = "password"): void {
   token = newToken;
   localStorage.setItem(TOKEN_KEY, newToken);
   localStorage.setItem(EMAIL_KEY, email);
   rememberSessionKind(kind);
+
+  // Point the save at this account's own slot, and load what is in it.
+  //
+  // This is the line that makes two accounts two gardens. It has to happen *before* the
+  // pull below, or the pull would fetch the new account's cloud save and apply it to a
+  // store still holding the previous account's plants. And it has to happen *after* the
+  // writes above, so a sign-in that fails later still leaves the player in a slot that
+  // belongs to them rather than to whoever was here before.
+  //
+  // `saveSlot` announces the change to the store itself; there is nothing to remember
+  // to call here.
+  setActiveAccountId(playerId);
+
   // The grace period starts when the sign-in succeeds, not when the page loads. Reading
   // "is there a token" instead would treat an expired session as a live one and let it
   // through forever, which is precisely what the grace period is meant to bound.
@@ -264,7 +278,7 @@ async function settleWithin(ms: number, work: Promise<unknown>): Promise<boolean
  */
 export async function signInWithGoogle(idToken: string): Promise<{ created: boolean; email: string }> {
   const session = await apiGoogleSignIn(idToken);
-  adoptSession(session.token, session.email ?? session.name ?? "Google", "google");
+  adoptSession(session.token, session.email ?? session.name ?? "Google", session.playerId, "google");
   await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull(true));
   return { created: session.created, email: session.email ?? "" };
 }
@@ -279,6 +293,10 @@ export function signOut(): void {
     localStorage.removeItem(SEEN_KEY);
     forgetSessionKind();
     forgetSignIn();
+    // Back to the anonymous garden, which is where it has been sitting untouched this
+    // whole time. Signing out is not a reset: someone who played without an account,
+    // then signed in, then signed out again, finds their own plants waiting.
+    setActiveAccountId(null);
     emit({ email: null, state: "off", message: "Đã đăng xuất. Vườn vẫn còn trên máy này.", lastSyncedAt: null, serverWasNewer: false });
   });
 }

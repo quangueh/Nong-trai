@@ -4428,6 +4428,11 @@ body.planting {
 .notice-species-chip {
   flex: 1;
   min-width: 0;
+  /* Capped so a row holding a single chip does not stretch one 40px icon across the
+     whole card, which reads as a large empty panel rather than as a plant. The unlock
+     notice can legitimately name exactly one species, so this is reachable without any
+     new code. Three chips still fill the width they always did. */
+  max-width: 148px;
   display: grid;
   justify-items: center;
   gap: 3px;

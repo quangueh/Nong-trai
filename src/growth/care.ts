@@ -16,6 +16,13 @@ export interface CareResult {
   reason?: string;
   gains: { stat: string; amount: number; label: string }[];
   xp: number;
+  /**
+   * Levels the plant gained from this action, zero if it did not level.
+   *
+   * Reported rather than announced here, because this module knows nothing about
+   * notices or the breeder. The store reads it and does both.
+   */
+  levels?: number;
   moodChanged?: string;
   mutation?: { trait?: string; label: string; detail: string };
   traitsUnlocked: string[];
@@ -45,7 +52,7 @@ function statValue(plant: Plant, stat: string): number {
 
 export function applyCare(plant: Plant, actionId: CareActionId, now: number, playerResources: { items: number; geneCrystal: number; leafCoin: number }): CareResult {
   const action = CARE_ACTIONS[actionId];
-  const res: CareResult = { ok: false, gains: [], xp: 0, traitsUnlocked: [], logLines: [] };
+  const res: CareResult = { ok: false, gains: [], xp: 0, levels: 0, traitsUnlocked: [], logLines: [] };
 
   // Cooldown.
   const last = plant.careMemory.lastAction;
@@ -152,7 +159,10 @@ export function applyCare(plant: Plant, actionId: CareActionId, now: number, pla
   // XP & level.
   const xp = Math.round(8 + rng.next() * 7);
   res.xp = xp;
-  gainXp(plant, xp);
+  // Handed back to the store, which is the only layer that can announce it and pay the
+  // breeder. Tending is the most frequent thing a player does, so it is the last place
+  // that can be allowed to level a plant up silently.
+  res.levels = gainXp(plant, xp);
 
   // Mood drift.
   const nextMood = rollMood(plant, rng, actionId);
@@ -286,10 +296,33 @@ function applyStatGain(plant: Plant, stat: string, amount: number) {
   }
 }
 
-export function gainXp(plant: Plant, xp: number) {
-  plant.growth.xp += xp;
-  const req = xpRequired(plant.growth.level);
-  while (plant.growth.xp >= req && plant.growth.level < 100) {
+/**
+ * Add experience to a plant.
+ *
+ * Returns how many levels it gained - zero, one, or several when a big payout crosses
+ * several thresholds at once. This used to return nothing, which is why levelling a plant
+ * up was invisible: the loop below did the work and told nobody, so a player watching
+ * their fighter climb from 4 to 9 over a run of fights saw a number move and had no way
+ * to know it was a thing that happened.
+ *
+ * The level itself still comes from XP alone; nothing here reads or writes the breeder.
+ */
+export function gainXp(plant: Plant, xp: number): number {
+  const from = plant.growth.level;
+  // Floored, because this counter is printed and every grant in the game is a whole
+  // number. Nothing produces a fraction today - verified over ninety care actions - but a
+  // fractional bar would show something like "55.257805070693934" if any future source
+  // ever did, and the floor makes that impossible rather than merely unlikely.
+  plant.growth.xp = Math.floor(plant.growth.xp + xp);
+  // The requirement is recomputed on every step, not hoisted out of the loop.
+  //
+  // It used to be read once before the loop and subtracted unchanged each time, which
+  // meant every level of a plant cost exactly what its first level cost: the curve was
+  // flat in practice even though `xpRequired` grows, and a plant at level 40 levelled as
+  // cheaply as one at level 1. Read once, the growing curve is decoration.
+  while (plant.growth.level < 100) {
+    const req = xpRequired(plant.growth.level);
+    if (plant.growth.xp < req) break;
     plant.growth.xp -= req;
     plant.growth.level++;
     // Level up nudges potential caps.
@@ -299,6 +332,7 @@ export function gainXp(plant: Plant, xp: number) {
       p.hardCap = Math.round(p.hardCap * 1.03);
     }
   }
+  return plant.growth.level - from;
 }
 
 export function xpRequired(level: number): number {

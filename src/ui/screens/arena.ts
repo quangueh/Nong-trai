@@ -9,7 +9,6 @@ import { createSeedPlant, breedPlants, estimatePower, validateGenome } from "../
 import { Rng, seedToken, clamp } from "../../core/rng";
 import { RoomClient, HostRoom, type RoomSnapshot, type RoomMessage } from "../../core/room";
 import { addSkillXp } from "../../genetics/skillGenerator";
-import { gainXp } from "../../growth/care";
 import type { Stance } from "../../battle/engine";
 import { advanceStreak, battleStreakBonus, streakCoinPreview, STREAK_CAP } from "../../core/streak";
 import { plantDisplayName } from "../../core/plantNames";
@@ -377,7 +376,7 @@ function reward(plant: Plant, won: boolean, draw: boolean, coins: number, xp: nu
       // Only noted when there was one. A ledger line reading "chuỗi x1.00" is noise.
       (bonus > 1 ? " · chuỗi ×" + bonus.toFixed(2) : ""),
   });
-  gainXp(plant, xp);
+  store.addPlantXp(plant, xp);
   plant.battleRecord[won ? "wins" : draw ? "draws" : "losses"]++;
   for (const s of plant.skills) addSkillXp(s, 6 + Math.round(damage / 45));
   if (Math.random() < 0.15) plant.battleRecord.scars++;
@@ -760,7 +759,7 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
     store.state.items += items;
     store.state.discovery.battles++;
     store.state.ledger.push({ at: Date.now(), delta: coins, reason: won ? "Thắng trận phòng" : draw ? "Hòa" : "Thua trận phòng" });
-    gainXp(myPlant, won ? 20 : 12);
+    store.addPlantXp(myPlant, won ? 20 : 12);
     myPlant.battleRecord[won ? "wins" : draw ? "draws" : "losses"]++;
     store.addBreederXp(8);
     store.save();

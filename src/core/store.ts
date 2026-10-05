@@ -10,6 +10,7 @@ import { createSeedPlant, breedPlants, genomeSignature, validateGenome, estimate
 import { applyCatalyst, getProtocol, protocolDiversity, protocolUnlocked, type ProtocolId } from "../genetics/protocols";
 import { plantName, nameKey } from "../genetics/names";
 import { emptyStreakFields } from "./streak";
+import { getActiveAccountId, saveSlotKey } from "./saveSlot";
 import { computeEcr } from "../genetics/ecrCalculator";
 import { applyCare, gainXp } from "../growth/care";
 import type { CareActionId } from "../config/careActions";
@@ -35,14 +36,56 @@ import { simulateBattle, type BattleConfig, type BattleResult } from "../battle/
  */
 export const BREEDER_LEVEL_CAP = 60;
 
+/** Levels 1-3 all cost this much. See `xpForLevel`. */
+const FLAT_LEVELS = 3;
+const FLAT_XP = 12;
+
 /**
  * XP needed to go from `level` to `level + 1`.
  *
  * Exported because the top-bar badge shows the same number the level-up loop
  * consumes. One definition, so the badge cannot drift from the game.
+ *
+ * The shape is the point, not the constants:
+ *
+ * **A flat start.** The first three levels cost the same twelve experience, so a new
+ * breeder reaches level 2 after a fight or two rather than after twenty. The old curve
+ * opened at 120 XP when a win was worth 6, which put the first level-up at the far end of
+ * a session - long enough that a new player concluded the badge in the corner was
+ * decoration. A progression you cannot see in your first five minutes is not progression.
+ *
+ * **Growth after that.** Each level costs about half again what the last one did, so the
+ * pace slows the way it should and every level after the third means something. Nothing
+ * about levelling is a reward if it arrives at a constant rate.
+ *
+ *   level 1-3   12
+ *   level 4     33
+ *   level 10   233
+ *   level 20   847
+ *   level 40  2412
  */
 export function xpForLevel(level: number): number {
-  return Math.round(120 * Math.pow(level, 1.3));
+  if (level <= FLAT_LEVELS) return FLAT_XP;
+  return Math.round(FLAT_XP * Math.pow(level - FLAT_LEVELS + 1, 1.45));
+}
+
+/**
+ * Breeder experience for a plant reaching a level.
+ *
+ * The other half of the answer to "levelling is too slow". A win was worth six breeder
+ * experience and nothing else gave any, so the badge only moved when the player went and
+ * fought - which made tending, breeding and growing a plant feel like they led nowhere.
+ *
+ * A plant levelling up now pays into the breeder, and more the older the plant is, so
+ * the two progressions pull each other along instead of running in parallel. Four at the
+ * first level is enough that three plant levels carry a new breeder through their first
+ * level-up, which is the pace that reads as "it responded to what I just did".
+ *
+ * Capped so a single plant at level 100 is worth a lot but not a whole tier: this is a
+ * bonus for tending, not a second win condition.
+ */
+export function breederXpForPlantLevel(newLevel: number): number {
+  return Math.min(40, Math.max(4, Math.round(2 * newLevel)));
 }
 
 export interface LedgerEntry {
@@ -167,7 +210,9 @@ export interface PlayerState {
   discovery: DiscoveryState;
 }
 
-const STORAGE_KEY = "mutant-sprout-save-v1";
+/* Every read and write of the save goes through `saveSlotKey` from ./saveSlot, because
+   the key depends on who is signed in. There is deliberately no bare key constant here to
+   reach for: one is what made every account share one garden. */
 const SEED_PACK_PRICE = 0.05;
 
 /**
@@ -194,7 +239,7 @@ export class GameStore {
 
   constructor() {
     this.state = loadOrCreate();
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(saveSlotKey(getActiveAccountId()));
     if (raw) {
       try {
         const at = (JSON.parse(raw) as { savedAt?: number }).savedAt;
@@ -263,10 +308,35 @@ export class GameStore {
   save() {
     this.savedAt = Date.now();
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+      localStorage.setItem(saveSlotKey(getActiveAccountId()), JSON.stringify(this.state));
     } catch {
       // ignore quota / privacy mode
     }
+  }
+
+  /**
+   * Re-read the save for whichever slot is now active.
+   *
+   * Called when the signed-in account changes. Without it, signing in would switch the
+   * key that gets written while leaving the previous account's garden in memory to be
+   * saved straight over the new account's slot - the same bug one step later, and the
+   * worse version, because it destroys data instead of showing the wrong data.
+   *
+   * Emits afterwards so open screens redraw against the garden that is actually loaded.
+   */
+  reload(): void {
+    this.state = loadOrCreate();
+    this.savedAt = 0;
+    const raw = localStorage.getItem(saveSlotKey(getActiveAccountId()));
+    if (raw) {
+      try {
+        const at = (JSON.parse(raw) as { savedAt?: number }).savedAt;
+        if (typeof at === "number") this.savedAt = at;
+      } catch {
+        // Unparseable: loadOrCreate already rebuilt a fresh garden from it.
+      }
+    }
+    this.emit();
   }
 
   /** The whole save, for the cloud copy. */
@@ -402,6 +472,10 @@ export class GameStore {
       leafCoin: this.state.leafCoin,
     });
     if (!res.ok) return { ok: false, reason: res.reason, result: res };
+    // The plant may have levelled from this action. Announced before the combo is
+    // resolved, because a combo pays more experience and can level it again - and two
+    // notices for one tap is the noise this is meant to remove, not create.
+    if ((res.levels ?? 0) > 0) this.announcePlantLevelUp(plant, res.levels ?? 0);
     // Consume resources.
     const cfg = CARE_COST[action];
     this.state.items -= cfg.items ?? 0;
@@ -576,9 +650,50 @@ export class GameStore {
     if (idx >= 5) p.sinceSSS = 0;
   }
 
-  private addPlantXp(plant: Plant, xp: number) {
-    gainXp(plant, xp);
-  }
+  /**
+ * Give a plant experience, and tell everyone when that turned into a level.
+ *
+ * The single place the garden grants plant XP through the store, so the level-up notice
+ * and the breeder payout cannot be raised from one path and forgotten on another. Both
+ * fire off the same returned count, which is why a plant levelling twice from one big
+ * payout produces one notice saying "+2" rather than two notices for a thing that
+ * happened once.
+ *
+ * Public because the arena pays plant experience too, and both of its call sites used to
+ * reach past the store for `gainXp` directly - which levelled the plant up and told nobody,
+ * on the one screen where a player is most likely to be watching the level.
+ */
+addPlantXp(plant: Plant, xp: number) {
+  const levels = gainXp(plant, xp);
+  if (levels > 0) this.announcePlantLevelUp(plant, levels);
+  return levels;
+}
+
+/**
+ * A plant gained levels: say so, and pay the breeder.
+ *
+ * Both halves belong here. The notice is what the player asked for - they could watch a
+ * fighter climb from 4 to 9 and had no way of knowing that was an event - and the
+ * breeder experience is what makes tending a plant worth doing at all.
+ */
+private announcePlantLevelUp(plant: Plant, levels: number) {
+  const gained = breederXpForPlantLevel(plant.growth.level);
+  const gainedText = levels > 1 ? ` +${levels} cấp` : "";
+
+  this.pushNotice({
+    kind: "level",
+    title: `⬆️ ${plant.name} lên cấp ${plant.growth.level}${gainedText}`,
+    // No `species` here on purpose. The title already names the plant, and a notice
+    // carrying species chips drops its body line - so passing one would have thrown
+    // away the "+N EXP" receipt, which is the half of this the player has never seen.
+    // It would also have rendered a single chip, and the chip row is sized for three.
+    body: `+${gained} EXP thợ lai tạo · còn ${xpForLevel(this.state.breederLevel)} EXP để lên cấp ${this.state.breederLevel + 1}`,
+  });
+
+  // Straight to the breeder, not queued: the notice above is the receipt for this, and
+  // two notices for one level-up is the thing the player would call noise.
+  this.addBreederXp(gained);
+}
 
   // --- selling ---------------------------------------------------------
 
@@ -904,7 +1019,7 @@ export class GameStore {
       recent === "moonlight>gene_serum>music" ? { label: "Combo dị biến", xp: 22, geneCrystal: 1 } :
       null;
     if (!comboReward) return;
-    gainXp(plant, comboReward.xp);
+    this.addPlantXp(plant, comboReward.xp);
     this.state.items += comboReward.items ?? 0;
     this.state.geneCrystal += comboReward.geneCrystal ?? 0;
     this.state.gardenDay.focus = Math.min(100, this.state.gardenDay.focus + 10);
@@ -947,7 +1062,7 @@ function rollWeighted(rng: Rng, weights: Record<Rarity, number>): Rarity {
 
 function loadOrCreate(rawOverride?: string): PlayerState {
   try {
-    const raw = rawOverride ?? localStorage.getItem(STORAGE_KEY);
+    const raw = rawOverride ?? localStorage.getItem(saveSlotKey(getActiveAccountId()));
     if (raw) {
       const parsed = JSON.parse(raw) as PlayerState;
       if (parsed && Array.isArray(parsed.plants)) {
@@ -1008,7 +1123,7 @@ function loadOrCreate(rawOverride?: string): PlayerState {
   }
   fresh.seeds.thornroot = (fresh.seeds.thornroot ?? 1) - 1;
   try {
-    if (rawOverride === undefined) localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+    if (rawOverride === undefined) localStorage.setItem(saveSlotKey(getActiveAccountId()), JSON.stringify(fresh));
   } catch {
     // ignore
   }
@@ -1141,7 +1256,9 @@ function scaleReward(reward: { leafCoin?: number; geneCrystal?: number; items?: 
 
 export function resetSave() {
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    // The active slot, not the guest one. Resetting while signed in must not leave the
+    // account's garden sitting in the key the player is about to sign back into.
+    localStorage.removeItem(saveSlotKey(getActiveAccountId()));
   } catch {
     // ignore
   }
