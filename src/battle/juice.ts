@@ -112,6 +112,8 @@ export function travelMs(delivery: Delivery): number {
  */
 class Shake {
   private trauma = 0;
+  /** Decay for the burst currently running, or the default. */
+  private burstMs = 0;
   private raf = 0;
   private last = 0;
 
@@ -122,8 +124,19 @@ class Shake {
     private maxPx = 9,
   ) {}
 
-  add(amount: number): void {
+  /**
+   * Add trauma.
+   *
+   * `maxMs` overrides the decay for this burst only. It exists because the end of a fight
+   * wants two different shapes: a win is a punch and a loss is a drop — longer, slower out.
+   * Without an override the two can only differ in magnitude, and a loss that is merely a
+   * smaller win reads as a win that went slightly badly.
+   *
+   * Per burst, not stored: the next impact decays at the default again.
+   */
+  add(amount: number, maxMs?: number): void {
     if (reducedMotion()) return;
+    this.burstMs = maxMs ?? this.maxMs;
     // Trauma sums but clamps: two simultaneous hits should not shake twice as hard
     // as the heavier of them, or the screen becomes unreadable.
     this.trauma = Math.min(1, this.trauma + amount);
@@ -136,7 +149,7 @@ class Shake {
   private tick = (now: number): void => {
     const dt = Math.min(64, now - this.last);
     this.last = now;
-    this.trauma = Math.max(0, this.trauma - dt / this.maxMs);
+    this.trauma = Math.max(0, this.trauma - dt / this.burstMs);
 
     if (this.trauma <= 0) {
       this.host.style.transform = "";
@@ -345,6 +358,21 @@ export class CombatJuice {
    */
   setMorph(side: FxSide, on: boolean, scale = 1.16): void {
     this.fighters[side].setMorph(on, scale);
+  }
+
+  /**
+   * Shake the frame by a chosen amount, for a chosen length.
+   *
+   * Exposed because the end of a fight needs its own beat, and the per-hit shake is already
+   * spending the trauma budget: by the last frame of a fight the accumulated trauma is high,
+   * so the outcome has to add only a little or the whole budget lands on one moment and the
+   * fight reads as shaky throughout and violent at the end.
+   *
+   * Delegates to the same clamped `Shake` every impact uses, so it cannot escape the caps
+   * or the reduced-motion stand-down.
+   */
+  shakeFor(amount: number, maxMs = 260): void {
+    this.shake.add(amount, maxMs);
   }
 
   hold(ms: number): void {

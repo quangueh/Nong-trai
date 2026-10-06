@@ -6417,3 +6417,125 @@ body.planting {
     transform: none;
   }
 }
+
+/* ==========================================================================
+   Combo meter and end-of-fight beat (battleView.ts)
+
+   The combo is positioned absolutely inside the battlefield so it sits over the fight rather
+   than in the HUD: it is a readout of something happening *in* the arena, and a corner chip
+   would read as a statistic instead.
+
+   It is one element reused. Creating and removing a node per hit is the pattern that made the
+   skill bar expensive, and this sits on the same screen at the same tick rate.
+   ========================================================================== */
+
+.combometer {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  background: rgba(20, 30, 24, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+.combometer.is-live {
+  opacity: 1;
+}
+
+/* Three bands, not a gradient of them. A counter that changes its colour on every hit is a
+   counter nobody reads; these are the thresholds a ninety-second fight actually reaches. */
+.combometer.band1 { background: rgba(30, 60, 40, 0.6); border-color: rgba(150, 220, 170, 0.3); }
+
+.combometer.band2 {
+  background: rgba(120, 70, 20, 0.66);
+  border-color: rgba(255, 200, 90, 0.5);
+  color: #ffe89a;
+}
+
+.combometer.band3 {
+  background: rgba(160, 50, 30, 0.7);
+  border-color: rgba(255, 150, 90, 0.65);
+  color: #ffd9c0;
+  font-size: 18px;
+}
+
+/* The break. A counter that only ever goes up reads as decoration, so the loss of a run gets
+   its own moment — dim, and gone. */
+.combometer.is-broke {
+  opacity: 1;
+  background: rgba(30, 34, 38, 0.6);
+  border-color: rgba(180, 190, 200, 0.3);
+  color: rgba(235, 240, 245, 0.85);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.combometer.is-pop {
+  animation: comboPop 0.28s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+
+@keyframes comboPop {
+  0% { transform: translateX(-50%) scale(1); }
+  45% { transform: translateX(-50%) scale(1.22); }
+  100% { transform: translateX(-50%) scale(1); }
+}
+
+/* ==========================================================================
+   The end-of-fight beat.
+
+   A tint, not a flash. The shake carries the punch and the sound carries the verdict; a white
+   flash on top of both would be three signals saying one thing, and the one that gets
+   remembered is the cheapest.
+
+   Win leans warm and lifts. Loss leans cool and settles. Both are short enough that the
+   result panel is not fighting them for attention.
+   ========================================================================== */
+
+.battlefield.is-beat-win {
+  animation: beatWin 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.battlefield.is-beat-lose {
+  animation: beatLose 0.52s cubic-bezier(0.4, 0, 0.3, 1);
+}
+
+@keyframes beatWin {
+  0% { filter: brightness(1) saturate(1); }
+  18% { filter: brightness(1.35) saturate(1.25) sepia(0.15); }
+  100% { filter: brightness(1) saturate(1); }
+}
+
+@keyframes beatLose {
+  0% { filter: brightness(1) saturate(1); }
+  22% { filter: brightness(0.72) saturate(0.6) hue-rotate(-12deg); }
+  100% { filter: brightness(1) saturate(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .combometer,
+  .combometer.is-pop,
+  .battlefield.is-beat-win,
+  .battlefield.is-beat-lose {
+    animation: none;
+    transition: none;
+    filter: none;
+  }
+
+  /* The number still reads under reduced motion — only the pop and the tint go. Losing the
+     counter entirely would remove information rather than remove motion. */
+  .combometer.is-pop {
+    transform: translateX(-50%);
+  }
+}

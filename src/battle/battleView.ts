@@ -103,6 +103,21 @@ export class BattleView {
   readonly session: BattleSession;
   private readonly opts: BattleViewOptions;
   private readonly maxSeconds: number;
+  /**
+   * The live combo: consecutive damaging actions without being hit.
+   *
+   * Tracked here rather than by asking `readCombo` afterwards, because a combo the player
+   * only sees on a results screen is not something to chase. The rule is identical to the one
+   * `progression/objectives` applies to the recorded log — one rule, two consumers, so the
+   * number on the result screen and the number that was counted on screen cannot disagree.
+   */
+  private comboRun = 0;
+  private comboBest = 0;
+  /** The live combo readout. One element, reused — see `paintCombo`. */
+  private comboMeter!: HTMLElement;
+
+  /** Live skill buttons, built once. See `renderSkills`. */
+  private readonly skillBtns = new Map<string, { btn: HTMLButtonElement; cd: Element | null }>();
   private timer: number | null = null;
   private finished = false;
   private speed = 1;
@@ -192,11 +207,23 @@ export class BattleView {
       ...(opts.stances ? { stances: opts.stances } : {}),
     });
     this.build();
+    this.opts.container.appendChild(this.comboMeter);
   }
 
   // --- construction ---
 
   private build(): void {
+    /*
+     * The combo meter.
+     *
+     * Built here and never rebuilt: it is one element whose text and classes change, which is
+     * the opposite of the skill bar's old habit of being destroyed and recreated every tick.
+     *
+     * Hidden for a watched fight — the player cannot affect a fight they are only watching, so
+     * a counter they cannot influence would be noise.
+     */
+    this.comboMeter = el("div", { class: "combometer", role: "status" });
+    this.comboMeter.hidden = !this.opts.interactive;
     const c = this.opts.container;
     c.replaceChildren();
 
@@ -247,7 +274,10 @@ export class BattleView {
       if (this.session.useFocus(this.opts.mySide)) {
         this.opts.onIntent?.({ kind: "focus" });
         this.pushLog("Bản năng được kích hoạt!", "hi");
-        this.renderSkills();
+    // State refresh only — the skill set cannot change mid-fight. This line used to rebuild
+    // every button from scratch ten times a second, discarding a node the player could have
+    // been pressing at that instant. See `renderSkills`.
+        this.refreshSkillBar();
       }
     });
     this.autoBtn = el("button", { class: "btn sm ghost" }, ["🤖 Tự ra chiêu"]);
@@ -380,17 +410,95 @@ export class BattleView {
     this.clock.classList.toggle("critical", left <= 15);
     this.phaseLabel.textContent = PHASE_LABEL[battlePhase(this.session.elapsed, this.maxSeconds)];
 
-    this.renderSkills();
+    this.refreshSkillBar();
 
     if (this.session.done) {
       this.finished = true;
       this.stop();
       const s = this.session.summary();
+
+      /*
+       * The beat.
+       *
+       * The deciding blow and the result screen used to be separated by 750ms of nothing, so
+       * a win and a loss looked identical through the moment the player is actually looking.
+       * Now the frame is struck on the outcome: a short hard punch for a win, a longer dull
+       * drop for a loss, and a draw gets neither — because "nothing happened" is the honest
+       * reading of a draw and dressing it up would be a lie with a camera shake on it.
+       *
+       * The shake is already trauma-based and clamped in `Shake`, so this is a magnitude
+       * rather than a new mechanism, and it respects `reducedMotion` the same way.
+       */
+      const mine = s.winner ? (s.winner === this.opts.mySide ? "win" : "lose") : "draw";
+      this.playEndBeat(mine);
+
       setTimeout(() => this.opts.onFinish({ winner: s.winner, a: s.a, b: s.b, events: s.events }), 750);
     }
   }
 
   // --- painting ---
+
+  /**
+   * Draw the live combo, or break it.
+   *
+   * Escalates by run length rather than by a timer, so the feedback tracks the thing the
+   * player is doing. The bands are deliberately coarse — three of them across the range a
+   * ninety-second fight actually reaches — because a counter that changes its colour on every
+   * hit is a counter nobody reads.
+   *
+   * One element, reused. Creating and removing a node per hit is the exact pattern that made
+   * the skill bar expensive.
+   */
+  private paintCombo(broke: boolean): void {
+    if (!this.opts.interactive) return;
+    const meter = this.comboMeter;
+    const n = this.comboRun;
+
+    if (n < 2 && !broke) {
+      if (meter.textContent) meter.textContent = "";
+      return;
+    }
+
+    if (broke) {
+      meter.textContent = this.comboBest >= 4 ? `Chuỗi ${this.comboBest} đứt` : "";
+      meter.className = "combometer is-broke";
+    } else {
+      const band = n >= 12 ? 3 : n >= 6 ? 2 : 1;
+      meter.textContent = `${n}×`;
+      meter.className = "combometer is-live band" + band;
+    }
+
+    // Re-trigger the pop by removing and restoring the class across a reflow. Assigning the
+    // same class twice does nothing, and two hits landing in successive ticks is the common
+    // case, not the rare one.
+    meter.classList.remove("is-pop");
+    void meter.offsetWidth;
+    meter.classList.add("is-pop");
+  }
+
+  /**
+   * The beat at the end of a fight.
+   *
+   * Win, loss and draw are three different things and get three different treatments: a short
+   * hard punch, a longer dull drop, and nothing at all. A draw getting nothing is deliberate —
+   * "nothing happened" is the honest reading of it, and dressing it up would be a lie with a
+   * camera shake on it.
+   *
+   * Magnitudes, not a new mechanism: the underlying `Shake` is already trauma-based and
+   * clamped, and already stands down under reduced motion.
+   */
+  private playEndBeat(kind: "win" | "lose" | "draw"): void {
+    if (kind === "draw") return;
+    this.opts.container.classList.add(kind === "win" ? "is-beat-win" : "is-beat-lose");
+    window.setTimeout(() => this.opts.container.classList.remove("is-beat-win", "is-beat-lose"), 520);
+
+    // The shake itself, so the frame is struck as well as tinted. A separate, small amount
+    // from the per-hit shake: the fight already accumulated trauma, and adding a large one on
+    // top would spend the whole budget on the last frame.
+    const shake = kind === "win" ? 0.42 : 0.3;
+    sfx.play(kind === "win" ? "win" : "lose");
+    this.juice.shakeFor(shake, kind === "win" ? 260 : 420);
+  }
 
   /**
    * Look up what a skill actually is, so its effect can be drawn as that effect.
@@ -428,7 +536,7 @@ export class BattleView {
         // delivery effect belongs to the impact, not to the windup.
         this.lastCast = { side: ev.side, delivery, colour, at: performance.now() };
         void effect;
-        this.renderSkills();
+        this.refreshSkillBar();
         break;
       }
       case "DAMAGE_APPLIED": {
@@ -437,6 +545,33 @@ export class BattleView {
         // threw the punch.
         const victim: FxSide = ev.other ?? (ev.side === "a" ? "b" : "a");
         const amount = ev.amount ?? 0;
+
+        /*
+         * The live combo, fed on the same event that draws the hit.
+         *
+         * Consecutive damaging actions without being hit, handled here rather than in a
+         * separate pass so the number on screen cannot drift out of step with the hits being
+         * drawn, and so "the counter went up" and "something landed" are the same frame — which
+         * is the only reason it reads as a consequence rather than as a statistic.
+         *
+         * Same rule as `progression/objectives` applies to the recorded log afterwards, so the
+         * best run on the results screen is the best run the player watched happen.
+         *
+         * Being hit breaks it, and the break animates too: a counter that only ever goes up
+         * reads as decoration.
+         */
+        if (amount > 0) {
+          const mine = this.opts.mySide;
+          if (ev.side === mine && victim !== mine) {
+            this.comboRun++;
+            if (this.comboRun > this.comboBest) this.comboBest = this.comboRun;
+            this.paintCombo(false);
+          } else if (victim === mine && ev.side !== mine && this.comboRun > 0) {
+            this.comboRun = 0;
+            this.paintCombo(true);
+          }
+        }
+
         if (amount > 0) {
           const maxHp = Math.max(1, this.session.side(victim).snap.maxHp);
           const weight = weightFor(amount / maxHp, ev.isCrit === true, (ev.hpAfter ?? 1) <= 0);
@@ -593,39 +728,84 @@ export class BattleView {
     this.logBox.scrollTop = this.logBox.scrollHeight;
   }
 
+  /**
+   * Build the skill bar once.
+   *
+   * The buttons, and their listeners, live as long as the fight does. A tick never creates or
+   * destroys one; it only writes state onto them.
+   *
+   * This used to be called from the tick and started with `replaceChildren()`, so at
+   * TICK_RATE the bar was destroyed and rebuilt ten times a second — about forty detached
+   * listeners a second, and a button thrown away while the pointer was still on it. A click
+   * that landed between one tick's rebuild and the browser's own click dispatch went nowhere,
+   * with nothing on screen to say so.
+   */
   private renderSkills(): void {
     const side = this.session.side(this.opts.mySide);
     this.skillRow.replaceChildren();
+    this.skillBtns.clear();
+
     if (!this.opts.interactive) {
-      this.skillRow.appendChild(el("div", { class: "tiny muted" }, ["Cây tự chiến — bạn vẫn đổi stance và dùng Bản năng được."]));
+      this.skillRow.appendChild(
+        el("div", { class: "tiny muted" }, ["Cây tự chiến — bạn vẫn đổi stance và dùng năng lượng."]),
+      );
       this.focusBtn.disabled = side.focusUsed;
       return;
     }
+
     for (const skill of side.snap.skills) {
-      const cd = Math.max(0, (side.cooldown[skill.id] ?? 0) - this.session.elapsed);
-      const ready = cd <= 0 && !side.casting;
-      const b = el("button", { class: "skillbtn" + (ready ? " ready" : " cooling") }) as HTMLButtonElement;
-      b.append(
+      const b = el("button", { class: "skillbtn", type: "button" }, [
         el("span", { class: "ico" }, [deliveryGlyph(skill.core.delivery)]),
         el("span", { class: "nm" }, [skill.name]),
-      );
-      // The delivery is shown as text, not just an icon: the player is choosing
-      // between "hits hard once" and "hits three times slowly", and a glyph
-      // alone does not say which is which.
-      b.appendChild(el("span", { class: "dl" }, [`${DELIVERY_NAME[skill.core.delivery] ?? ""} · ${EFFECT_NAME[skill.core.effect] ?? ""}`]));
-      if (!ready) {
-        // The text goes in `data-cd`; the stylesheet draws it as a corner chip so
-        // it cannot land on the skill's name.
-        b.appendChild(el("div", { class: "cd", "data-cd": cd > 0 ? String(Math.ceil(cd)) : "…" }));
-        b.disabled = true;
-      }
+        // The delivery is text, not only a glyph: the player is choosing between "hits hard
+        // once" and "hits three times slowly", and a glyph alone does not say which.
+        el("span", { class: "dl" }, [`${DELIVERY_NAME[skill.core.delivery] ?? ""} · ${EFFECT_NAME[skill.core.effect] ?? ""}`]),
+        el("div", { class: "cd", "data-cd": "" }),
+      ]) as HTMLButtonElement;
+
       b.addEventListener("click", () => {
+        /*
+         * Acknowledged on the same frame as the press.
+         *
+         * The old listener was attached to a node the next tick would discard, so a press
+         * could be lost outright. This one is bound once and cannot be. The state is then
+         * re-read immediately rather than on the next tick, which is the difference between a
+         * cast feeling like it happened and feeling like it was queued.
+         */
         if (this.session.castSkill(this.opts.mySide, skill.id)) {
           this.opts.onIntent?.({ kind: "cast", value: skill.id });
-          this.renderSkills();
+          this.refreshSkillBar();
         }
       });
+
+      this.skillBtns.set(skill.id, { btn: b, cd: b.querySelector(".cd") });
       this.skillRow.appendChild(b);
+    }
+    this.refreshSkillBar();
+  }
+
+  /**
+   * Write state onto the buttons that already exist. Runs every tick; creates nothing.
+   *
+   * Three writes per button: the ready class, `disabled`, and the cooldown label. The
+   * cooldown text is compared before it is assigned — setting `textContent` to the string it
+   * already holds still invalidates layout for that node, and this runs ten times a second per
+   * button.
+   */
+  private refreshSkillBar(): void {
+    const side = this.session.side(this.opts.mySide);
+    if (!this.opts.interactive) {
+      this.focusBtn.disabled = side.focusUsed;
+      return;
+    }
+    for (const [id, ref] of this.skillBtns) {
+      const cd = Math.max(0, (side.cooldown[id] ?? 0) - this.session.elapsed);
+      const ready = cd <= 0 && !side.casting;
+      ref.btn.classList.toggle("ready", ready);
+      ref.btn.classList.toggle("cooling", !ready);
+      const label = cd > 0 ? String(Math.ceil(cd)) : "";
+      if (ref.cd && ref.cd.textContent !== label) ref.cd.textContent = label;
+      ref.btn.disabled = !ready;
     }
     this.focusBtn.disabled = side.focusUsed;
   }
@@ -652,7 +832,7 @@ export class BattleView {
     if (intent.kind === "cast" && intent.value) this.session.castSkill(this.opts.mySide, intent.value);
     if (intent.kind === "stance" && intent.stance) this.session.changeStance(this.opts.mySide, intent.stance);
     if (intent.kind === "focus") this.session.useFocus(this.opts.mySide);
-    this.renderSkills();
+    this.refreshSkillBar();
     this.renderStances();
   }
 }
