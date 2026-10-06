@@ -1,6 +1,7 @@
 /** Account sheet: sign in, sign up, and see the sync state. */
 
 import { el, toast } from "./components";
+import { showGate } from "./app";
 import { googleSignInAvailable } from "../account/google";
 import { googlePanel } from "./googlePanel";
 import { buildEmailSignIn } from "./emailSignIn";
@@ -199,9 +200,24 @@ function renderSignedIn(body: HTMLElement, render: () => void): void {
 
   const out = el("button", { class: "btn ghost wide", style: "margin-top:8px" }, ["Đăng xuất"]);
   out.addEventListener("click", () => {
-    signOut();
-    render();
-  });
+      /*
+       * Sign out, then put the gate back up.
+       *
+       * `signOut` clears the session and the save slot; it does not consult the gate, which
+       * is only ever checked at boot. So signing out used to drop the player into an
+       * anonymous garden and leave them there, and the login screen only reappeared on the
+       * next reload — which is not what "đăng xuất" means to somebody who just pressed it.
+       *
+       * Deferred by one turn because `signOut` finishes its final push asynchronously and
+       * zeroes the token only once that settles; showing the gate first would paint a login
+       * screen over a session that is still live for a few hundred milliseconds.
+       */
+      signOut();
+      setTimeout(() => {
+        render();
+        showGate();
+      }, 400);
+    });
 
   // Password change, folded away. It is rare, it is irreversible, and putting it
   // next to "sign out" invites accidents.

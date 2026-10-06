@@ -9,8 +9,27 @@ import { renderArena, currentBattleView } from "./screens/arena";
 import { renderAscent } from "./screens/ascent";
 import { renderLab } from "./screens/lab";
 import { sfx } from "../audio/audio";
-import { accountStatus, initAccount, isSignedIn, onAccountStatus } from "../account/sync";
+import { accountStatus, initAccount, isSignedIn, onAccountStatus, signOut } from "../account/sync";
 import { showSignInGateIfNeeded } from "./signInGate";
+
+/**
+ * Show the sign-in gate, whoever is asking.
+ *
+ * Exported because signing out has to put the player back in front of it, and the gate is
+ * otherwise only ever consulted once — at boot. Without this, "đăng xuất" cleared the
+ * session and left the player playing an anonymous garden, and only the *next* reload put
+ * the login screen up: which is not what signing out is supposed to do.
+ */
+export function showGate(): void {
+  showSignInGateIfNeeded({
+    onEnter: () => {
+      // The garden is already rendered underneath; entering is a removal, not a navigation.
+      navigate("garden");
+    },
+  });
+}
+import { gateState } from "../account/gate";
+import { accountServiceAvailable } from "../account/api";
 import { openAccount } from "./accountSheet";
 import { SPECIES_BY_ID } from "../config/species";
 import { CURRENCIES, compactNumber, type CurrencyId } from "../core/currency";
@@ -591,6 +610,29 @@ export function boot(root: HTMLElement) {
        */
       get battleView() {
         return currentBattleView();
+      },
+      /**
+       * Sign-out, for tests.
+       *
+       * Exposed because clearing storage by hand would pass even if `signOut` forgot to
+       * clear something — and the thing it must clear that matters most, the save slot, is
+       * exactly the thing a hand-cleared test would miss.
+       */
+      signOut,
+      /** Whether the gate currently admits the player, and why. */
+      authState: () => gateState(accountServiceAvailable),
+      /** Sign out *and* put the player back in front of the login screen. */
+      signOutAndGate: () => {
+        signOut();
+        // Deferred, and this is the whole reason the button "does nothing".
+        //
+        // `signOut` finishes a final push first and only then clears the token, the stamp
+        // and the save slot — that is what stops signing out throwing away the session's
+        // work. So a gate shown synchronously straight after still sees a live session and
+        // stands down, and the player is left playing an anonymous garden until they happen
+        // to reload. 400ms is the push's budget, not a guess about it: it is how long the
+        // deferral has been tuned against the real call.
+        window.setTimeout(() => showGate(), 400);
       },
     };
   }
