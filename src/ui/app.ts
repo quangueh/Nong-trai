@@ -64,6 +64,7 @@ function plantMilestonesBetween(from: number, to: number): Milestone[] {
   return out;
 }
 import { celebrateLevelUp, rewardsFromMilestones } from "./fx/levelUp";
+import { celebrateExpGain, expGainSound } from "./fx/expGain";
 
 import type { Screen } from "./screens/types";
 
@@ -641,6 +642,15 @@ export function boot(root: HTMLElement) {
        * reimplementation of it, which would agree with itself forever.
        */
       sync: { signInWithGoogle, signIn, signUp, pull, push },
+      /**
+       * The experience-gain animation, for tests.
+       *
+       * Exposed because this is the one effect a test cannot reach through the game: the
+       * real callers are a fifteen-second stage fight and a care sheet, and an animation that
+       * lives about a second cannot be sampled reliably through either. Reaching it directly
+       * means the suite exercises the same function the UI calls rather than a copy.
+       */
+      expGain: { celebrateExpGain, expGainSound },
       /** Whether the gate currently admits the player, and why. */
       authState: () => gateState(accountServiceAvailable),
       /** Sign out *and* put the player back in front of the login screen. Resolves when done. */

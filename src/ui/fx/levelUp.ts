@@ -100,6 +100,12 @@ export function celebrateLevelUp(options: LevelUpOptions): Promise<void> {
     const list = el("div", { class: "lvlup-rewards" });
     options.rewards.forEach((r, i) => {
       const card = el("div", { class: "lvlup-reward", style: `--i:${i}` });
+      /*
+       * The icon bounces on its own, after the card has landed.
+       *
+       * The card's entrance is the stagger; this is the accent, and it is delayed past it so
+       * the two do not read as one movement. Under reduced motion the CSS drops both.
+       */
       card.append(
         el("span", { class: "lvlup-reward-icon" }, [r.icon]),
         el("span", { class: "lvlup-reward-body" }, [
@@ -143,14 +149,40 @@ export function celebrateLevelUp(options: LevelUpOptions): Promise<void> {
      reporting and a bar that was already full when the panel appeared reports nothing. */
   requestAnimationFrame(() => {
     fill.style.width = `${options.after.pct.toFixed(1)}%`;
+    /*
+     * The full-bar flash, fired once the fill has landed rather than with it.
+     *
+     * `options.after.capped` means the bar is complete because the level cap was reached,
+     * which is the strongest possible version of the same moment and gets the stronger
+     * treatment. A bar that is merely "very full" is not the event, and flashing every fill
+     * would make the real one mean nothing.
+     */
+    fill.addEventListener(
+      "transitionend",
+      () => {
+        bar.classList.add("is-full");
+        if (options.after.capped) bar.classList.add("is-capped");
+        window.setTimeout(() => {
+          bar.classList.remove("is-full", "is-capped");
+        }, 1100);
+      },
+      { once: true },
+    );
   });
 
-  if (!calm) {
-    burst(panel);
-    sfx.play("levelUp");
-  } else {
-    sfx.play("levelUp");
-  }
+  /*
+   * Burst and sound, with one deliberate exception.
+   *
+   * The sound plays either way — a level-up is information, and reduced motion is about
+   * vestibular triggers, not about muting the game. The burst is the part that goes, because
+   * thirty particles flying outward is exactly the kind of movement that setting exists to
+   * suppress.
+   *
+   * Previously this was an if/else whose two arms were identical except for the burst, which
+   * read as though the calm path had a quieter sound. It did not; it read as though it might.
+   */
+  sfx.play("levelUp");
+  if (!calm) burst(panel);
 
   go.focus();
   void options.onDone;

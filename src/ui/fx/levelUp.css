@@ -340,3 +340,207 @@
 .lvlup.is-calm .lvlup-bar i {
   transition: none;
 }
+/* ==========================================================================
+   Experience gain: numbers that fly, their trails, and the bar's acknowledgement.
+
+   Added for `src/ui/fx/expGain.ts`. All of it is positioned from page coordinates written by
+   script, so these are `fixed` rather than `absolute` and are not clipped by whatever
+   happens to be the containing block — a number that disappears behind a panel is worse than
+   no number.
+   ========================================================================== */
+
+.expbar-target {
+  position: relative;
+}
+
+.expfly {
+  position: fixed;
+  z-index: 92;
+  pointer-events: none;
+  font-size: 15px;
+  font-weight: 900;
+  color: #ffe89a;
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.55),
+    0 0 10px rgba(255, 200, 80, 0.6);
+  font-variant-numeric: tabular-nums;
+  transform: translate(-50%, -50%);
+  animation: expflyMove 1.05s cubic-bezier(0.45, 0, 0.3, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+/* The trail. A 3px dot, fading over the first third of the flight and gone before the
+   number lands — a trail that outlasts its number reads as a leak. */
+.expfly-trail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #ffd45e;
+  box-shadow: 0 0 6px rgba(255, 212, 94, 0.8);
+  pointer-events: none;
+  animation: expflyTrail 0.42s ease-out both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes expflyMove {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.55); }
+  16% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(0.45); }
+}
+
+@keyframes expflyTrail {
+  0% { opacity: 0.9; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(0.2); }
+}
+
+/* --- the bar acknowledging the arrival -------------------------------
+   Two states, deliberately different weights.
+
+   `is-credited` is a small confirmation that something was added — it should be almost
+   subliminal, because four fights in five end without a level and every one of them would
+   otherwise be shouting.
+
+   `is-full` is the one that says *something happened*: the bar reached the top. It gets a
+   flash and a colour shift, because this is the moment the whole animation exists for. */
+.expbar-target.is-credited {
+  animation: expBarCredit 0.44s ease-out;
+}
+
+@keyframes expBarCredit {
+  0% { filter: brightness(1); }
+  40% { filter: brightness(1.35); }
+  100% { filter: brightness(1); }
+}
+
+.expbar-target.is-full {
+  animation: expBarFull 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes expBarFull {
+  0% { filter: brightness(1); transform: scaleY(1); }
+  22% { filter: brightness(2) saturate(1.3); transform: scaleY(1.9); }
+  50% { filter: brightness(1.5); transform: scaleY(1.15); }
+  100% { filter: brightness(1); transform: scaleY(1); }
+}
+
+/* Reaching the cap is the strongest form of "full", and gets the colour. */
+.expbar-target.is-capped {
+  animation: expBarCapped 1s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes expBarCapped {
+  0% { filter: brightness(1); }
+  20% { filter: brightness(2.2) sepia(0.4) saturate(2.4); }
+  60% { filter: brightness(1.3) sepia(0.2) saturate(1.6); }
+  100% { filter: brightness(1); }
+}
+
+/* ==========================================================================
+   Celebration additions: the full-bar flash, and the reward icon's own accent.
+   ========================================================================== */
+
+/* The bar inside the celebration flashing when it lands full. `scaleY` on the bar rather
+   than the fill, so it does not stretch the text underneath it. */
+.lvlup-bar.is-full {
+  animation: lvlupBarFull 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lvlup-bar.is-capped {
+  animation: lvlupBarCapped 1.05s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes lvlupBarFull {
+  0% { transform: scaleY(1); filter: brightness(1); }
+  25% { transform: scaleY(2.1); filter: brightness(1.9); }
+  60% { transform: scaleY(1.1); filter: brightness(1.2); }
+  100% { transform: scaleY(1); filter: brightness(1); }
+}
+
+@keyframes lvlupBarCapped {
+  0% { transform: scaleY(1); filter: brightness(1); }
+  22% { transform: scaleY(2.4); filter: brightness(2.4) saturate(1.6); }
+  55% { transform: scaleY(1.2); filter: brightness(1.5); }
+  100% { transform: scaleY(1); filter: brightness(1); }
+}
+
+/* The reward icon: a glow and a bounce of its own, delayed past the card's entrance so the
+   two read as two movements rather than one. */
+.lvlup-reward-icon {
+  position: relative;
+  display: inline-block;
+  animation: lvlupIconBounce 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  animation-delay: calc(420ms + var(--i, 0) * 130ms);
+}
+
+.lvlup-reward-icon::after {
+  content: "";
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 236, 170, 0.5), transparent 68%);
+  animation: lvlupIconGlow 1.1s ease-out both;
+  animation-delay: calc(420ms + var(--i, 0) * 130ms);
+  pointer-events: none;
+}
+
+@keyframes lvlupIconBounce {
+  0% { transform: scale(0.3) rotate(-14deg); }
+  45% { transform: scale(1.35) rotate(6deg); }
+  70% { transform: scale(0.92) rotate(-3deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+@keyframes lvlupIconGlow {
+  0% { opacity: 0; transform: scale(0.5); }
+  35% { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+
+/* ==========================================================================
+   Reduced motion.
+
+   The experience flight is gone entirely — the bar's own transition carries the change, and
+   `celebrateExpGain` creates nothing at all under this query, so there is nothing to hide
+   here for it. What remains is the celebration's own decoration.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .expfly,
+  .expfly-trail {
+    display: none;
+  }
+
+  .expbar-target.is-credited,
+  .expbar-target.is-full,
+  .expbar-target.is-capped,
+  .lvlup-bar.is-full,
+  .lvlup-bar.is-capped,
+  .lvlup-reward-icon,
+  .lvlup-reward-icon::after {
+    animation: none;
+    filter: none;
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* ==========================================================================
+   Mobile.
+
+   Fewer, larger numbers. The event is the same and the total shown is identical — only the
+   count of elements differs, so a phone does not build twenty-six nodes where a desktop
+   builds six. The script already caps the count; this keeps each one readable when there
+   are fewer of them.
+   ========================================================================== */
+@media (max-width: 520px) {
+  .expfly {
+    font-size: 17px;
+  }
+
+  .expfly-trail {
+    width: 4px;
+    height: 4px;
+  }
+}

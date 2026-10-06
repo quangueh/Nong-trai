@@ -20,6 +20,7 @@ import { MAX_PLOTS, plotStatuses, type PlotStatus } from "../../config/unlocks";
 import { seedColor } from "../components";
 import { renderPlantSvg } from "../../render/plantRenderer";
 import { skillMasteryPct, skillMasteryText } from "../../progression/objectives";
+import { celebrateExpGain } from "../fx/expGain";
 import type { Navigate } from "./types";
 
 // The ceremony renders real plant art, so it needs the renderer. Wiring it here
@@ -989,7 +990,22 @@ export function openCare(plant: Plant, nav: Navigate, shell: Element) {
     if (!cost.ok) b.disabled = true;
     b.addEventListener("click", () => {
       const before = { leafCoin: store.state.leafCoin, items: store.state.items, geneCrystal: store.state.geneCrystal };
+      const beforeXp = plant.growth.xp;
       const res = store.care(plant.plantId, action.id as CareActionId);
+      /*
+       * The experience a care action grants, flown to the plant's own strip.
+       *
+       * Care pays experience every time and almost never levels anything, so this was the
+       * clearest case of a reward that moved a bar and acknowledged nothing. Read after the
+       * call, from the plant's own progress, so the figure shown is what was banked rather
+       * than what the care table promises — the two disagree when a combination bonus fires.
+       */
+      if (res.ok && res.result && (res.result.levels ?? 0) === 0) {
+        celebrateExpGain({
+          amount: Math.max(0, plant.growth.xp - (beforeXp ?? plant.growth.xp)),
+          bar: content.querySelector(".lvstrip-bar"),
+        });
+      }
       if (!res.ok) {
         toast(res.reason ?? "Không được");
         return;

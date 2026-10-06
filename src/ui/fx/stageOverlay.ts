@@ -33,6 +33,7 @@ import { celebrateLevelUp, rewardsFromMilestones } from "./levelUp";
 import { milestoneForLevel, previewPlantGain, xpRemainingText, plantSnapshot } from "../../progression/levels";
 import { stageIdentity } from "../../pve/stages";
 import { stageObjectives, type ObjectiveOutcome } from "../../progression/objectives";
+import { celebrateExpGain, expGainSound } from "./expGain";
 import type { Plant } from "../../core/types";
 
 /** How long one tally line takes to count. */
@@ -244,6 +245,25 @@ export function showStageResult(out: StageOutcome, onContinue: () => void): Prom
       );
     } else {
       xpLine.appendChild(el("div", { class: "stagelive-xp-next" }, [xpRemainingText(snap)]));
+    }
+
+    /*
+     * The experience actually flies to the player's own bar.
+     *
+     * Not a decoration: the number here is `out.reward.plantXp + bonusXp`, which is what the
+     * store credited a moment ago, and the target is the level strip the player has been
+     * watching all fight. So the number that flies is the number that was paid, and it lands
+     * where the change will be visible.
+     *
+     * On a level-up the celebration takes over a moment later, so this is skipped — two
+     * animations for one grant reads as the game hesitating.
+     */
+    if (xpPreview.levelsGained === 0) {
+      expGainSound();
+      celebrateExpGain({
+        amount: out.reward.plantXp + bonusXp,
+        bar: document.querySelector(".lvstrip-bar"),
+      });
     }
 
     go.disabled = false;
