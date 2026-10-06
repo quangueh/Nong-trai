@@ -1,0 +1,59 @@
+/* The plant's level strip: level, bar to the next one, and the figures.
+
+   Three columns because the three answers are three different questions — "how strong is
+   it now", "how far to the next", "how much is left exactly". A bar alone leaves the
+   third unanswerable, and the numbers alone leave the first one hard to see at a glance
+   across a grid of twenty cards. */
+.lvstrip {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.lvstrip-level {
+  font-size: 10px;
+  font-weight: 800;
+  color: #3d6b4e;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.lvstrip-bar {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(31, 107, 66, 0.16);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.4) inset;
+}
+
+.lvstrip-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #2f9f62, #8ad6a6);
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lvstrip-xp {
+  font-size: 9.5px;
+  color: #5d8168;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* On a collection card the strip competes with a rarity and a power figure that were
+   already there, and the XP numbers are the least important of the three. Hidden rather
+   than shrunk: a 7px number is worse than no number. */
+.shelf .lvstrip-xp {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lvstrip-bar i,
+  .levelbadge-bar i {
+    transition: none;
+  }
+}

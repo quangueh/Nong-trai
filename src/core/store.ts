@@ -32,7 +32,7 @@ import {
 
 import { getActiveAccountId, saveSlotKey } from "./saveSlot";
 import { computeEcr } from "../genetics/ecrCalculator";
-import { applyCare, gainXp } from "../growth/care";
+import { applyCare, gainXp, xpRequired } from "../growth/care";
 import type { CareActionId } from "../config/careActions";
 import { tickGrowth } from "../growth/stages";
 import { addSkillXp } from "../genetics/skillGenerator";
@@ -142,6 +142,37 @@ export interface Notice {
   kind: "level" | "unlock" | "goal" | "plot" | "milestone";
   title: string;
   body?: string;
+  /**
+   * Present on a level notice, and the reason this interface has it.
+   *
+   * The level-up celebration used to reconstruct the event by reading the title and body
+   * with regular expressions — matching `cấp (\d+)` and `+(\d+) cấp` out of Vietnamese prose.
+   * That is a wire format made of grammar: reword the sentence and the celebration silently
+   * stops firing, or fires with a level of zero. Nothing would fail in a test, because the
+   * test would be written against the same prose.
+   *
+   * So the store, which is the only thing that knows what happened, now says it. Optional,
+   * because the other four notice kinds have no level in them.
+   */
+  levelUp?: {
+    /** Which progression this was: the account's breeder, or one named plant. */
+    subject: "breeder" | "plant";
+    subjectId?: string;
+    subjectName: string;
+    /** The level reached. */
+    level: number;
+    /** How many levels were crossed. Greater than one on a big stage clear. */
+    levelsGained: number;
+    /** XP this grant was worth. */
+    expGained: number;
+    /** XP banked after the grant, and what the next level costs. */
+    xpAfter: number;
+    needAfter: number;
+    /** True when the requirement curve was walked to its end. */
+    capped: boolean;
+    /** Every breeder level crossed, in order, so unlocks can be derived from real data. */
+    crossed: number[];
+  };
   /**
    * Species revealed by this notice.
    *
@@ -618,7 +649,7 @@ export class GameStore {
     // The plant may have levelled from this action. Announced before the combo is
     // resolved, because a combo pays more experience and can level it again - and two
     // notices for one tap is the noise this is meant to remove, not create.
-    if ((res.levels ?? 0) > 0) this.announcePlantLevelUp(plant, res.levels ?? 0);
+    if ((res.levels ?? 0) > 0) this.announcePlantLevelUp(plant, res.levels ?? 0, 0);
     // Consume resources.
     const cfg = CARE_COST[action];
     this.state.items -= cfg.items ?? 0;
@@ -815,7 +846,11 @@ export class GameStore {
  */
 addPlantXp(plant: Plant, xp: number) {
   const levels = gainXp(plant, xp);
-  if (levels > 0) this.announcePlantLevelUp(plant, levels);
+  // The grant is passed on because this is the only place that knows it. `gainXp` reports
+  // how many levels were crossed and says nothing about experience, and the celebration
+  // prints "+N EXP" — so with nothing to print it fell back to "đã lên cấp", which is the
+  // receipt with the number the player just earned removed from it.
+  if (levels > 0) this.announcePlantLevelUp(plant, levels, xp);
   return levels;
 }
 
@@ -826,7 +861,7 @@ addPlantXp(plant: Plant, xp: number) {
  * fighter climb from 4 to 9 and had no way of knowing that was an event - and the
  * breeder experience is what makes tending a plant worth doing at all.
  */
-private announcePlantLevelUp(plant: Plant, levels: number) {
+private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
   const gained = breederXpForPlantLevel(plant.growth.level);
   const gainedText = levels > 1 ? ` +${levels} cấp` : "";
 
@@ -838,6 +873,27 @@ private announcePlantLevelUp(plant: Plant, levels: number) {
     // away the "+N EXP" receipt, which is the half of this the player has never seen.
     // It would also have rendered a single chip, and the chip row is sized for three.
     body: `+${gained} EXP thợ lai tạo · còn ${xpForLevel(this.state.breederLevel)} EXP để lên cấp ${this.state.breederLevel + 1}`,
+    /*
+     * The plant's own progress, so the celebration can show *its* bar — the number the
+     * player just moved — rather than the breeder's.
+     *
+     * Read after `gainXp`, so these are post-grant. `xpRequired` is the same function
+     * `gainXp` walks; if the two ever disagreed, the bar in the celebration would
+     * disagree with the bar on the card, which is the exact failure this structured
+     * payload exists to make impossible.
+     */
+    levelUp: {
+      subject: "plant",
+      subjectId: plant.plantId,
+      subjectName: plant.name,
+      level: plant.growth.level,
+      levelsGained: levels,
+      expGained: Math.round(xpGranted),
+      xpAfter: plant.growth.xp,
+      needAfter: xpRequired(plant.growth.level),
+      capped: plant.growth.level >= 100,
+      crossed: [],
+    },
   });
 
   // Straight to the breeder, not queued: the notice above is the receipt for this, and
@@ -1151,10 +1207,14 @@ private announcePlantLevelUp(plant: Plant, levels: number) {
 
     const levelBefore = this.state.breederLevel;
     const beforeUnlock = this.unlockedSpeciesIds();
+    // Every level crossed, in order. Not just the count: the celebration lists what each
+    // one opened, and a big stage can cross three, each with its own shelf behind it.
+    const crossed: number[] = [];
 
     while (this.state.breederXp >= xpForLevel(this.state.breederLevel) && this.state.breederLevel < BREEDER_LEVEL_CAP) {
       this.state.breederXp -= xpForLevel(this.state.breederLevel);
       this.state.breederLevel++;
+      crossed.push(this.state.breederLevel);
       // Plots are no longer granted by levelling.
       //
       // This used to raise the cap every five levels, which quietly handed out
@@ -1178,13 +1238,24 @@ private announcePlantLevelUp(plant: Plant, levels: number) {
 
       this.pushNotice({
         kind: "level",
-        title: `Cấp nhà lai tạo ${this.state.breederLevel}`,
+        title: crossed.length > 1 ? `Lên ${crossed.length} cấp!` : `Cấp nhà lai tạo ${this.state.breederLevel}`,
         body:
           this.state.breederLevel === BREEDER_LEVEL_CAP
             ? "Đã đạt cấp cao nhất."
             : fresh.length > 0
               ? `Mở khoá ${fresh.length.toLocaleString("vi-VN")} loài cây mới.`
               : "Chưa có loài nào mở thêm — hãy trồng cây và tích luỹ để mở tiếp.",
+        levelUp: {
+          subject: "breeder",
+          subjectName: "Nhà lai tạo",
+          level: this.state.breederLevel,
+          levelsGained: crossed.length,
+          expGained: Math.round(amount),
+          xpAfter: this.state.breederXp,
+          needAfter: this.state.breederLevel >= BREEDER_LEVEL_CAP ? 0 : xpForLevel(this.state.breederLevel),
+          capped: this.state.breederLevel >= BREEDER_LEVEL_CAP,
+          crossed,
+        },
       });
 
       if (shown.length > 0) {

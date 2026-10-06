@@ -3778,6 +3778,17 @@ body.planting {
     display: none;
   }
 
+  /* The XP figures come off for the same reason, and were found the same way: adding them
+     to the badge made it ~40px wider, and the settings button - already the rightmost thing
+     on the bar - ended up at right=396 on a 390px viewport. Unreachable, on every screen,
+     not just this one.
+
+     The bar stays. It still fills, it still animates, and it still carries the figures in
+     its `aria-label`, so a screen reader is unaffected and only the visual pair goes. */
+  .levelbadge-xp {
+    display: none;
+  }
+
   /* The title goes before anything else does.
      The brand is the one flexible child in a bar full of fixed-width balances, so it
      absorbs every pixel of pressure and ends up at zero - the game loses its name rather
@@ -4492,7 +4503,9 @@ body.planting {
    does not read as feedback. */
 .levelbadge {
   display: grid;
-  grid-template-columns: auto auto;
+  /* Three columns now: the number and its label, then the XP figures. Two columns put the
+     figures under the label where they read as part of the word "Cấp". */
+  grid-template-columns: auto auto auto;
   grid-template-rows: auto auto;
   align-items: center;
   column-gap: 5px;
@@ -4529,6 +4542,23 @@ body.planting {
   text-transform: uppercase;
   color: #4a7a5c;
   align-self: center;
+}
+
+/* The XP figures, beside the bar rather than under it.
+
+   They were previously only in the badge's `title`, which is a hover target — so on a
+   phone, where tapping is not hovering, the one progression display in the game showed a
+   bare integer and a 3px strip. `tabular-nums` because this number changes on almost every
+   action and a proportional face makes it jitter sideways as it grows. */
+.levelbadge-xp {
+  grid-row: 1;
+  grid-column: 3;
+  align-self: center;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #3d6b4e;
+  white-space: nowrap;
 }
 
 /* XP to the next level. Sits under the number, so the badge reads as

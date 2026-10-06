@@ -27,8 +27,26 @@ const GIS_SRC = "https://accounts.google.com/gsi/client";
  * A public value by design: it ships in every bundle of every site that uses Google
  * sign-in, and it is not a secret. What matters is that the Worker verifies tokens
  * against this same id — see `GOOGLE_CLIENT_ID` in `worker/README.md`.
+ *
+ * Read through a function rather than inline so `process.env` can be consulted as well.
+ * Vite inlines `import.meta.env` at build time, which is right in a browser and absent
+ * everywhere else — so under Node every entry point here refused with "not configured",
+ * and the whole Google flow was untestable. One lookup with two sources keeps the browser
+ * on the inlined value and lets the test drive the same code the game runs.
  */
-export const GOOGLE_CLIENT_ID = (import.meta.env?.VITE_GOOGLE_CLIENT_ID as string | undefined)?.trim() ?? "";
+function readClientId(): string {
+  const fromVite = (import.meta.env?.VITE_GOOGLE_CLIENT_ID as string | undefined)?.trim();
+  if (fromVite) return fromVite;
+  // `process` does not exist in a browser bundle, so this branch is dead there — which is
+  // the intent: it exists for the tooling that runs the module outside a bundler.
+  const fromNode =
+    typeof process !== "undefined"
+      ? ((process.env?.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? "").trim()
+      : "";
+  return fromNode;
+}
+
+export const GOOGLE_CLIENT_ID = readClientId();
 
 export const googleSignInAvailable = GOOGLE_CLIENT_ID !== "";
 
@@ -138,6 +156,103 @@ let initialised = false;
 let inFlight: { resolve: (token: string) => void; reject: (e: unknown) => void } | null = null;
 
 /**
+ * Somewhere for an ID token to arrive that nobody is waiting for.
+ *
+ * This is the whole reason a player could sign in with Google and stay at the login screen.
+ *
+ * Google's callback has exactly one exit: `inFlight`, a promise that only exists while
+ * `requestGoogleIdToken()` is awaiting. And that function is only ever called by the
+ * *fallback* button — the styled one. So the moment Google's own button paints, which is
+ * the normal case and the whole point of using it, `inFlight` is `null`, and the callback
+ * hit this:
+ *
+ *     if (!pending) return;
+ *
+ * A valid, verified, freshly-issued ID token, discarded on the floor. No session adopted, no
+ * save slot switched, no grace period stamped, gate never opened. The player picked an
+ * account, the popup closed, and nothing happened — with no error anywhere, because from
+ * the code's point of view nothing had failed.
+ *
+ * So a credential with no waiter is now *kept* rather than dropped, and handed to whoever
+ * is listening. It expires in about an hour and is single-use, so holding one briefly is
+ * free; discarding it is not.
+ */
+let parkedCredential: string | null = null;
+
+/** Listeners for credentials delivered by Google's own button. */
+type CredentialListener = (token: string) => void;
+const credentialListeners = new Set<CredentialListener>();
+
+/**
+ * Take the parked credential, if there is one.
+ *
+ * Separate from the listener set because the two paths can race: a token can arrive from
+ * Google's button between the moment the fallback is clicked and the moment it awaits.
+ * Whoever gets there first takes it; the other waits for the next one.
+ */
+function takeParkedCredential(): string | null {
+  const token = parkedCredential;
+  parkedCredential = null;
+  return token;
+}
+
+/**
+ * Be told when Google hands over an ID token.
+ *
+ * The panel subscribes at construction, which is *before* it tries to render Google's
+ * button — so there is no window in which a credential can arrive with nobody listening.
+ *
+ * Returns an unsubscribe function. The panel tears its own down when it is removed from the
+ * DOM, because a sheet that is closed and reopened would otherwise stack two listeners and
+ * complete the same sign-in twice.
+ */
+export function onGoogleCredential(fn: CredentialListener): () => void {
+  credentialListeners.add(fn);
+  const parked = takeParkedCredential();
+  if (parked) {
+    try {
+      fn(parked);
+    } catch {
+      /* a broken listener must not break the others */
+    }
+  }
+  return () => credentialListeners.delete(fn);
+}
+
+/**
+ * Replace anything credential-shaped with a description of it.
+ *
+ * Split out of `traceAuth` because it is the security-relevant half and the half worth
+ * testing on its own. `traceAuth` is gated behind `import.meta.env.DEV`, which does not
+ * exist under Node — so testing it directly proved nothing, and the one guarantee that
+ * actually matters ("a token can never reach a console") had no check at all.
+ *
+ * Not limited to a key named `token`. A bearer credential under any name is still a
+ * bearer credential, so this rewrites by value as well as by key.
+ */
+export function redactForLog(detail: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(detail)) {
+    if (typeof v === "string" && looksLikeCredential(v)) out[k] = `<${v.length} chars>`;
+    else if (typeof v === "string" && v.split(".").length === 3 && v.length > 40) out[k] = `<${v.length} chars, JWT>`;
+    else out[k] = v;
+  }
+  return out;
+}
+
+/** A JWT, or any string long and dot-separated enough to be one. */
+function looksLikeCredential(value: string): boolean {
+  return value.length > 20 && value.includes(".") && /^[A-Za-z0-9_.-]+$/.test(value);
+}
+
+/** Dev-only tracing of the auth state. Never prints a token, only its presence and length. */
+export function traceAuth(event: string, detail: Record<string, unknown> = {}): void {
+  if (!import.meta.env?.DEV) return;
+  // eslint-disable-next-line no-console
+  console.info(`[auth] ${event}`, redactForLog(detail));
+}
+
+/**
  * Load the script and initialise GIS, once.
  *
  * `renderButton` and `prompt` both fail without it, and both may be called from
@@ -176,17 +291,36 @@ async function initGis(): Promise<boolean> {
        */
       fedcm: false,
       callback: (r: TokenResponse) => {
+        const token = r.credential ?? r.id_token;
         const pending = inFlight;
         inFlight = null;
-        const token = r.credential ?? r.id_token;
-        if (!pending) return;
-        if (!token) {
-          // Google's docs call this the "cancelled" response: an empty credential with
-          // no error means the player dismissed the chooser.
-          pending.reject(new GoogleSignInError("cancelled", "Sign-in was dismissed"));
+
+        if (pending) {
+          if (!token) {
+            // Google's docs call this the "cancelled" response: an empty credential with
+            // no error means the player dismissed the chooser.
+            pending.reject(new GoogleSignInError("cancelled", "Sign-in was dismissed"));
+          } else {
+            pending.resolve(token);
+          }
           return;
         }
-        pending.resolve(token);
+
+        /*
+         * Nobody is waiting, so this came from Google's own rendered button.
+         *
+         * Previously `return`d here, which is the bug documented on `parkedCredential`.
+         * Now the token is kept and offered to the panel.
+         */
+        if (!token) return;
+        parkedCredential = token;
+        for (const fn of [...credentialListeners]) {
+          try {
+            fn(token);
+          } catch {
+            /* one broken listener must not stop the rest */
+          }
+        }
       },
     });
     /*
@@ -225,6 +359,32 @@ async function initGis(): Promise<boolean> {
  */
 export async function requestGoogleIdToken(): Promise<string> {
   if (!googleSignInAvailable) throw new GoogleSignInError("unavailable", "Google sign-in is not configured");
+
+  /*
+   * A credential that arrived while nobody was waiting.
+   *
+   * This is the case where the player pressed the fallback, Google's popup answered
+   * *before* this function got as far as awaiting — a fast account chooser on a warm
+   * connection. Re-prompting then would open a second popup over a completed sign-in.
+   */
+  const parked = takeParkedCredential();
+  if (parked) return parked;
+
+  /*
+   * A credential delivered by a redirect rather than a popup.
+   *
+   * Google puts the ID token in the URL fragment when `ux_mode` is `redirect`, and GIS
+   * re-delivers it to `callback` on the next page load. Both paths are covered, but if the
+   * script has not managed to initialise yet the token is sitting in the address bar and
+   * nobody is looking at it. Reading it here means a returning player with a slow script
+   * still gets in rather than staring at a login form they have already satisfied.
+   *
+   * The fragment is stripped afterwards: leaving a bearer token in the address bar means it
+   * survives into history, into the clipboard and into any screenshot the player takes.
+   */
+  const fromUrl = readCredentialFromUrl();
+  if (fromUrl) return fromUrl;
+
   const ok = await initGis();
   if (!ok) throw new GoogleSignInError("network", "Could not load Google's sign-in");
 
@@ -303,6 +463,42 @@ export async function renderGoogleButton(parent: HTMLElement): Promise<boolean> 
   } catch {
     return false;
   }
+}
+
+/**
+ * Take an ID token out of the address bar, if one is there, and clean up after it.
+ *
+ * Written against `location.hash` and the query string rather than assuming one or the
+ * other, because GIS has used both: the popup flow puts the credential in the fragment,
+ * and a redirect puts it in a query parameter. Checking only the fragment meant a redirect
+ * return was indistinguishable from a first visit.
+ *
+ * The URL is rewritten with `replaceState` so the token does not linger in history. The
+ * fragment is dropped entirely rather than rebuilt — nothing else in this game routes on
+ * it, and keeping a half-parsed fragment around is how a credential ends up in a bookmark.
+ */
+function readCredentialFromUrl(): string | null {
+  const find = (raw: string): string | null => {
+    const m = raw.match(/(?:^|[#&?])credential=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  };
+
+  let token: string | null = null;
+  try {
+    token = find(window.location.hash) ?? find(window.location.search);
+  } catch {
+    // Some embeddings put the document in a sandboxed frame where location is opaque.
+    return null;
+  }
+  if (!token) return null;
+
+  try {
+    const clean = `${window.location.pathname}${window.location.search.replace(/[?&]credential=[^&]*/, "")}`;
+    window.history.replaceState(null, "", `${clean}${window.location.hash.replace(/.*credential=[^&]*/, "")}`);
+  } catch {
+    // replaceState can be refused; not a reason to refuse the sign-in.
+  }
+  return token;
 }
 
 /** Vietnamese copy, keyed by failure. Returned as text rather than thrown. */

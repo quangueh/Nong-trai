@@ -55,6 +55,27 @@ function explain(err: unknown): string {
 export function openAccount(): void {
   const body = el("div", { class: "account" });
 
+  /*
+   * A holder rather than a direct reference, because `close` is defined further down and is
+   * called from listeners attached before `google` exists. `close` reading a `const google`
+   * would be a temporal-dead-zone throw from a click handler, which is the least legible
+   * way this file could fail.
+   */
+  let panelTeardown: (() => void) | null = null;
+
+  /**
+   * Hand a freshly built panel to whoever owns the sheet.
+   *
+   * Needed because `render` rebuilds the body on every account-status change, and each
+   * build creates a Google panel — which registers a credential listener on a module-level
+   * set. Without this, opening the sheet and watching the sync status change three times
+   * leaves three listeners, and one token from Google completes three sign-ins at once.
+   */
+  const registerPanel = (teardown: () => void): void => {
+    panelTeardown?.();
+    panelTeardown = teardown;
+  };
+
   const render = (): void => {
     body.replaceChildren();
     if (!accountServiceAvailable) {
@@ -76,7 +97,7 @@ export function openAccount(): void {
       return;
     }
     if (isSignedIn()) renderSignedIn(body, render);
-    else renderSignedOut(body, render);
+    else renderSignedOut(body, render, registerPanel);
   };
 
   const off = onAccountStatus(() => {
@@ -86,8 +107,11 @@ export function openAccount(): void {
     if (strip) strip.replaceWith(syncStrip(accountStatus()));
   });
 
+  // See the note on `registerPanel` above.
   const close = (): void => {
     off();
+    panelTeardown?.();
+    panelTeardown = null;
     overlay.remove();
     s.remove();
   };
@@ -131,7 +155,7 @@ function syncStrip(status: AccountStatus): HTMLElement {
   return strip;
 }
 
-function renderSignedOut(body: HTMLElement, render: () => void): void {
+function renderSignedOut(body: HTMLElement, render: () => void, registerPanel: (teardown: () => void) => void): void {
   /*
    * Shared with the sign-in gate.
    *
@@ -153,6 +177,7 @@ function renderSignedOut(body: HTMLElement, render: () => void): void {
   const google = googlePanel(render, () => {
     // The panel writes its own message.
   });
+  registerPanel(google.destroy);
 
   body.append(
     syncStrip(accountStatus()),

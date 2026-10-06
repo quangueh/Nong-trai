@@ -1,6 +1,6 @@
 /** App shell: top bar, screen router, bottom nav. */
 
-import { GameStore, resetSave, xpForLevel, BREEDER_LEVEL_CAP, type Notice } from "../core/store";
+import { GameStore, resetSave, type Notice } from "../core/store";
 import { el, toast, seedIcon } from "./components";
 import { renderGarden } from "./screens/garden";
 import { renderCollection } from "./screens/collection";
@@ -15,6 +15,25 @@ import { openAccount } from "./accountSheet";
 import { SPECIES_BY_ID } from "../config/species";
 import { CURRENCIES, compactNumber, type CurrencyId } from "../core/currency";
 import { onSlotChange, restoreActiveAccount } from "../core/saveSlot";
+import {
+  breederSnapshot,
+  milestoneForLevel,
+  plantMilestone,
+  plantSnapshot,
+  xpRemainingText,
+  type Milestone,
+} from "../progression/levels";
+
+/** The plant-level milestones a grant crossed, for the celebration's reward list. */
+function plantMilestonesBetween(from: number, to: number): Milestone[] {
+  const out: Milestone[] = [];
+  for (let l = Math.max(1, from); l <= Math.min(to, 100); l++) {
+    const m = plantMilestone(l);
+    if (m.unlocked.length) out.push({ level: l, shelves: [], plots: 0, unlocked: m.unlocked });
+  }
+  return out;
+}
+import { celebrateLevelUp, rewardsFromMilestones } from "./fx/levelUp";
 
 import type { Screen } from "./screens/types";
 
@@ -218,24 +237,43 @@ function fmtInt(n: number): string {
  */
 function updateLevelBadge(): void {
   if (!levelBadge) return;
-  const level = store.state.breederLevel;
-  const capped = level >= BREEDER_LEVEL_CAP;
-  // The store's own curve, imported rather than duplicated, so the badge cannot
-  // disagree with the amount of XP actually needed to level.
-  const need = capped ? 1 : xpForLevel(level);
-  const have = capped ? 1 : store.state.breederXp;
-  const pct = capped ? 100 : Math.max(0, Math.min(100, (have / Math.max(1, need)) * 100));
+  const snap = breederSnapshot(store.state.breederLevel, store.state.breederXp);
 
+  /*
+   * The XP figures are on the badge, not only in its tooltip.
+   *
+   * They used to exist only as the `title` attribute, which is a hover target — invisible on
+   * a phone entirely, since tapping a button does not hover it. So the one screen that
+   * shows progression showed a bare integer and a 3px bar, and a player could not tell
+   * whether they were a tenth or nine tenths of the way to the next level.
+   *
+   * `aria-valuenow` is on the bar so the whole badge reads as one progress control to a
+   * screen reader rather than three loose numbers.
+   */
   levelBadge.replaceChildren(
-    el("span", { class: "levelbadge-num" }, [`${level}`]),
+    el("span", { class: "levelbadge-num" }, [`${snap.level}`]),
     el("span", { class: "levelbadge-label" }, ["Cấp"]),
-    el("span", { class: "levelbadge-bar", role: "progressbar", "aria-valuenow": String(Math.round(pct)) }, [
-      el("i", { style: `width:${pct.toFixed(1)}%` }),
+    el(
+      "span",
+      {
+        class: "levelbadge-bar",
+        role: "progressbar",
+        "aria-valuenow": String(Math.round(snap.pct)),
+        "aria-valuemin": "0",
+        "aria-valuemax": "100",
+        "aria-label": `Cấp ${snap.level}, ${xpRemainingText(snap)}`,
+      },
+      [el("i", { style: `width:${snap.pct.toFixed(1)}%` })],
+    ),
+    el("span", { class: "levelbadge-xp mono" }, [
+      snap.capped
+        ? "MAX"
+        : `${Math.round(snap.xp).toLocaleString("vi-VN")} / ${Math.round(snap.need).toLocaleString("vi-VN")}`,
     ]),
   );
-  levelBadge.title = capped
+  levelBadge.title = snap.capped
     ? "Cấp nhà lai tạo tối đa"
-    : `Cấp nhà lai tạo ${level} — ${have.toLocaleString("vi-VN")}/${need.toLocaleString("vi-VN")} XP cấp ${level + 1}`;
+    : `Cấp nhà lai tạo ${snap.level} — ${Math.round(snap.xp).toLocaleString("vi-VN")}/${Math.round(snap.need).toLocaleString("vi-VN")} EXP cấp ${snap.level + 1}`;
 }
 
 /**
@@ -470,7 +508,69 @@ export function boot(root: HTMLElement) {
     updateLevelBadge();
   });
 
-  store.onNotice(showNotice);
+  /*
+   * Level notices become a celebration; everything else stays a banner.
+   *
+   * The split is the point. An unlock, a quest or a plot is a different kind of fact and
+   * reads fine as a banner — so promoting those to full-screen celebrations would train the
+   * player to dismiss them without reading, and the one that matters (a level going up) would
+   * be one banner among many. Only a level is celebrated.
+   *
+   * Serialised, because a stage clear can cross three levels and three celebrations stacking
+   * on one another is the single most reliable way to make a reward feel cheap.
+   */
+  let celebrating = false;
+  store.onNotice((notice) => {
+    if (!notice.levelUp) {
+      showNotice(notice);
+      return;
+    }
+    showNotice(notice);
+
+    const info = notice.levelUp;
+    const plant = info.subjectId ? store.get(info.subjectId) : undefined;
+    const isPlant = info.subject === "plant" && plant !== undefined;
+    const snap = isPlant
+      ? plantSnapshot(plant)
+      : {
+          level: info.level,
+          xp: info.xpAfter,
+          need: info.needAfter,
+          pct: info.needAfter > 0 ? Math.min(100, (info.xpAfter / info.needAfter) * 100) : 100,
+          capped: info.capped,
+        };
+
+    /*
+     * Rewards come from the right table for the subject.
+     *
+     * A plant leveling and an account leveling are different progressions with different
+     * rewards: one raises potential caps and can cross a combat tier, the other opens shop
+     * shelves. Deriving both from `milestoneForLevel` had a plant levelling announce "kệ cấp
+     * III", which is not true and which the shop would then contradict.
+     *
+     * The plant's levels are recovered from `level - levelsGained + 1`, because the notice
+     * carries where it ended and how many it crossed. That is exact, not a guess: the store
+     * walked them in order.
+     */
+    const milestones = isPlant
+      ? plantMilestonesBetween(info.level - info.levelsGained + 1, info.level)
+      : info.crossed.map((level) => milestoneForLevel(level));
+    const rewards = rewardsFromMilestones(milestones);
+
+    if (celebrating) return;
+    celebrating = true;
+    void celebrateLevelUp({
+      level: info.level,
+      levelsGained: info.levelsGained,
+      subject: info.subjectName,
+      subjectIcon: info.subject === "plant" ? "🌱" : "🧑‍🌾",
+      expGained: info.expGained,
+      after: snap,
+      rewards,
+    }).then(() => {
+      celebrating = false;
+    });
+  });
   // Drawn once at boot: the subscription only fires on a change, so without this
   // the badge would be blank until the player happened to gain a coin.
   updateLevelBadge();

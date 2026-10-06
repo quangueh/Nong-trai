@@ -22,13 +22,12 @@ import { el } from "../components";
 import { sfx } from "../../audio/audio";
 import { renderPlantSvg } from "../../render/plantRenderer";
 import { BattleView } from "../../battle/battleView";
+import { showStageBrief, showStageResult } from "../fx/stageOverlay";
 import { store } from "../app";
 import { ELEMENT_INFO } from "../../config/elements";
 import { ARCHETYPE_ROLE, TIER_META } from "../../config/balance";
 import { RARITY_META } from "../../config/rarity";
-import { compactNumber, type CurrencyId } from "../../core/currency";
-import type { DropRoll } from "../../core/drops";
-import { BAND_LABEL, LOOKAHEAD, type MonsterSpec, type StageBrief, type StageReward } from "../../pve";
+import { BAND_LABEL, LOOKAHEAD, type MonsterSpec, type StageBrief } from "../../pve";
 import type { Navigate } from "./types";
 
 /** How many stage rows to draw. The list is long by design; scrolling it is the point. */
@@ -97,12 +96,47 @@ export function renderAscent(_nav: Navigate): HTMLElement {
       return;
     }
 
+    /* The ladder, as a strip of states.
+     *
+     * A scrolling list of stage cards answers "what is stage 22" and not "where am I". So
+     * the states are drawn first and compactly — cleared, current, locked — and the list
+     * below is the detail. A player who has cleared 21 should be able to see at a glance
+     * that 22 is the one in front of them and 40 is still out of reach, without scrolling.
+     *
+     * Locked stages are shown rather than hidden. A gap in a ladder is a question, and a
+     * numbered gap explains itself; an absent one does not. */
+    const frontier = Math.max(1, ascent.highest + 1);
+    const mapTop = Math.max(1, frontier - Math.floor(LOOKAHEAD / 2));
+    const mapHost = el("div", { class: "stagemap" });
+    for (let s = mapTop; s < mapTop + LOOKAHEAD + 4; s++) {
+      const cleared = s <= ascent.highest;
+      const open = s <= ascent.highest + LOOKAHEAD;
+      const isNow = s === frontier;
+      const cell = el("button", {
+        class: "stagemap-cell" + (cleared ? " is-cleared" : "") + (isNow ? " is-now" : "") + (open ? "" : " is-locked"),
+        title: cleared
+          ? `Ải ${s}: đã vượt`
+          : open
+            ? `Ải ${s}: có thể đánh`
+            : `Ải ${s}: vượt ải ${frontier} để mở`,
+      }, [cleared ? "✓" : open ? `${s}` : "🔒"]);
+      if (s === frontier) cell.appendChild(el("span", { class: "stagemap-now" }, ["đây"]));
+      if (open) {
+        cell.addEventListener("click", () => {
+          sfx.play("tap");
+          cell.scrollIntoView({ block: "center", behavior: "smooth" });
+        });
+      }
+      mapHost.appendChild(cell);
+    }
+    listHost.appendChild(mapHost);
+
     /* Anchored at the frontier, not centred on the record.
      *
      * Centring put a player who had cleared 17 looking at stages 9-13 - all of them already
      * beaten, the top of the list cut off above, and the stage they were actually stuck on
      * nowhere on screen. A ladder is read from the top of what's left to climb. */
-    const first = Math.max(1, ascent.highest + 1);
+    const first = frontier;
     const top = Math.max(1, first - Math.floor(LOOKAHEAD / 2));
     const bottom = top + WINDOW;
 
@@ -179,9 +213,21 @@ export function renderAscent(_nav: Navigate): HTMLElement {
       const fight = el("button", { class: "btn primary block", style: "margin-top:10px" }, [
         cleared ? "Đánh lại" : "Vượt ải này",
       ]);
+      /*
+       * The brief comes first.
+       *
+       * Pressing the button used to go straight into a resolved fight, so "điều kiện thắng"
+       * was only ever stated afterwards — and on a loss that is the most useful sentence on
+       * the screen, delivered once the player has no use for it. The brief is also where
+       * the reward preview lives, so the decision to spend a fight is made with the numbers
+       * in front of them rather than after the fact.
+       */
       fight.addEventListener("click", () => {
         sfx.play("tap");
-        openFight(stage, chosen!, monster);
+        const fighter = store.get(chosen!);
+        showStageBrief(brief, monster, fighter ?? null, () => {
+          openFight(stage, chosen!, monster);
+        });
       });
       row.appendChild(fight);
     }
@@ -276,19 +322,20 @@ export function renderAscent(_nav: Navigate): HTMLElement {
     const stageTitle = el("div", { class: "small", style: "font-weight:700;margin-bottom:2px" }, [
       `Ải ${stage} · ${monster.name}`,
     ]);
-    const verdict = el("div", { style: "font-weight:800;margin-bottom:8px" }, [
-      out.won ? `🏆 Vượt ải ${stage}!` : `Ải ${stage}: thua`,
-    ]);
     const host = el("div");
-    const footer = el("div");
-    sheet.append(stageTitle, verdict, host, rewardStrip(out.reward!, out.drops ?? []), footer);
+    sheet.append(stageTitle, host);
     root.prepend(sheet);
     root.scrollIntoView({ block: "start", behavior: "smooth" });
 
-    if (out.nextUnlocked) {
-      footer.appendChild(el("div", { class: "callout", style: "margin-top:10px" }, [`Ải ${out.nextUnlocked} đã mở.`]));
-    }
-
+    /*
+     * The verdict is a scene, not a line under the fight.
+     *
+     * It used to be a heading plus a reward strip in this card — which is what the
+     * pre-overlay screen looked like, and it could not carry the objective, the count-up,
+     * or the EXP preview. So the fight plays, and then `showStageResult` takes over: the
+     * objective restated, the rewards counted one line at a time, and the continue button
+     * held until they have.
+     */
     const view = new BattleView({
       container: host,
       plantA: me,
@@ -297,47 +344,31 @@ export function renderAscent(_nav: Navigate): HTMLElement {
       interactive: false,
       hideControls: true,
       onFinish: () => {
-        const done = el("button", { class: "btn block", style: "margin-top:10px" }, ["Về thang"]);
-        done.addEventListener("click", () => {
-          sfx.play("tap");
-          // Repainted from the store rather than navigated away, so the ladder comes back at
-          // the new record with the stage just cleared marked - which is the receipt for it.
-          rebuildRoster();
-          buildList();
-          listHost.hidden = false;
-          sheet.remove();
-        });
-        footer.appendChild(done);
-        done.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        void showStageResult(
+          {
+            won: out.won === true,
+            stage,
+            monster,
+            reward: out.reward!,
+            drops: out.drops ?? [],
+            nextUnlocked: out.nextUnlocked,
+            fighter: me,
+          },
+          () => {
+            // Repainted from the store rather than navigated away, so the ladder comes back
+            // at the new record with the stage just cleared marked — which is the receipt.
+            rebuildRoster();
+            buildList();
+            listHost.hidden = false;
+            sheet.remove();
+          },
+        );
       },
     });
     view.start();
   }
 
-  /** What the fight paid, printed from the same figures that were credited. */
-  function rewardStrip(reward: StageReward, drops: DropRoll[]): HTMLElement {
-    const box = el("div", { class: "row", style: "gap:12px;flex-wrap:wrap;margin-top:8px" });
-    const add = (icon: string, amount: number) => {
-      if (amount <= 0) return;
-      box.appendChild(el("span", { class: "small", style: "font-weight:700" }, [`${icon} +${compactNumber(amount)}`]));
-    };
-    add("🪙", reward.leafCoin);
-    add("🍯", reward.nectar);
-    add("🌼", reward.pollen);
-    add("💎", reward.geneCrystal);
-    add("🎒", reward.items);
-    // Dropped by the arena's own table, so the odds it prints and the odds it pays agree.
-    for (const d of drops) add(iconOf(d.currency), d.amount);
-    box.appendChild(el("span", { class: "small muted" }, [`+${reward.plantXp} EXP cây`]));
-    return box;
-  }
-
   rebuildRoster();
   buildList();
   return root;
-}
-
-/** The currency's own glyph, so a reward cannot name the wrong thing. */
-function iconOf(id: CurrencyId): string {
-  return id === "nectar" ? "🍯" : id === "pollen" ? "🌼" : id === "ember" ? "🔥" : "🪙";
 }

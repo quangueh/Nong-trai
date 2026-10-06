@@ -23,8 +23,10 @@ import {
   GOOGLE_CLIENT_ID,
   googleFailureMessage,
   googleSignInAvailable,
+  onGoogleCredential,
   renderGoogleButton,
   requestGoogleIdToken,
+  traceAuth,
 } from "../account/google";
 import { signInWithGoogle } from "../account/sync";
 
@@ -43,6 +45,15 @@ export interface GooglePanelResult {
   run: () => void;
   /** The element errors are written into, so the caller does not have to find it. */
   errorSlot: HTMLElement;
+  /**
+   * Release the credential listener and any pending timer.
+   *
+   * Call it when the panel leaves the screen. A panel is built on every open, and each one
+   * adds a listener to a module-level set — so without this, opening the account sheet three
+   * times leaves three listeners, and a single token from Google completes the same sign-in
+   * three times: three pushes, three slot switches, and a race for which one wins.
+   */
+  destroy: () => void;
 }
 
 export interface GooglePanelOptions {
@@ -80,6 +91,20 @@ export function googlePanel(
    */
   const stepSlot = el("p", { class: "gpanel-step tiny muted" });
 
+  /*
+   * Declared with the other slots rather than beside `attempt`, because `reviveFallback`
+   * reads it and the watchdog is armed the moment Google's button paints — which happens
+   * long before anybody clicks. A `let` declared further down would be a temporal dead
+   * zone error thrown from a timer, which is the least legible way this file could fail.
+   */
+  let busy = false;
+
+  /** Shown when the watchdog revives the fallback. Hidden until then, if ever. */
+  const fallbackNote = el("p", { class: "gpanel-note tiny muted" }, [
+    "Nút bên dưới gọi cùng một luồng đăng nhập.",
+  ]);
+  fallbackNote.hidden = true;
+
   const brand = el("div", { class: "gpanel-brand" });
   brand.innerHTML = GOOGLE_G;
 
@@ -112,63 +137,76 @@ export function googlePanel(
    * silently does nothing leaves the player at the gate with no way in but the email form
    * - for a third-party failure they can do nothing about.
    *
-   * So it comes back on its own: if a click has not moved the flow within a few seconds,
-   * this is revealed again with a note saying why. Invisible when things work, which is
-   * the only time anyone looks at it.
+   * So it comes back on its own: if the button has not moved the flow within a few seconds,
+   * this is revealed again. Invisible when things work, which is the only time anyone looks
+   * at it.
    */
   let watchdog: number | undefined;
   const reviveFallback = (): void => {
-    if (!action.hidden) return;
+    if (watchdog !== undefined) {
+      window.clearTimeout(watchdog);
+      watchdog = undefined;
+    }
+    /*
+     * A sign-in in flight means the button is working.
+     *
+     * Announcing a dead button while a popup is open in front of the player is both false
+     * and the most demoralising thing this panel could say. It happened: the watchdog fired
+     * at six seconds, well inside the time it takes to read a sentence and pick an account,
+     * and it fired on the *account sheet* too, where `fallbackOnStall` was supposed to be
+     * off.
+     */
+    if (busy) return;
     action.hidden = false;
-    errorSlot.textContent =
-      "Nút của Google không phản hồi. Dùng nút bên dưới — nó gọi cùng một luồng.";
+    // A caption, not an accusation. The button may well be fine; the fallback is here so
+    // that "nothing happened" is never a dead end, not because something is wrong.
+    fallbackNote.hidden = false;
   };
   const armWatchdog = (): void => {
-      if (!fallbackOnStall) return;
-      if (watchdog !== undefined) window.clearTimeout(watchdog);
-      watchdog = window.setTimeout(reviveFallback, 6000);
-    };
+    if (!fallbackOnStall) return;
+    if (watchdog !== undefined) window.clearTimeout(watchdog);
+    watchdog = window.setTimeout(reviveFallback, 9000);
+  };
   const disarmWatchdog = (): void => {
     if (watchdog === undefined) return;
     window.clearTimeout(watchdog);
     watchdog = undefined;
   };
 
-  let busy = false;
-  async function attempt(): Promise<void> {
+  const setStep = (text: string): void => {
+    stepSlot.textContent = text;
+  };
+
+  /**
+   * Turn an ID token into a session, and let the player in.
+   *
+   * Split out from `attempt` because it is now reached by two different routes that have
+   * nothing else in common: the fallback button's `prompt()`, and the token Google's own
+   * rendered button hands over on its own. Before this existed, only the first route got
+   * here — so the button that actually works could not finish signing in.
+   *
+   * `busy` is claimed *before* the await, so a token delivered twice (once to the parked
+   * slot, once live) cannot start two sign-ins and race each other into two sessions.
+   */
+  async function complete(idToken: string): Promise<void> {
     if (busy) return;
     busy = true;
-    errorSlot.textContent = "";
-
-    // A visible step, because the alternative is a screen that looks frozen.
-    //
-    // Google sign-in has three phases separated by two round trips to different servers,
-    // and the failure modes are entirely different: the popup never opened, the Worker
-    // rejected the token, or the token never came back. A single "hangs" gives the
-    // player nothing to report and gives me nothing to go on either.
-    const setStep = (text: string): void => {
-      stepSlot.textContent = text;
-    };
-
     action.classList.add("is-busy");
-    armWatchdog();
+    disarmWatchdog();
     try {
-      setStep("Đang mở cửa sổ đăng nhập Google…");
-      const idToken = await requestGoogleIdToken();
-
       setStep("Đang xác thực với máy chủ…");
-      // The token came back, so whichever button was used did its job. Disarm before the
-      // Worker call, which is a different server and says nothing about the button.
-      disarmWatchdog();
+      traceAuth("token received", { chars: idToken.length });
       const session = await signInWithGoogle(idToken);
 
       setStep("Đang đồng bộ vườn…");
       sfx.play("levelUp");
+      traceAuth("session adopted", { created: session.created, email: session.email });
       toast(session.created ? "Đã tạo tài khoản. Đã đồng bộ." : "Đã quay lại. Đồng bộ xong.");
       onSignedIn();
     } catch (e) {
       const message = e instanceof GoogleSignInError ? googleFailureMessage(e.code) : describe(e);
       setStep("");
+      traceAuth("sign-in failed", { message });
       // Cancellation is not an error. Saying "sign-in failed" after the player
       // deliberately closed the popup is the kind of small lie that teaches people to
       // distrust the messages.
@@ -182,6 +220,44 @@ export function googlePanel(
       action.classList.remove("is-busy");
     }
   }
+
+  /**
+   * Drive the sign-in from our own button.
+   *
+   * Only needed when Google's own button is not on screen — it drives its own popup and
+   * its own token, and reaches `complete` through the credential listener below rather than
+   * through here.
+   */
+  async function attempt(): Promise<void> {
+    if (busy) return;
+    errorSlot.textContent = "";
+    action.classList.add("is-busy");
+    armWatchdog();
+    try {
+      setStep("Đang mở cửa sổ đăng nhập Google…");
+      const idToken = await requestGoogleIdToken();
+      await complete(idToken);
+    } catch (e) {
+      const message = e instanceof GoogleSignInError ? googleFailureMessage(e.code) : describe(e);
+      setStep("");
+      traceAuth("token request failed", { message });
+      if (!(e instanceof GoogleSignInError && e.code === "cancelled")) {
+        sfx.play("error");
+        errorSlot.textContent = message;
+        onFailure(message);
+      }
+    }
+  }
+
+  /*
+   * Google's own button hands its token over on its own initiative, with nobody having
+   * asked for it. This is the listener that catches it.
+   *
+   * Registered at construction rather than after `renderGoogleButton` resolves, because a
+   * credential can arrive at any point from there on and a window with no listener is
+   * exactly the bug this whole mechanism exists to close. The unsubscribe is kept and
+   * handed back on the result, so a sheet opened repeatedly does not stack listeners.
+   */
 
   if (!googleSignInAvailable) {
     // Removes both the styled button and Google's empty target. Replaced the whole
@@ -230,9 +306,30 @@ export function googlePanel(
   // One wrapper, assembled in the order a reader should meet them: who this is, the
   // button, what went wrong if anything, then what is and is not being asked for.
   const wrap = el("div", { class: "gpanel-wrap" });
-  wrap.append(slot, stepSlot, errorSlot, reassurance);
+  wrap.append(slot, stepSlot, errorSlot, fallbackNote, reassurance);
 
-  return { nodes: [wrap], run: () => void attempt(), errorSlot };
+  /*
+   * Tear the credential listener down.
+   *
+   * A panel is built every time the gate or the account sheet opens, and each one adds a
+   * listener to a module-level set. Without this, opening the sheet three times leaves three
+   * listeners, and one token from Google completes the same sign-in three times — three
+   * `push`es, three slot switches, and a race between them for which session wins.
+   */
+  const offCredential = onGoogleCredential((token) => {
+    traceAuth("credential from Google button");
+    void complete(token);
+  });
+
+  return {
+    nodes: [wrap],
+    run: () => void attempt(),
+    errorSlot,
+    destroy: () => {
+      offCredential();
+      disarmWatchdog();
+    },
+  };
 }
 
 /** Anything that is not an `AccountError` gets a generic line, never a raw stack. */

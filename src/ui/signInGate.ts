@@ -52,7 +52,13 @@ export function showSignInGateIfNeeded(options: SignInGateOptions): void {
   const overlay = el("div", { class: "overlay gate-overlay" });
   const card = el("div", { class: "sheet gate-card" });
 
+  // Declared before `enter` because `enter` tears the panel down, and it is assigned after.
+// A direct `google.destroy()` inside `enter` would close over a `const` that is still in
+// its temporal dead zone if the email form ever fired synchronously during setup.
+let destroyGoogle = (): void => {};
+
   const enter = (): void => {
+    destroyGoogle();
     overlay.remove();
     options.onEnter();
   };
@@ -74,6 +80,7 @@ export function showSignInGateIfNeeded(options: SignInGateOptions): void {
     // is a dead end rather than an inconvenience.
     { fallbackOnStall: true },
   );
+  destroyGoogle = google.destroy;
 
   const skip = el("button", { class: "gate-skip", type: "button" }, [
     "Chơi không cần tài khoản (chỉ lần này)",

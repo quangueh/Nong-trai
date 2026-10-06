@@ -10,6 +10,7 @@ import { renderPlantSvg } from "../../render/plantRenderer";
 import { RARITY_META } from "../../config/rarity";
 import { STAGE_LABEL, type Plant } from "../../core/types";
 import { canBattle, canBreed, stageProgress } from "../../growth/stages";
+import { plantSnapshot, xpRemainingText } from "../../progression/levels";
 
 /**
  * `plotNumber` is optional so the card still renders where a position is not
@@ -69,6 +70,9 @@ export function plotCard(plant: Plant, onClick: () => void, plotNumber?: number)
   row.append(r, pw);
   card.appendChild(row);
 
+  // The plant's own level and how far to the next one.
+  card.appendChild(levelStrip(plant));
+
   // Status chip, or a growth ring while the plant is still developing.
   if (mature) {
     const flagsRow = el("div", { class: "prow" });
@@ -87,6 +91,41 @@ export function plotCard(plant: Plant, onClick: () => void, plotNumber?: number)
 
   card.addEventListener("click", onClick);
   return card;
+}
+
+/**
+ * Level, and a bar to the next one.
+ *
+ * This is the number that decides when a plant crosses into the next combat tier — level 5,
+ * 15, 30 — and it was only visible on the detail sheet. So a player tending twenty plants
+ * had no way to tell which one was close to a tier without opening each in turn, and
+ * "tending a plant" had no visible progress attached to it at all.
+ *
+ * The figures come from `progression/levels`, the same source the celebration and the stage
+ * preview read, so the card cannot disagree with either.
+ */
+function levelStrip(plant: Plant): HTMLElement {
+  const snap = plantSnapshot(plant);
+  const wrap = el("div", { class: "lvstrip" });
+
+  const bar = el("span", {
+    class: "lvstrip-bar",
+    role: "progressbar",
+    "aria-valuenow": String(Math.round(snap.pct)),
+    "aria-valuemin": "0",
+    "aria-valuemax": "100",
+    "aria-label": `Cấp ${snap.level}, ${xpRemainingText(snap)}`,
+  });
+  bar.appendChild(el("i", { style: `width:${snap.pct.toFixed(1)}%` }));
+
+  wrap.append(
+    el("span", { class: "lvstrip-level mono" }, [`Lv${snap.level}`]),
+    bar,
+    el("span", { class: "lvstrip-xp tiny mono" }, [
+      snap.capped ? "MAX" : `${Math.round(snap.xp)}/${Math.round(snap.need)}`,
+    ]),
+  );
+  return wrap;
 }
 
 /** Small circular progress indicator drawn over the soil. */

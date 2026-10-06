@@ -1,4 +1,10 @@
 import "./styles.css";
+// The level-up celebration. Its own file because it is the only thing in the game built
+// around an animation rather than a layout, and 400 lines of keyframes inside the
+// main sheet is how a stylesheet stops being readable.
+import "./ui/fx/levelUp.css";
+import "./ui/fx/levelStrip.css";
+import "./ui/fx/stageOverlay.css";
 import { boot } from "./ui/app";
 import { sfx } from "./audio/audio";
 
