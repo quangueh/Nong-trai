@@ -195,11 +195,21 @@ const frontierOf = (page: Page): Promise<Record<string, unknown>> =>
 
   /* --- the brief --- */
   console.log("\n2. stage 1 can be entered, and says what it wants:");
+  /*
+   * Selected on `data-stage-fight`, not on the label.
+   *
+   * This matched `/Vượt ải này|Đánh lại/` — Vietnamese prose in a regex, coupled to wording that
+   * existed only by accident. It broke the moment the button was relabelled to name its stage,
+   * which was an improvement, and a test that fails when the copy improves is reading the wrong
+   * thing. The hook says *which stage's action this is*; the label says what a player should
+   * call it, and those are allowed to change independently.
+   */
   await page.evaluate(`(() => {
-    const b = [...document.querySelectorAll("button")].find((x) => /Vượt ải này|Đánh lại/.test(x.textContent || ""));
+    const b = document.querySelector('[data-stage-fight="1"]');
     if (b) b.click();
   })()`);
-  await page.waitForTimeout(900);
+  await page.waitForSelector(".stagebrief-panel", { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(400);
   await page.screenshot({ path: "shots/ascent/2-brief.png" });
 
   const brief = (await page.evaluate(`(() => {

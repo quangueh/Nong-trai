@@ -34,6 +34,7 @@
  */
 
 import { sfx } from "../audio/audio";
+import { reducedMotion } from "../core/prefs";
 import type { Delivery } from "../config/skills";
 
 export type FxSide = "a" | "b";
@@ -71,9 +72,14 @@ const TUNING: Record<
   kill: { stop: 168, trauma: 0.8, recoil: 20, squash: 0.17, flash: 0.9, bits: 26 },
 };
 
-export function reducedMotion(): boolean {
-  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
+/**
+ * Re-exported from `core/prefs`, so callers can keep importing it from here.
+ *
+ * This copy existed so this file could ask the question without importing anything. The cost
+ * was a second answer to it: a player who turned motion down in settings got this layer
+ * standing down but not `battleFx`, which asked separately and independently.
+ */
+export { reducedMotion };
 
 /** How long a travelling delivery should take, by delivery kind. */
 export function travelMs(delivery: Delivery): number {

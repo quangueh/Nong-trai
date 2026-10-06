@@ -235,9 +235,37 @@ export function renderAscent(_nav: Navigate): HTMLElement {
     }
 
     if (chosen) {
-      const fight = el("button", { class: "btn primary block", style: "margin-top:10px" }, [
-        cleared ? "Đánh lại" : "Vượt ải này",
-      ]);
+      /*
+       * One button, three jobs — so the cards have to stop looking alike.
+       *
+       * Every stage card used to carry an identical full-width primary button. Three completed
+       * stages therefore rendered as three identical 840px green bars, which is the flattest
+       * possible answer to "which one do I press": the screen had no position on the question.
+       *
+       * Now the card that matters is the only loud one. The stage ahead of you gets the wide
+       * primary bar; a stage you have already cleared gets a compact ghost button, because
+       * replaying it is a decision you make once and on purpose, not the default your eye
+       * lands on. Same action, correct weight.
+       */
+      const isNext = stage === ascent.highest + 1;
+      const fight = el(
+        "button",
+        {
+          class: cleared ? "btn ghost sm replaybtn" : isNext ? "btn primary block" : "btn block",
+          style: "margin-top:10px",
+          title: cleared ? `Đánh lại ải ${stage} — đã vượt rồi` : `Vượt ải ${stage}`,
+          /*
+           * A stable hook to the action.
+           *
+           * The label is prose and the prose changes — this button used to read "Vượt ải này"
+           * and now names the stage, which is better for a player who can see four stages at
+           * once. A test that matched on the old wording broke on the improvement, which is a
+           * sign the test was reading the wrong thing.
+           */
+          "data-stage-fight": String(stage),
+        },
+        [cleared ? `Đánh lại ải ${stage}` : `Vượt ải ${stage}`],
+      );
       /*
        * The brief comes first.
        *

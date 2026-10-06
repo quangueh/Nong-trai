@@ -22,6 +22,7 @@ import { renderPlantSvg } from "../../render/plantRenderer";
 import { skillMasteryPct, skillMasteryText } from "../../progression/objectives";
 import { celebrateExpGain } from "../fx/expGain";
 import type { Navigate } from "./types";
+import { coachStrip } from "./coach";
 
 // The ceremony renders real plant art, so it needs the renderer. Wiring it here
 // keeps planting.ts free of a render import.
@@ -88,6 +89,17 @@ export function renderGarden(nav: Navigate): HTMLElement {
 
 /** The plots, and nothing else. */
 function paintPlots(body: HTMLElement, nav: Navigate, shell: Element): void {
+  /*
+   * The coach, above the plots.
+   *
+   * Above rather than below because the plots are a wall of empty tiles on a new account, and
+   * a strip placed under them would only ever be reached by scrolling past the very thing it
+   * is meant to explain. `coachStrip` returns null once all three steps are true, so there is
+   * no flag to clear and no way for it to linger on an established garden.
+   */
+  const coach = coachStrip();
+  if (coach) body.appendChild(coach);
+
   // --- plots ---
   const section = el("div");
   const title = el("div", { class: "sec-title" });

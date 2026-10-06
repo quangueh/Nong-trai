@@ -1454,6 +1454,30 @@ h4 {
   }
 }
 
+/*
+ * A fourth and fifth column, once the frame itself is wide.
+ *
+ * The plot card's height follows from its width — an island with a pot drawn under it has to
+ * be roughly as tall as it is wide or the drawing floats — so three columns stretched across
+ * 900px produced 265x370 cards holding a small plant and three lines of text. More columns
+ * means the garden shows more of itself and each card is smaller, which is the better trade on
+ * every count.
+ *
+ * Breakpoints are on the *viewport*, not the frame, because that is what CSS can see. The frame
+ * is `calc(100vw - 56px)` above 900px, so 980px of viewport is roughly a 900px frame.
+ */
+@media (min-width: 980px) {
+  .plots {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (min-width: 1240px) {
+  .plots {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
 /* The collection shelf.
 
    A plain grid on the page's own background, with the same card sizing as the garden's so
@@ -6537,5 +6561,329 @@ body.planting {
      counter entirely would remove information rather than remove motion. */
   .combometer.is-pop {
     transform: translateX(-50%);
+  }
+}
+
+/* ==========================================================================
+   The app as an object, not a column in a void.
+
+   On a desktop this shell was a 760px ribbon with ~210px of flat colour on each side, and
+   because that colour was the same pale green the shell's own background faded into, the two
+   read as one unfinished page rather than as a frame with something behind it. Every desktop
+   screenshot looked provisional.
+
+   The fix is not to fill the space — the layouts are a phone-shaped column and widening them
+   would break them — but to make the column an *object*: inset from the viewport, rounded,
+   lifted off the backdrop, and shadowed onto it. The space then reads as the room the game
+   sits in, which is what it always was.
+
+   Narrow screens are untouched. A phone has no gutters to solve, and a rounded inset frame on
+   a 390px screen just eats width.
+   ========================================================================== */
+
+@media (min-width: 900px) {
+  /* A vignette, so the backdrop is lit in the middle and falls away at the edges. Without it
+     the far corners sit at the same value as the shell and the frame has nothing to cast onto. */
+  html {
+    background-image:
+      radial-gradient(120% 90% at 50% 34%, rgba(255, 255, 255, 0.34), transparent 58%),
+      radial-gradient(1100px 520px at 50% -14%, rgba(143, 208, 255, 0.8), transparent 64%),
+      radial-gradient(560px 340px at 6% 6%, rgba(255, 225, 108, 0.42), transparent 58%),
+      radial-gradient(150% 120% at 50% 50%, transparent 52%, rgba(46, 68, 38, 0.28) 100%),
+      linear-gradient(180deg, #d8f2ff 0%, #dcefc8 46%, #b9dd9c 100%);
+  }
+
+  #app {
+    /* Vertically centred as well, or the inset frame sits hard against the top of the window
+       with all its empty space pooled at the bottom, which reads as a bug rather than a
+       choice. */
+    align-items: center;
+    padding: 24px;
+  }
+
+  .shell {
+    width: min(900px, calc(100vw - 56px));
+    height: min(100dvh - 48px, 1040px);
+    max-height: none;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.85) inset,
+      0 2px 6px rgba(38, 53, 29, 0.1),
+      0 24px 60px -18px rgba(28, 48, 22, 0.42),
+      0 60px 120px -40px rgba(28, 48, 22, 0.35);
+  }
+}
+
+/* ==========================================================================
+   Settings: volume and motion.
+
+   Both were asked for and neither existed. `AudioEngine.volume` carried a comment promising a
+   control and had none; `reducedMotion()` existed but only ever asked the operating system, in
+   three separate files. These are the controls that make both promises true.
+   ========================================================================== */
+
+.account-volume {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  margin: 6px 0;
+  border-radius: 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.volumeslider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 26px;
+  /* Transparent track, because the range input's own track would draw a second grey bar over
+     the panel and the two never line up. */
+  background: transparent;
+  cursor: pointer;
+}
+
+.volumeslider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-fill), var(--accent-bright));
+  box-shadow: 0 1px 2px rgba(38, 53, 29, 0.22) inset;
+}
+
+.volumeslider::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-fill), var(--accent-bright));
+  box-shadow: 0 1px 2px rgba(38, 53, 29, 0.22) inset;
+}
+
+/* A thumb big enough to grab with a thumb. The default is ~8px on a control meant to be
+   dragged one-handed, which is the one platform where it gets dragged. */
+.volumeslider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent-fill);
+  box-shadow: 0 2px 6px rgba(28, 48, 22, 0.34);
+}
+
+.volumeslider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent-fill);
+  box-shadow: 0 2px 6px rgba(28, 48, 22, 0.34);
+}
+
+/* Visible focus on the one control that is not a button, so keyboard users can find it. */
+.volumeslider:focus-visible {
+  outline: 3px solid var(--accent-fill);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.volumeslider:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The value on the right of a settings row. Wider than the chevron it replaces so "Giảm chuyển
+   động" has somewhere to go without wrapping the row to three lines. */
+.account-value {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-fill);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   Replaying a cleared stage.
+
+   Every stage card used to carry an identical full-width primary button, so a screen showing
+   three cleared stages rendered three identical green bars and had no opinion about which one
+   the player wanted. Replay is a deliberate, occasional choice; it gets a compact button that
+   sits under its own card instead of a bar that spans the screen.
+   ========================================================================== */
+
+.replaybtn {
+  /* Sized to its label. `block` was what made three of these read as one wall. */
+  align-self: flex-start;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  opacity: 0.78;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease,
+    transform 0.08s ease;
+}
+
+/* Clearer on hover, but never competing with the stage ahead. */
+.replaybtn:hover {
+  opacity: 1;
+  background: var(--panel);
+}
+
+.replaybtn:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .replaybtn {
+    transition: none;
+  }
+  .replaybtn:active {
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   First-run coach.
+
+   A new account used to open onto twenty-three identical empty plots, which is the first thing
+   the game ever says and says nothing. This strip answers three questions — grow, fight,
+   progress — and removes itself once all three are true. Derived from saved progress, so there
+   is no "seen tutorial" flag that can disagree with what the player has actually done.
+   ========================================================================== */
+
+.coach {
+  position: relative;
+  padding: 13px 15px 14px;
+  margin-bottom: 12px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--panel) 0%, rgba(255, 247, 223, 0.86) 100%);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  overflow: hidden;
+}
+
+/* A single accent down the leading edge, so the strip reads as one object without needing a
+   heavy border or a drop shadow to say so. */
+.coach::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--accent-bright), var(--accent-fill));
+}
+
+.coach-list {
+  list-style: none;
+  margin: 9px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.coach-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0;
+}
+
+/* The marker is 20px, not a list bullet: it has to hold a check glyph and still line up with
+   two lines of text beside it. */
+.coach-mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: var(--panel-2);
+  color: transparent;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 16px;
+  text-align: center;
+}
+
+.coach-item.done .coach-mark {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: #fff;
+}
+
+.coach-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.coach-title {
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+/* Finished steps keep their text but drop most of their weight: the point is to show progress
+   without re-asking for something already done. */
+.coach-item.done .coach-title {
+  color: var(--accent);
+  opacity: 0.62;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.coach-how {
+  font-size: 12.5px;
+  line-height: 1.42;
+  color: var(--text);
+}
+
+.coach-item.done .coach-how,
+.coach-item.done .coach-where {
+  opacity: 0.45;
+}
+
+.coach-where {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent-fill);
+}
+
+/* The one step still open. Only this is marked — three equally-weighted steps is how a coach
+   strip becomes wallpaper. */
+.coach.has-next .coach-item:not(.done) .coach-mark {
+  border-color: var(--accent-bright);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(57, 171, 112, 0.2);
+}
+
+.coach.has-next .coach-item:not(.done) .coach-title {
+  color: var(--accent-fill);
+}
+
+@media (min-width: 720px) {
+  /* Side by side once there is room: three steps stacked on a 900px frame wastes the width and
+     pushes the plots — the thing being explained — below the fold. */
+  .coach-list {
+    flex-direction: row;
+    gap: 14px;
+  }
+
+  .coach-item {
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .coach-where {
+    margin-top: auto;
   }
 }

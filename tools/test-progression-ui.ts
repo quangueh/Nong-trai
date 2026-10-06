@@ -142,13 +142,32 @@ const b = await chromium.launch();
 
   /* Result, mid-count and finished. */
   await page.waitForFunction(`(() => Boolean(document.querySelector(".stagelive-panel")))()`, { timeout: 120000 });
-  await page.waitForTimeout(420);
+
+  /*
+   * Caught *during* the count, not 420ms after the panel appeared.
+   *
+   * A fixed offset cannot observe a transition. Under `npm test`, with every other suite
+   * loading the dev server, the sleep plus the round trip stretched past the end of the tally,
+   * so the button had already unlocked and this reported `false` for a button that was, in
+   * fact, held correctly. The tally is the state under test, so the test waits for the tally:
+   * the first moment a tally row exists is the first moment counting is happening.
+   */
+  const mid = (await page.evaluate(`(async () => {
+    const until = performance.now() + 8000;
+    while (performance.now() < until) {
+      const rows = document.querySelectorAll(".stagelive-tally-row").length;
+      if (rows > 0) {
+        const b = document.querySelector(".stagelive .btn.primary");
+        return { disabled: b ? b.disabled : null, rows, caught: true };
+      }
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    const b = document.querySelector(".stagelive .btn.primary");
+    return { disabled: b ? b.disabled : null, rows: 0, caught: false };
+  })()`)) as Record<string, unknown>;
   await page.screenshot({ path: "shots/progress/desktop-4-counting.png" });
 
-  const mid = (await page.evaluate(`(() => {
-    const b = document.querySelector(".stagelive .btn.primary");
-    return { disabled: b ? b.disabled : null, rows: document.querySelectorAll(".stagelive-tally-row").length };
-  })()`)) as Record<string, unknown>;
+  check("the tally was caught while it was still counting", mid.caught === true, JSON.stringify(mid));
   check("the continue button is held while the tally counts", mid.disabled === true, `${mid.disabled}`);
   check("the tally has rows to count", (mid.rows as number) > 0, `${mid.rows}`);
 

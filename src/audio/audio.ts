@@ -52,12 +52,19 @@ export interface PlayOpts {
   pitch?: number;
 }
 
+import { clampVolume, setVolume as setPrefVolume, volume as prefsVolume } from "../core/prefs";
+
 const STORAGE_KEY = "nongtrai.muted";
 
-/** True when the player asked for less motion; also the right default for volume. */
-export function reducedMotion(): boolean {
-  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
+/**
+ * Re-exported rather than redefined.
+ *
+ * This was a second, independent reading of the OS preference, alongside copies in
+ * `battle/juice.ts` and inline in `battle/battleFx.ts`. Three answers to one question meant
+ * a player could not turn motion off without also losing it in places nobody had visited yet.
+ * `core/prefs` owns the answer; everyone asks it there.
+ */
+export { reducedMotion } from "../core/prefs";
 
 class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -66,8 +73,15 @@ class AudioEngine {
   private built = false;
 
   muted = false;
-  /** 0..1, exposed so the settings screen can drive it without touching Web Audio. */
-  volume = 0.75;
+  /**
+   * 0..1.
+   *
+   * Seeded from the player's saved preference and always written through `setVolume`, which
+   * persists it and ramps the master gain. Assigning this field directly still works but skips
+   * both, so the settings screen goes through the setter — that is what the original comment
+   * on this line promised and what never happened.
+   */
+  volume = prefsVolume();
 
   constructor() {
     if (typeof localStorage === "undefined") return;
@@ -152,6 +166,28 @@ class AudioEngine {
       // Ramp rather than jump, so toggling does not click.
       master.gain.cancelScheduledValues(ctx.currentTime);
       master.gain.setTargetAtTime(muted ? 0 : this.volume, ctx.currentTime, 0.02);
+    }
+  }
+
+  /**
+   * Set the volume, persist it, and hear it change now.
+   *
+   * The three halves are the point. Persisting without applying would leave the slider showing
+   * a number the game is not playing at; applying without persisting would forget it on
+   * reload; neither together would make the control feel connected to anything, which is how a
+   * volume slider ends up looking broken even when it "works".
+   *
+   * Ramps like `setMuted` does, because a gain that jumps is a click, and a click every time
+   * someone drags the slider is the fastest way to make them stop dragging it.
+   */
+  setVolume(v: number): void {
+    this.volume = clampVolume(v);
+    setPrefVolume(this.volume);
+    if (this.master && this.ctx) {
+      const ctx = this.ctx;
+      const master = this.master;
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.setTargetAtTime(this.muted ? 0 : this.volume, ctx.currentTime, 0.03);
     }
   }
 

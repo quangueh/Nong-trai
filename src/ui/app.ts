@@ -1,6 +1,7 @@
 /** App shell: top bar, screen router, bottom nav. */
 
 import { GameStore, resetSave, type Notice } from "../core/store";
+import { motionPref, setMotionPref, type MotionPref } from "../core/prefs";
 import { el, toast, seedIcon } from "./components";
 import { renderGarden } from "./screens/garden";
 import { renderCollection } from "./screens/collection";
@@ -184,6 +185,9 @@ function openSettings(): void {
     if (!sfx.muted) sfx.play("tap");
     toast(sfx.muted ? "Đã tắt âm thanh." : "Đã bật âm thanh.");
     paintSound();
+    // The slider's caption says "Đang tắt" while muted, so it has to be told about the mute
+    // or the two controls disagree about the state of the same thing.
+    paintVolume();
   });
 
   const wipe = el("button", { class: "btn ghost wide", style: "margin-top:14px;color:#8a3a2a" }, [
@@ -200,7 +204,84 @@ function openSettings(): void {
     location.reload();
   });
 
-  body.append(accountRow, soundRow, wipe);
+  /**
+   * Volume.
+   *
+   * A slider rather than another on/off row, because "sound" is not a yes/no question: a
+   * player who finds the fight effects loud wants them quieter, not gone. Mute stays as its
+   * own row above for the player who wants silence.
+   *
+   * Wired through `sfx.setVolume`, which persists and ramps the live gain. Assigning
+   * `sfx.volume` directly would move the handle and change nothing you can hear — which is the
+   * specific failure this control is here to not have.
+   */
+  const volumeWrap = el("div", { class: "account-volume" });
+  const volumeLabel = el("span", { class: "tiny muted" }, []);
+  const volumeInput = el("input", {
+    type: "range",
+    min: "0",
+    max: "100",
+    step: "5",
+    class: "volumeslider",
+    "aria-label": "Âm lượng",
+  }) as HTMLInputElement;
+  const paintVolume = (): void => {
+    volumeInput.value = String(Math.round(sfx.volume * 100));
+    volumeLabel.textContent = sfx.muted ? "Đang tắt" : `${Math.round(sfx.volume * 100)}%`;
+  };
+  volumeInput.addEventListener("input", () => {
+    // Apply live rather than on release: dragging should be audible as it happens, or the
+    // player is adjusting a number rather than a volume.
+    sfx.setVolume(Number(volumeInput.value) / 100);
+    paintVolume();
+  });
+  volumeInput.addEventListener("change", () => {
+    // One sample at the settled value, so unmuting later has something to come back to.
+    sfx.play("tap");
+  });
+  volumeWrap.append(
+    el("div", { class: "row between" }, [el("b", {}, ["Âm lượng"]), volumeLabel]),
+    volumeInput,
+  );
+  paintVolume();
+
+  /**
+   * Motion.
+   *
+   * Three states rather than a switch, because "follow the system" and "no, I want it on"
+   * are different answers and a boolean cannot hold both. The label says which one is in
+   * force, and naming the current value is the whole difference between a setting the player
+   * understands and one they toggle hopefully.
+   */
+  const MOTION_CYCLE: Array<{ pref: MotionPref; label: string; hint: string }> = [
+    { pref: "system", label: "Theo hệ thống", hint: "Tự theo thiết lập của thiết bị." },
+    { pref: "full", label: "Đầy đủ", hint: "Luôn có hiệu ứng chuyển động." },
+    { pref: "reduce", label: "Giảm chuyển động", hint: "Tắt rung màn hình và các chuyển động lớn." },
+  ];
+  const motionRow = el("button", { class: "account-rowbtn" });
+  const paintMotion = (): void => {
+    const cur = MOTION_CYCLE.find((m) => m.pref === motionPref()) ?? MOTION_CYCLE[0];
+    motionRow.replaceChildren(
+      el("span", { class: "grow" }, [
+        el("b", {}, ["Chuyển động"]),
+        el("div", { class: "tiny muted" }, [cur.hint]),
+      ]),
+      el("span", { class: "account-value" }, [cur.label]),
+    );
+  };
+  motionRow.addEventListener("click", () => {
+    const now = motionPref();
+    const i = MOTION_CYCLE.findIndex((m) => m.pref === now);
+    setMotionPref(MOTION_CYCLE[(i + 1) % MOTION_CYCLE.length].pref);
+    paintMotion();
+    // A confirmation sound rather than a preview of the motion itself: a motion preference
+    // read by *moving* things would be the wrong moment to start moving them.
+    sfx.play("tap");
+    toast(`Chuyển động: ${MOTION_CYCLE[(i + 1) % MOTION_CYCLE.length].label.toLowerCase()}.`);
+  });
+  paintMotion();
+
+  body.append(accountRow, soundRow, volumeWrap, motionRow, wipe);
 
   const close = (): void => {
     offAccount();

@@ -16,6 +16,7 @@
  */
 
 import { el } from "../ui/components";
+import { reducedMotion } from "../core/prefs";
 import type { Delivery, EffectKind } from "../config/skills";
 import { DELIVERIES } from "../config/skills";
 import type { ElementId } from "../config/elements";
@@ -497,7 +498,10 @@ export class FxLayer {
    * drift apart.
    */
   shake(ms: number): void {
-    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // Asked through `core/prefs` rather than by reading the OS here, so this shake stands
+    // down for a player who turned motion off in settings, not only for one whose operating
+    // system asks for it. The third and last independent copy of this test.
+    if (reducedMotion()) return;
     const now = performance.now();
     if (now < this.shakeUntil) return;
     this.shakeUntil = now + ms;

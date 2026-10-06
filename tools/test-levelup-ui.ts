@@ -87,15 +87,31 @@ const b = await chromium.launch();
     s.addPlantXp(p, 5000);
   })()`);
   /*
-   * Sampled early on purpose. The particles live about a second, and every round trip to
-   * the page costs real time, so a sample at 900ms lands *after* the animation has finished
-   * and reports zero particles for a burst that plainly happened. The first version of this
-   * check did exactly that and concluded the VFX was broken.
+   * The spark count is *polled*, not sampled once.
+   *
+   * This suite has now failed this check three different ways, and all three were the same
+   * mistake: reading a transient animation at one guessed instant. At 900ms it read after the
+   * burst had ended and reported zero for an animation that plainly happened. Moving it to
+   * 260ms fixed that — until `npm test` had twenty other suites loading the same dev server,
+   * the round trip stretched, and the read landed past the burst again.
+   *
+   * A sample cannot tell "no particles were created" from "I looked too late". Polling inside
+   * the page, from the moment the panel appears and keeping the maximum, measures the thing
+   * that exists — the peak — instead of guessing when to look at it.
    */
-  await page.waitForTimeout(260);
+  await page.waitForTimeout(120);
   await page.screenshot({ path: "shots/levelup/one-level.png" });
 
-  const panel = (await page.evaluate(`(() => {
+  const panel = (await page.evaluate(`(async () => {
+    // Watch for the burst's whole life, starting now, and keep the highest count seen.
+    let peak = 0;
+    const until = performance.now() + 2500;
+    while (performance.now() < until) {
+      const n = document.querySelectorAll(".lvlup-spark").length;
+      if (n > peak) peak = n;
+      if (peak > 0 && performance.now() > until - 1800) break;  // seen it, no need to wait out the clock
+      await new Promise((r) => requestAnimationFrame(r));
+    }
     const p = document.querySelector(".lvlup-panel");
     if (!p) return null;
     return {
@@ -103,7 +119,7 @@ const b = await chromium.launch();
       level: p.querySelector(".lvlup-level")?.textContent ?? "",
       exp: p.querySelector(".lvlup-exp")?.textContent ?? "",
       rewards: [...document.querySelectorAll(".lvlup-reward b")].map((n) => n.textContent),
-      sparks: document.querySelectorAll(".lvlup-spark").length,
+      sparks: peak,
       barWidth: Math.round(parseFloat(getComputedStyle(document.querySelector(".lvlup-bar i")).width || "0")),
       hasButton: Boolean(p.querySelector(".btn.primary")),
     };
