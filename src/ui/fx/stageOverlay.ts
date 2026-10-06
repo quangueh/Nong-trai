@@ -31,6 +31,7 @@ import type { StageBrief, StageReward } from "../../pve";
 import type { MonsterSpec } from "../../pve";
 import { celebrateLevelUp, rewardsFromMilestones } from "./levelUp";
 import { milestoneForLevel, previewPlantGain, xpRemainingText, plantSnapshot } from "../../progression/levels";
+import { stageIdentity } from "../../pve/stages";
 import type { Plant } from "../../core/types";
 
 /** How long one tally line takes to count. */
@@ -45,6 +46,14 @@ export interface StageOutcome {
   nextUnlocked?: number;
   /** The plant that fought, so the result can name it and preview its own EXP. */
   fighter: Plant;
+  /**
+   * The stage's power as a share of this account's best plant, for the outlook line.
+   *
+   * Passed rather than recomputed because the ladder's "this is 52% of your strongest"
+   * figure is a function of the *chosen* plant, and a result screen that recomputed it from
+   * the store's best fighter would contradict the brief the player agreed to ten seconds ago.
+   */
+  share?: number;
 }
 
 /**
@@ -57,30 +66,35 @@ export interface StageOutcome {
 export function showStageResult(out: StageOutcome, onContinue: () => void): Promise<void> {
   const calm = reducedMotion();
   const overlay = el("div", { class: `stagelive${calm ? " is-calm" : ""}${out.won ? " is-win" : " is-lose"}`, role: "status" });
+  const identity = stageIdentity(out.stage, out.share ?? 1);
 
   const panel = el("div", { class: "stagelive-panel" });
   overlay.appendChild(panel);
 
   panel.append(
     el("div", { class: "stagelive-mark" }, [out.won ? "🏆" : "💀"]),
-    el("div", { class: "stagelive-title" }, [out.won ? `Vượt ải ${out.stage}!` : `Thua ở ải ${out.stage}`]),
-    el("div", { class: "stagelive-sub" }, [`${out.fighter.name}  ·  ${out.monster.name}`]),
+    el("div", { class: "stagelive-title" }, [out.won ? `Vượt ${identity.name}` : `Thua ở ${identity.name}`]),
+    el("div", { class: "stagelive-sub" }, [`Ải ${out.stage} · ${identity.bandLabel} · ${out.fighter.name} vs ${out.monster.name}`]),
   );
 
   /*
-   * The objective, restated.
+   * The objective, restated — and this time it is the stage's *own* conditions, read from
+   * `stageIdentity` rather than written out again here.
    *
-   * Because the fight is resolved before this panel exists, the player has no other way to
-   * find out what they were asked to do. On a win it confirms the rule; on a loss it is the
-   * most useful line on the screen, because it is the answer to "why did that happen".
+   * Two reasons it matters more than it looks. First, because the fight is resolved before
+   * this panel exists, so the player has no other way to find out what they were asked to.
+   * Second, because on a loss this is the most useful line on the screen: it is the answer
+   * to "why did that happen" — and the timeout rule in particular explains a loss that looks
+   * inexplicable, because their plant was still standing.
    */
   panel.appendChild(
     el("div", { class: "stagelive-goal" }, [
-      el("span", { class: "stagelive-goal-label" }, ["Mục tiêu"]),
-      el("span", {}, ["Hạ gục quái thủ"]),
+      el("span", { class: "stagelive-goal-label" }, ["Luật"]),
+      el("span", {}, [identity.conditions.win]),
       el("span", { class: "stagelive-goal-result" }, [out.won ? "✔ Đạt" : "✘ Chưa đạt"]),
     ]),
   );
+  panel.appendChild(el("div", { class: "stagelive-rule tiny muted" }, [identity.conditions.timeout]));
 
   /* The tally. Built once, counted with `textContent`, so the number that lands is the
      number that was paid. */
@@ -229,25 +243,56 @@ export function showStageResult(out: StageOutcome, onContinue: () => void): Prom
 export function showStageBrief(brief: StageBrief, monster: MonsterSpec, fighter: Plant | null, onFight: () => void): void {
   const overlay = el("div", { class: "stagebrief", role: "dialog" });
   const panel = el("div", { class: "stagebrief-panel" });
+  const id = stageIdentity(brief.index, brief.share);
 
   panel.append(
-    el("div", { class: "stagebrief-title" }, [`Ải ${brief.index}`]),
+    el("div", { class: "stagebrief-title" }, [`Ải ${brief.index} · ${id.bandLabel}`]),
+    el("div", { class: "stagebrief-name" }, [id.name]),
     el("div", { class: "stagebrief-monster" }, [monster.name]),
     el("div", { class: "stagebrief-meta tiny muted" }, [
-      `${monster.rarity} · ${monster.power} lực · ${Math.round(brief.share * 100)}% sức mạnh của bạn`,
+      `${monster.rarity} · ${monster.power} lực · ${Math.round(brief.share * 100)}% sức mạnh cây của bạn`,
     ]),
   );
 
+  /*
+   * Difficulty, split into the part that is a property of the stage and the part that is a
+   * property of *this* account against it.
+   *
+   * "Khó" alone tells a player nothing they can act on — stage 20 is a formality for a bred
+   * garden and a wall for a new one. The outlook is the answerable half, and it comes from
+   * the same `share` the power figure above prints, so the two cannot disagree.
+   */
+  panel.appendChild(
+    el(
+      "div",
+      { class: `stagebrief-diff is-${id.difficulty.outlook}` },
+      [
+        el("span", { class: "stagebrief-diff-label tiny muted" }, ["Độ khó"]),
+        el("span", { class: "stagebrief-diff-value" }, [id.difficulty.label]),
+        el("span", { class: "stagebrief-diff-outlook" }, [id.difficulty.outlookLabel]),
+      ],
+    ),
+  );
+
   const rows: [string, string][] = [
-    ["🎯", "Hạ gục quái thủ này"],
-    ["⚔", "Thua nếu cây của bạn bị hạ trước"],
-    ["⏱", "90 giây, không giới hạn lượt đánh"],
+    ["🎯", id.conditions.win],
+    ["⚔", id.conditions.lose],
+    ["⏱", id.conditions.timeout],
   ];
   const goal = el("div", { class: "stagebrief-rows" });
   for (const [icon, text] of rows) {
     goal.appendChild(el("div", { class: "stagebrief-row" }, [el("span", {}, [icon]), el("span", { class: "grow" }, [text])]));
   }
   panel.appendChild(goal);
+
+  if (id.conditions.hazard) {
+    panel.appendChild(
+      el("div", { class: "stagebrief-hazard" }, [
+        el("b", {}, [id.conditions.hazard.name]),
+        el("span", { class: "tiny muted" }, [id.conditions.hazard.gloss]),
+      ]),
+    );
+  }
 
   /* The payout, and — the part that was missing — what the EXP will become. A player
      deciding whether a fight is worth the risk needs "will this level me", not "this gives

@@ -1149,6 +1149,15 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     reward?: StageReward;
     drops?: DropRoll[];
     nextUnlocked?: number;
+    /**
+     * The seed the fight was settled with, so the screen can replay the same one.
+     *
+     * Returned rather than recomputed by the caller because the seed mixes the two plant
+     * ids, the stage and the clock, and a caller that rebuilt it would have to guess all
+     * four. `BattleView` used to generate its own seed from `Date.now()` and therefore ran
+     * a *different* fight from the one this recorded — see `simulateBattle`.
+     */
+    seed?: string;
   } {
     const me = this.get(plantId);
     if (!me) return { ok: false, reason: "Không tìm thấy cây" };
@@ -1165,8 +1174,17 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     // an outcome. The screen replays this event log rather than running its own battle - two
     // fights with two seeds would settle differently, and a player who watched a fight they
     // won get marked as a loss is not coming back.
+    /*
+     * Captured before the fight rather than inlined.
+     *
+     * The screen builds a `BattleView` from this seed so the fight the player watches is
+     * the fight that was settled. Reading the clock twice would give two different seeds
+     * and quietly reintroduce the exact bug this replaces, which is why it is hoisted into
+     * a local: one value, used by both.
+     */
+    const seed = seedToken(me.plantId, monster.plant.plantId, stage, Date.now());
     const result = simulateBattle(me, monster.plant, {
-      seed: seedToken(me.plantId, monster.plant.plantId, stage, Date.now()),
+      seed,
       maxSeconds: 90,
       arena: "sunny",
     });
@@ -1223,7 +1241,7 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
       body: `${monster.name} · +${reward.leafCoin} 🪙` + (levels > 0 ? ` · ${me.name} lên ${levels} cấp` : ""),
     });
 
-    return { ok: true, result, won, monster, reward, drops, nextUnlocked };
+    return { ok: true, result, won, monster, reward, drops, nextUnlocked, seed };
   }
 
   runQuickBattle(plantId: string, opponent: Plant): { result: BattleResult; won: boolean } {

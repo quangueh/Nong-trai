@@ -37,6 +37,22 @@ export interface BattleViewOptions {
   maxSeconds?: number;
   interactive?: boolean;
   /**
+   * The seed the fight was already settled with, so this replays that fight instead of
+   * running a second one.
+   *
+   * Supplied by anything that has already decided an outcome — the ladder passes the seed
+   * `runAscentStage` returned. Omitted only when the view *is* the decision, which is the
+   * arena, where the player's own inputs are part of the result.
+   */
+  seed?: string;
+  /**
+   * Stances to open with, when the caller already fixed them.
+   *
+   * Part of the same contract as `seed`: the store settles with the default stances, so a
+   * replay that opened on anything else would diverge from tick one.
+   */
+  stances?: { a: Stance; b: Stance };
+  /**
    * Draw the arena without the stance row, the skill bar or the speed controls.
    *
    * For a fight that is being watched rather than played - the PvE ladder, and a duel that
@@ -157,10 +173,23 @@ export class BattleView {
   constructor(opts: BattleViewOptions) {
     this.opts = opts;
     this.maxSeconds = opts.maxSeconds ?? 90;
+    /*
+     * The seed the caller settled the fight with, when it has one.
+     *
+     * This is what makes a stage result honest. The view used to mint its own seed from
+     * `Date.now()`, so the fight on screen and the fight the store had already paid for
+     * were two different fights with the same participants — and, because the two engines
+     * had drifted, they did not even agree on who won. A player could watch themselves win
+     * a ladder stage and be told they lost.
+     *
+     * Passing the seed is only sufficient because there is now one engine. With two, an
+     * identical seed would still have produced two different event logs.
+     */
     this.session = new BattleSession(opts.plantA, opts.plantB, {
-      seed: `view:${opts.plantA.plantId}:${opts.plantB.plantId}:${Date.now()}`,
+      seed: opts.seed ?? `view:${opts.plantA.plantId}:${opts.plantB.plantId}:${Date.now()}`,
       maxSeconds: this.maxSeconds,
       arena: "sunny",
+      ...(opts.stances ? { stances: opts.stances } : {}),
     });
     this.build();
   }

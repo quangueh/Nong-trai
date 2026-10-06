@@ -10,7 +10,7 @@
     "preview": "vite preview --port 4173",
     "verify:prod": "tsx tools/verify-prod.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
-    "test": "npm run test:core && npm run test:species && npm run test:planting && npm run test:juice && npm run test:morph && npm run test:journey && npm run test:quests && npm run test:art && npm run test:ui && npm run test:room && npm run test:ascent && npm run test:progression && npm run test:levelup && npm run test:auth && npm run test:auth-gate && npm run test:signin && npm run test:protocols && npm run test:streak && npm run test:names && npm run test:levels && npm run test:slots && npm run test:economy && npm run test:shop && npm run test:shop-sort && npm run test:social && npm run test:google && npm run test:gate",
+    "test": "npm run test:core && npm run test:species && npm run test:planting && npm run test:juice && npm run test:morph && npm run test:journey && npm run test:quests && npm run test:art && npm run test:ui && npm run test:room && npm run test:ascent && npm run test:ascent-life && npm run test:progression && npm run test:levelup && npm run test:auth && npm run test:auth-gate && npm run test:signin && npm run test:protocols && npm run test:streak && npm run test:names && npm run test:levels && npm run test:slots && npm run test:economy && npm run test:shop && npm run test:shop-sort && npm run test:social && npm run test:google && npm run test:gate",
     "test:core": "tsx tools/test-determinism.ts",
     "diag:registry": "tsx tools/diag-registry.ts",
     "test:species": "tsx tools/test-species.ts",
@@ -51,7 +51,8 @@
     "test:levelup": "tsx tools/test-levelup-ui.ts",
     "audit:progress": "tsx tools/audit-full.ts",
     "test:auth-gate": "tsx tools/test-auth-gate.ts",
-    "test:signin": "tsx tools/test-signin-flow.ts"
+    "test:signin": "tsx tools/test-signin-flow.ts",
+    "test:ascent-life": "tsx tools/test-ascent-lifecycle.ts"
   },
   "devDependencies": {
     "@types/jsdom": "^30.0.0",

@@ -17,6 +17,7 @@
  *   9. the top bar's EXP figures, on both widths
  */
 import { chromium, type Browser, type Page } from "playwright-core";
+import { stageIdentity } from "../src/pve/stages";
 import { mkdirSync } from "node:fs";
 
 mkdirSync("shots/progress", { recursive: true });
@@ -111,10 +112,25 @@ const b = await chromium.launch();
   })()`)) as Record<string, unknown> | null;
   console.log(`  brief: ${brief ? String(brief.text).slice(0, 190) : "MISSING"}`);
   check("the brief opens", brief !== null);
-  check("it states the win condition", String(brief?.text ?? "").includes("Hạ gục"), `${brief?.rows}`);
-  check("and the lose condition", String(brief?.text ?? "").includes("Thua"));
-  check("and the payout", String(brief?.text ?? "").includes("Phần thưởng"));
+  /*
+   * Asserted against `stageIdentity` rather than against literal strings.
+   *
+   * These three checks used to look for "Hạ gục", "Thua" and "Mục tiêu" — text this file
+   * had written by hand once. They broke the moment the rules moved into `pve/stages.ts`,
+   * where they belong, which is the correct outcome: the copy has one home now. Comparing
+   * against that home means this test cannot drift from it again, and a rule that stops being
+   * shown on the brief is still a failure here.
+   */
+  const rules = stageIdentity(20, 1).conditions;
+  check("it states the win condition", String(brief?.text ?? "").includes(rules.win), String(brief?.rows));
+  check("and the lose condition", String(brief?.text ?? "").includes(rules.lose));
+  check(
+    "and the timeout rule, which is the one that explains an unexplainable loss",
+    String(brief?.text ?? "").includes(rules.timeout),
+    rules.timeout,
+  );
   check("and previews the EXP before the fight", brief?.hasXp === true, String(brief?.xpText));
+  check("and names the stage rather than only numbering it", String(brief?.text ?? "").includes(stageIdentity(20, 1).name), stageIdentity(20, 1).name);
 
   /* Fight. */
   await page.evaluate(`(() => {
@@ -150,7 +166,7 @@ const b = await chromium.launch();
   })()`)) as Record<string, unknown>;
   console.log(`  result: ${String(after.text).slice(0, 230)}`);
   check("the button unlocks once the tally is done", after.disabled === false);
-  check("the objective is restated on the result", String(after.text).includes("Mục tiêu"));
+  check("the objective is restated on the result", String(after.text).includes(stageIdentity(20, 1).conditions.win), stageIdentity(20, 1).conditions.win);
   check("and the EXP is shown for the plant", String(after.text).includes("EXP"), String(after.xp));
 
   /* Continue, and catch the celebration if this fight levelled the plant. */

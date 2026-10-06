@@ -58,7 +58,7 @@
  * Stage 1 sits at 150 so that a brand new account - holding a fresh plant at 237 - wins it
  * comfortably. That first stage has to be winnable by someone who has never fought anything.
  */
-const FIRST_STAGE_POWER = 150;
+export const FIRST_STAGE_POWER = 150;
 
 /**
  * How much each stage adds.
@@ -115,7 +115,7 @@ const LADDER_TOP_POWER = 1300;
  * so the first stage stays winnable for a new account and the last stays reachable for a
  * maxed one. At today's numbers it comes out near 3.7% a stage.
  */
-const STAGE_GROWTH = Math.pow(LADDER_TOP_POWER / FIRST_STAGE_POWER, 1 / (STAT_LADDER_END - 1));
+export const STAGE_GROWTH = Math.pow(LADDER_TOP_POWER / FIRST_STAGE_POWER, 1 / (STAT_LADDER_END - 1));
 
 /**
  * Daily escalation: how much stronger the world is for each distinct day played.
@@ -471,13 +471,52 @@ export function stageAffixes(playerId: string, stage: number, dayIndex: number):
   // just a gap where the difficulty stalls flat - measured, stage 61 and stage 62 came out
   // with no affix while stage 63 had one.
   const from = stage - STAT_LADDER_END;
-  const count = Math.min(AFFIX_MAX, 1 + Math.floor((from - 1) / AFFIX_EVERY) + Math.floor(dayIndex / 7));
+  const raw = 1 + Math.floor((from - 1) / AFFIX_EVERY) + Math.floor(dayIndex / 7);
+  /*
+   * Past the pool size the count stops climbing and starts oscillating just under the cap.
+   *
+   * Pinning it at exactly `AFFIX_MAX` was the real cause of the tail being one fight
+   * repeated: with a 20-entry pool and a count of 20, every deep stage drew *all twenty*, so
+   * the composition was fixed and only the array order varied. Letting it ride at 18, 19, 20
+   * instead means consecutive deep stages genuinely differ in *which* affixes are present,
+   * not merely in what order they are listed — and `monster.ts` reads that order with
+   * `.find()`, so the ordering was load-bearing all along.
+   *
+   * A ±10% swing in the affix load is well inside the band the tail already sits in, so this
+   * varies the fight without moving the power envelope: the power curve is flat here by
+   * design and stays flat.
+   */
+  const count = raw <= AFFIX_MAX ? raw : AFFIX_MAX - (from % 3);
   if (count <= 0) return [];
   const rng = mulberry(`${playerId}|ascent|affix|${stage}`);
-  const pool = [...AFFIXES];
+  /*
+   * Cycled sampling.
+   *
+   * Shuffle once, then walk the shuffled deck repeatedly, reshuffling on every wrap. Two
+   * stages therefore never draw the same *order*, and once the count exceeds the pool the
+   * count no longer has to be the thing that varies — the combination does, which is what
+   * `monster.ts` turns into genes.
+   *
+   * The alternative, letting the count grow past the pool, was rejected on evidence: player
+   * power is capped near 1089 and `solveToPower` trades HP for abilities, so a deeper stage
+   * that asks for more power is not a harder stage, it is an unwinnable one. Variety has to
+   * come from *which* affixes and in what order.
+   */
+  let deck: AscentAffix[] = [];
   const out: AscentAffix[] = [];
-  for (let i = 0; i < count && pool.length; i++) {
-    out.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+  for (let i = 0; i < count; i++) {
+    if (deck.length === 0) {
+      deck = [...AFFIXES];
+      // Fisher-Yates on the stage's own seeded generator, so the order is stable for a
+      // given stage and different for every other one.
+      for (let j = deck.length - 1; j > 0; j--) {
+        const k = Math.floor(rng() * (j + 1));
+        const tmp = deck[j];
+        deck[j] = deck[k];
+        deck[k] = tmp;
+      }
+    }
+    out.push(deck.shift() as AscentAffix);
   }
   return out;
 }

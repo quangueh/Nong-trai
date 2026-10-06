@@ -378,3 +378,140 @@
     transition: none;
   }
 }
+
+/* ==========================================================================
+   Stage identity: name, band, difficulty, conditions.
+
+   Added for `src/pve/stages.ts`. The name is the largest element on the brief and the
+   result because it is the thing a player will refer to afterwards — "I beat Giới Sắt"
+   is a sentence somebody can say, and "I beat stage 64" is not.
+
+   Kept out of the main stylesheet because these belong to the stage overlays, and the
+   overlays already have their own file for the same reason.
+   ========================================================================== */
+
+/* --- the brief ----------------------------------------------------------- */
+
+.stagebrief-name {
+  font-size: 21px;
+  font-weight: 900;
+  margin-top: 2px;
+  letter-spacing: 0.01em;
+}
+
+/* Difficulty, with the outlook tinted.
+
+   Two halves on purpose: the label is a property of the stage, the outlook is a property of
+   this account against it. Tinting only the outlook is what makes the tint useful — a stage
+   rated "Rất khó" that reads green for a bred account is reassuring, and the same stage
+   red for a new one is a warning. Colouring the whole row would throw that away. */
+.stagebrief-diff {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(47, 159, 98, 0.07);
+  border: 1px solid rgba(47, 159, 98, 0.16);
+}
+
+.stagebrief-diff-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+}
+
+.stagebrief-diff-value {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.stagebrief-diff-outlook {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.stagebrief-diff.is-easy {
+  background: rgba(47, 159, 98, 0.13);
+  border-color: rgba(47, 159, 98, 0.3);
+}
+
+.stagebrief-diff.is-easy .stagebrief-diff-outlook {
+  color: #1f7a48;
+}
+
+.stagebrief-diff.is-fair .stagebrief-diff-outlook {
+  color: #8a6d1f;
+}
+
+.stagebrief-diff.is-hard {
+  background: rgba(190, 70, 55, 0.11);
+  border-color: rgba(190, 70, 55, 0.28);
+}
+
+.stagebrief-diff.is-hard .stagebrief-diff-outlook {
+  color: #a8402f;
+}
+
+/* The band's twist. A caption rather than a mechanic readout: it is the one line that says
+   why this band is different from the last, and it has to be readable before the fight
+   rather than discovered during it. */
+.stagebrief-hazard {
+  display: grid;
+  gap: 2px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 11px;
+  background: rgba(190, 120, 40, 0.11);
+  border: 1px solid rgba(190, 120, 40, 0.24);
+}
+
+.stagebrief-hazard b {
+  font-size: 12.5px;
+  color: #8a5a1c;
+}
+
+/* --- the result ---------------------------------------------------------- */
+
+/* The timeout rule, on its own line under the objective block.
+
+   Given a full line because it is the rule that explains the losses nobody can otherwise
+   account for: a fight that ran out of clock with both plants standing reads as a bug until
+   you know how it is settled. */
+.stagelive-rule {
+  margin-top: 6px;
+  padding: 7px 11px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  text-align: left;
+}
+
+/* --- the map caption ------------------------------------------------------ */
+
+.stagemap-caption {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 2px;
+}
+
+.stagemap-caption-next {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.stagemap-caption-sub {
+  margin-left: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stagebrief-diff,
+  .stagebrief-hazard,
+  .stagelive-rule,
+  .stagemap-caption {
+    transition: none;
+  }
+}

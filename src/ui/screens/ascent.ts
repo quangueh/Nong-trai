@@ -23,6 +23,7 @@ import { sfx } from "../../audio/audio";
 import { renderPlantSvg } from "../../render/plantRenderer";
 import { BattleView } from "../../battle/battleView";
 import { showStageBrief, showStageResult } from "../fx/stageOverlay";
+import { stageIdentity } from "../../pve/stages";
 import { store } from "../app";
 import { ELEMENT_INFO } from "../../config/elements";
 import { ARCHETYPE_ROLE, TIER_META } from "../../config/balance";
@@ -108,17 +109,37 @@ export function renderAscent(_nav: Navigate): HTMLElement {
     const frontier = Math.max(1, ascent.highest + 1);
     const mapTop = Math.max(1, frontier - Math.floor(LOOKAHEAD / 2));
     const mapHost = el("div", { class: "stagemap" });
+
+    /*
+     * A caption above the map, because a row of numbers is a row of numbers.
+     *
+     * It answers the two questions a player opens this screen with — where am I, and what is
+     * the next one called — without a click. Both come from `stageIdentity`, so the caption,
+     * the brief and the result all call the same stage by the same name; the alternative was
+     * three surfaces each inventing a label, which is how a map ends up saying "Ải 22" while
+     * the fight it opens calls itself something else.
+     */
+    const nextId = stageIdentity(frontier, 1);
+    const caption = el("div", { class: "stagemap-caption" }, [
+      el("span", { class: "stagemap-caption-next" }, [`Tiếp theo: Ải ${frontier} — ${nextId.name}`]),
+      el("span", { class: "stagemap-caption-sub tiny muted" }, [`${nextId.bandLabel} · ${nextId.difficulty.label}`]),
+    ]);
+
     for (let s = mapTop; s < mapTop + LOOKAHEAD + 4; s++) {
       const cleared = s <= ascent.highest;
       const open = s <= ascent.highest + LOOKAHEAD;
       const isNow = s === frontier;
+      const sid = stageIdentity(s, 1);
+      const state = cleared ? "đã vượt" : open ? "có thể đánh" : `vượt ải ${frontier} để mở`;
       const cell = el("button", {
         class: "stagemap-cell" + (cleared ? " is-cleared" : "") + (isNow ? " is-now" : "") + (open ? "" : " is-locked"),
-        title: cleared
-          ? `Ải ${s}: đã vượt`
-          : open
-            ? `Ải ${s}: có thể đánh`
-            : `Ải ${s}: vượt ải ${frontier} để mở`,
+        /*
+         * The full answer in the tooltip — name, band, difficulty, state — because a cell is
+         * too small to print it and a player who wants to know what stage 30 *is* should not
+         * have to start a fight to find out.
+         */
+        title: `Ải ${s} — ${sid.name} · ${sid.bandLabel} · ${sid.difficulty.label} · ${state}`,
+        "aria-label": `Ải ${s}, ${sid.name}, ${state}`,
       }, [cleared ? "✓" : open ? `${s}` : "🔒"]);
       if (s === frontier) cell.appendChild(el("span", { class: "stagemap-now" }, ["đây"]));
       if (open) {
@@ -129,7 +150,11 @@ export function renderAscent(_nav: Navigate): HTMLElement {
       }
       mapHost.appendChild(cell);
     }
-    listHost.appendChild(mapHost);
+    // Caption then map, appended together. Calling `mapHost.before(...)` instead would have
+    // been a silent no-op: `before` needs a parent, and the map is not in the document until
+    // two lines later — which is exactly what the first version did, and the caption never
+    // appeared.
+    listHost.append(caption, mapHost);
 
     /* Anchored at the frontier, not centred on the record.
      *
@@ -298,6 +323,16 @@ export function renderAscent(_nav: Navigate): HTMLElement {
       return;
     }
 
+    /*
+     * This fight's share, measured against the plant actually chosen.
+     *
+     * The stage rows compute theirs from `store.bestFighter()`, so a player who picked a
+     * plant below their best was shown a reassuring "52% of your strongest" over a fight
+     * that was far harder than that. Measuring here, from the fighter and the monster about
+     * to fight, is the only place where the number describes the fight on screen.
+     */
+    const share = me.powerRating > 0 ? monster.power / me.powerRating : 1;
+
     /* The fight, with its own heading above the verdict card.
      *
      * Two things came out of looking at this rather than reading it. The verdict was in the
@@ -341,6 +376,15 @@ export function renderAscent(_nav: Navigate): HTMLElement {
       plantA: me,
       plantB: monster.plant,
       mySide: "a",
+      /*
+       * The seed the store settled with, so this is a replay rather than a second fight.
+       *
+       * Without it the view minted its own from `Date.now()` and the player watched a
+       * different fight from the one that had already been paid for. That was invisible
+       * while the two engines agreed by luck and became a coin flip once they drifted:
+       * measured at 25/40 identical winners.
+       */
+      seed: out.seed,
       interactive: false,
       hideControls: true,
       onFinish: () => {
@@ -353,6 +397,7 @@ export function renderAscent(_nav: Navigate): HTMLElement {
             drops: out.drops ?? [],
             nextUnlocked: out.nextUnlocked,
             fighter: me,
+            share,
           },
           () => {
             // Repainted from the store rather than navigated away, so the ladder comes back
