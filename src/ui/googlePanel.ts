@@ -21,7 +21,9 @@ import { sfx } from "../audio/audio";
 import {
   GoogleSignInError,
   GOOGLE_CLIENT_ID,
+  currentOrigin,
   googleFailureMessage,
+  googleScriptLoaded,
   googleSignInAvailable,
   onGoogleCredential,
   renderGoogleButton,
@@ -279,10 +281,33 @@ export function googlePanel(
       if (!painted) {
         // Google's own button did not appear, so the styled one stays and does the same
         // job through `requestGoogleIdToken`. A blocked render is then cosmetic rather
-        // than a missing feature, which is why nothing is announced — but the fallback
-        // has to be *already on screen* for that to be true, hence the separate child.
+        // than a missing feature — but the fallback has to be *already on screen* for that
+        // to be true, hence the separate child.
         inner.remove();
         action.title = "Nút Google chưa tải được; dùng nút này.";
+
+        /*
+         * Say which failure this was, because the two need opposite responses.
+         *
+         * `renderGoogleButton` returns false for "the script never arrived" *and* for
+         * "the script arrived and refused". Those are different problems: the second is
+         * almost always the OAuth client not listing this address as an authorised origin,
+         * which logs `GSI_LOGGER: The given origin is not allowed for the given client ID`
+         * and leaves the player clicking a button that can never work — on any fallback,
+         * because `prompt()` goes through the same authorisation check.
+         *
+         * So when the script *did* load and only the render failed, say that, name the
+         * address, and point at the fix. The old caption ("Nút bên dưới gọi cùng một luồng")
+         * was true and useless: it promised the fallback would work, in the one case where
+         * it cannot.
+         */
+        if (googleScriptLoaded()) {
+          fallbackNote.textContent =
+            `Nút của Google không hiện được ở địa chỉ này (${currentOrigin()}). ` +
+            "Thường là do ứng dụng OAuth chưa cho phép origin này — thêm địa chỉ vào " +
+            "Authorized JavaScript origins trong Google Cloud Console. Tới lúc đó, hãy dùng email.";
+        }
+        fallbackNote.hidden = false;
         return;
       }
       action.hidden = true;

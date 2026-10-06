@@ -24,6 +24,7 @@
 import { el, toast } from "./components";
 import { sfx } from "../audio/audio";
 import { bypassOnce, gateState, graceDaysLeft, GRACE_DAYS } from "../account/gate";
+import { accountStatus, onAccountStatus } from "../account/sync";
 import { googlePanel } from "./googlePanel";
 import { buildEmailSignIn } from "./emailSignIn";
 import { accountServiceAvailable } from "../account/api";
@@ -31,6 +32,45 @@ import { accountServiceAvailable } from "../account/api";
 export interface SignInGateOptions {
   /** Called once the player is in, so the host can take the overlay down. */
   onEnter: () => void;
+}
+
+/**
+ * The gate currently on screen, if any.
+ *
+ * Module-level so that anything which establishes a session can stand the gate down —
+ * not only the closure `showSignInGateIfNeeded` handed to the panel it built.
+ *
+ * ## Why that matters
+ *
+ * Before this, the gate came down in exactly one way: `enter()`, the local closure passed
+ * into `googlePanel` as its `onSignedIn` callback. Any other path that produced a valid
+ * session left the login screen up over a signed-in player:
+ *
+ *   - the email form, which fires a `signed-in` event the gate listens for — that one worked
+ *   - the Google button's own credential path, which reached `complete()` and so `enter()`
+ *   - **anything else**, including the account sheet's sign-in, a session restored by a
+ *     background refresh, or a future sign-in route nobody has written yet
+ *
+ * That is the whole "signed in but stuck at the login screen" family of bug: the gate's
+ * dismissal was wired to *who told it to* rather than to *the fact of being signed in*. One
+ * forgotten callback and the player is locked out of a game they just proved they own, with
+ * no error anywhere.
+ *
+ * So the gate watches the session itself. Whoever signs the player in, the gate stands down.
+ */
+let liveGate: { overlay: HTMLElement; enter: () => void } | null = null;
+
+/**
+ * Stand the gate down, if it is up.
+ *
+ * Safe to call when there is no gate, and safe to call twice: the second call is a no-op.
+ * Every sign-in path calls it, which is the point — no path can be the one that forgets.
+ */
+export function dismissSignInGate(): void {
+  const gate = liveGate;
+  if (!gate) return;
+  liveGate = null;
+  gate.enter();
 }
 
 /**
@@ -58,10 +98,37 @@ export function showSignInGateIfNeeded(options: SignInGateOptions): void {
 let destroyGoogle = (): void => {};
 
   const enter = (): void => {
+    stopWatchingSession();
     destroyGoogle();
     overlay.remove();
+    if (liveGate?.overlay === overlay) liveGate = null;
     options.onEnter();
   };
+
+  /*
+   * Watch the session rather than trusting the caller.
+   *
+   * `onAccountStatus` fires the moment `adoptSession` reports a signed-in state — before
+   * the garden sync, before the panel's own `onSignedIn` — so the gate comes down on the
+   * fact of being signed in. The panel still calls `onEnter` directly for its own button;
+   * that is now redundant rather than load-bearing, which is the correct way round: the
+   * redundancy is the safety net, not the mechanism.
+   *
+   * Only a *transition* counts, never the initial value. `onAccountStatus` calls its
+   * listener immediately, and at the moment this gate is built the status can already
+   * name a signed-in player — one whose session is nonetheless lapsed, which is precisely
+   * why this gate exists. Reacting to the first value tore the gate down in the same tick
+   * it was created, so a lapsed player was waved straight in and never asked to sign in
+   * again. Caught by `test-auth-gate.ts`, and worth the comment.
+   */
+  let stopWatchingSession = (): void => {};
+  const hadSessionAtBuild = Boolean(accountStatus().email);
+  const watch = onAccountStatus((status) => {
+    if (status.email && !hadSessionAtBuild) enter();
+  });
+  stopWatchingSession = watch;
+
+  liveGate = { overlay, enter };
 
   const email = buildEmailSignIn();
   // The shared form announces its own success rather than taking a callback, so a host

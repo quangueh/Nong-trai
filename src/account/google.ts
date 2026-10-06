@@ -108,6 +108,39 @@ declare global {
 }
 
 /**
+ * Whether Google's script and namespace are actually present.
+ *
+ * Exists so the UI can tell two failures apart. `renderGoogleButton` returns one `false`
+ * for both "the script never arrived" — a blocked or offline network — and "the script
+ * arrived and the render was refused", which is nearly always an origin the OAuth client
+ * does not list. Those need different advice: the first is the player's network, the
+ * second is a configuration neither of them can fix from here.
+ *
+ * Deliberately reports only what it can see. It says nothing about whether Google would
+ * *accept* this origin, because the only evidence for that arrives asynchronously in a
+ * console message from a cross-origin frame.
+ */
+export function googleScriptLoaded(): boolean {
+  return typeof window !== "undefined" && Boolean(window.google?.accounts?.id);
+}
+
+/**
+ * The address the game is running on, for error messages about authorised origins.
+ *
+ * `location.host` rather than `location.origin` because the deployed game and a local
+ * preview differ in port as well as host, and the port is exactly the part someone forgets
+ * to add. Empty under a `file://` open, which the caller renders as such rather than
+ * printing an empty origin that looks like a bug in the message.
+ */
+export function currentOrigin(): string {
+  try {
+    return location.host || location.protocol;
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Load the GIS script once.
  *
  * Resolves to null if the script cannot be loaded, which is what a blocked or offline

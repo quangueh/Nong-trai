@@ -97,7 +97,7 @@ export function openAccount(): void {
       );
       return;
     }
-    if (isSignedIn()) renderSignedIn(body, render);
+    if (isSignedIn()) renderSignedIn(body, close);
     else renderSignedOut(body, render, registerPanel);
   };
 
@@ -189,7 +189,19 @@ function renderSignedOut(body: HTMLElement, render: () => void, registerPanel: (
   );
 }
 
-function renderSignedIn(body: HTMLElement, render: () => void): void {
+/**
+ * The signed-in sheet: sync controls, friends, sign out, password.
+ *
+ * `close` is passed in rather than imported because the sheet's teardown — the overlay, the
+ * status listener, the Google panel — lives in `openAccount`, and a sign-out that could not
+ * close the sheet it was pressed in would leave the player looking at a stale "đã đăng xuất"
+ * form sitting under the login screen.
+ *
+ * There is no `render` callback here, unlike `renderSignedOut`. Signing out is the only
+ * thing in this half of the sheet that used to rebuild the body, and it now closes the
+ * sheet and raises the gate instead — the signed-out half is never shown inside this sheet.
+ */
+function renderSignedIn(body: HTMLElement, close: () => void): void {
   const status = accountStatus();
 
   const sync = el("button", { class: "btn wide" }, ["Lưu lên tài khoản ngay"]);
@@ -208,15 +220,22 @@ function renderSignedIn(body: HTMLElement, render: () => void): void {
        * anonymous garden and leave them there, and the login screen only reappeared on the
        * next reload — which is not what "đăng xuất" means to somebody who just pressed it.
        *
-       * Deferred by one turn because `signOut` finishes its final push asynchronously and
-       * zeroes the token only once that settles; showing the gate first would paint a login
-       * screen over a session that is still live for a few hundred milliseconds.
+       * Awaited, not guessed at. The previous version slept 400ms and then raised the gate,
+       * which works only when the final push happens to finish inside 400ms — and the API's
+       * own abort is at 8000ms. On any ordinary connection the gate was raised while the
+       * token was still in storage, the gate stood itself down, and the button did nothing
+       * visible while still signing the player out underneath.
+       *
+       * The button is disabled for the duration so a second press cannot start a second
+       * teardown, and the sheet is closed before the wait so the player sees the login
+       * screen rather than a frozen sheet.
        */
-      signOut();
-      setTimeout(() => {
-        render();
+      out.disabled = true;
+      out.textContent = "Đang đăng xuất…";
+      void signOut().then(() => {
+        close();
         showGate();
-      }, 400);
+      });
     });
 
   // Password change, folded away. It is rare, it is irreversible, and putting it

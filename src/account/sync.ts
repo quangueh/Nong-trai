@@ -92,6 +92,31 @@ let token: string | null = null;
 let bridge: SaveBridge | null = null;
 let autoTimer: number | null = null;
 
+/**
+ * Whether this device has successfully asked the server what it holds, at least once, for
+ * the current session.
+ *
+ * ## The rule it enforces
+ *
+ * **Never write over a save you have not read.**
+ *
+ * Signing in makes the account's slot reload, and an unwritten slot reloads as a brand-new
+ * garden which `loadOrCreate` persists. So the sequence "sign in → the Worker is slow →
+ * the pull is abandoned after its 8s cap → the player plays → something saves" ends with an
+ * empty garden being pushed over whatever the account actually had. The player is let in
+ * early on purpose — a slow server must not keep anyone out — so the gap has to be closed
+ * here instead of by blocking.
+ *
+ * Set on any *successful* fetch, including one that correctly reports no save: a new
+ * account has been seen, and its first push is a creation rather than an overwrite. Left
+ * false only when the save endpoint could not be reached at all, which is the one case where
+ * "empty garden" and "the real save" are indistinguishable.
+ *
+ * Reset on sign-out, because the next session is a different account with a different
+ * cloud copy.
+ */
+let cloudRead = false;
+
 function emit(patch: Partial<AccountStatus>): void {
   status = { ...status, ...patch };
   for (const fn of [...listeners]) {
@@ -206,6 +231,9 @@ export async function signIn(email: string, password: string): Promise<void> {
  */
 function adoptSession(newToken: string, email: string, playerId: string, kind: SessionKind = "password"): void {
   token = newToken;
+  // A different account means a different cloud copy, so whatever this device had learned
+  // about the previous one no longer authorises a write. The pull below re-establishes it.
+  cloudRead = false;
   localStorage.setItem(TOKEN_KEY, newToken);
   localStorage.setItem(EMAIL_KEY, email);
   rememberSessionKind(kind);
@@ -283,21 +311,85 @@ export async function signInWithGoogle(idToken: string): Promise<{ created: bool
   return { created: session.created, email: session.email ?? "" };
 }
 
-export function signOut(): void {
-  // A final push first, so signing out does not throw away the session's work.
-  void push().finally(() => {
+/**
+ * Sign out.
+ *
+ * Resolves when the teardown has actually happened — not when it was started. Await this.
+ *
+ * ## Why it returns a promise at all
+ *
+ * Signing out does two things in order: a final push, so the session's work is not thrown
+ * away, and then the removal of the token, the grace stamp and the save slot. Only the
+ * second half matters for whether the player is signed in, and it cannot start until the
+ * first finishes.
+ *
+ * The previous version was `void push().finally(...)`, and every caller worked around the
+ * fact that it had no idea when that finished by waiting a guessed 400ms and then asking
+ * for the login screen. A 400ms guess against a request whose own timeout is 8000ms is
+ * not a guess, it is a coin flip: on any normal network the gate was raised while the
+ * token was still present, the gate stood itself down, and the player pressed "đăng xuất"
+ * and carried on playing — signed in, believing they were not.
+ *
+ * ## Why the wait is bounded at all
+ *
+ * The final push is best-effort and the teardown is not. If the network is down or slow,
+ * `push()` still settles (the API aborts at 8s), but the promise is raced against a
+ * shorter cap as a second line of defence, and **the cap wins by doing the teardown
+ * anyway**. A player whose server is unreachable must still be able to sign out — being
+ * unable to log out is a worse failure than losing one unsaved push.
+ */
+export function signOut(): Promise<void> {
+  const teardown = (): void => {
     token = null;
+    cloudRead = false;
     stopAuto();
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(EMAIL_KEY);
-    localStorage.removeItem(SEEN_KEY);
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(EMAIL_KEY);
+      localStorage.removeItem(SEEN_KEY);
+    } catch {
+      // Storage disabled. The in-memory session is gone, which is what decides whether the
+      // gate admits this visit; the next reload has no token either way.
+    }
     forgetSessionKind();
     forgetSignIn();
     // Back to the anonymous garden, which is where it has been sitting untouched this
     // whole time. Signing out is not a reset: someone who played without an account,
     // then signed in, then signed out again, finds their own plants waiting.
     setActiveAccountId(null);
-    emit({ email: null, state: "off", message: "Đã đăng xuất. Vườn vẫn còn trên máy này.", lastSyncedAt: null, serverWasNewer: false });
+    emit({
+      email: null,
+      state: "off",
+      message: "Đã đăng xuất. Vườn vẫn còn trên máy này.",
+      lastSyncedAt: null,
+      serverWasNewer: false,
+    });
+  };
+
+  // `push` is already safe to call with no token and already swallows its own errors, so
+  // this never rejects — the `then` is for symmetry and to be explicit about that.
+  const flushed = push().then(
+    () => undefined,
+    () => undefined,
+  );
+
+  return Promise.race([flushed, capAfter(SIGN_OUT_PUSH_GRACE_MS)]).then(() => {
+    teardown();
+  });
+}
+
+/**
+ * How long the final push may delay the sign-out.
+ *
+ * Deliberately much shorter than the API's own 8s abort. The push is insurance for work
+ * already done; the sign-out is a thing the player asked for and is waiting on. When the
+ * two conflict, the player wins.
+ */
+const SIGN_OUT_PUSH_GRACE_MS = 1500;
+
+function capAfter(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
   });
 }
 
@@ -331,6 +423,9 @@ export async function pull(force = false): Promise<void> {
 
   try {
     const remote = await fetchSave(token);
+    // Reached the endpoint and it answered. Whether it held anything is now known, which is
+    // what authorises a later push. See `cloudRead`.
+    cloudRead = true;
     if (!remote) {
       // First run on this account: push the local garden up rather than leaving
       // the account empty and pretending the player has nothing.
@@ -368,6 +463,26 @@ export async function push(): Promise<void> {
   if (!token || !bridge) return;
   if (writesToday() >= DAILY_WRITE_BUDGET) {
     emit({ state: "paused", message: "Đã tạm dừng đồng bộ hôm nay để giới hạn ghi của máy chủ." });
+    return;
+  }
+
+  /*
+   * The one hard refusal in this module.
+   *
+   * Refusing to write over a save this device has never managed to read is the difference
+   * between "the server was slow and you played a bit" and "the account is gone". A failed
+   * push is recoverable by pressing the button again; an overwritten save is not recoverable
+   * by anything.
+   *
+   * The message says what to do rather than just refusing, because a player watching a sync
+   * that silently stops needs to know it will start again on its own. `startAuto` retries
+   * every five minutes, so the honest answer is "it will retry", not "press something".
+   */
+  if (!cloudRead) {
+    emit({
+      state: "error",
+      message: "Chưa đọc được vườn trên tài khoản nên chưa ghi đè lên. Sẽ thử lại tự động.",
+    });
     return;
   }
 

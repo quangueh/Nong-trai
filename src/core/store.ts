@@ -396,16 +396,40 @@ export class GameStore {
   /**
    * When this save was last written, in epoch milliseconds.
    *
-   * Carried on the state rather than in a wrapper object so the save in
-   * localStorage stays exactly the shape it always was — a save from before this
-   * field existed loads with it undefined and is treated as "older than anything".
+   * A field on the store rather than on `PlayerState`, so it is not part of the state
+   * that gets compared, exported to the cloud, or reasoned about by any screen. It is
+   * stamped into the localStorage slot as a sibling key by `save()` and `importState()`,
+   * because `reload()` has always read it from `JSON.parse(raw).savedAt`.
+   *
+   * Zero means "no timestamp known", which every comparison treats as older than
+   * anything. That is the safe direction for an unknown: the cloud copy wins, rather than
+   * a device quietly deciding its own guess is the newer truth.
    */
   savedAt = 0;
 
   save() {
     this.savedAt = Date.now();
     try {
-      localStorage.setItem(saveSlotKey(getActiveAccountId()), JSON.stringify(this.state));
+      /*
+       * `savedAt` is written *alongside* the state, not inside it.
+       *
+       * The class field is documented above as deliberately carried on the state so the
+       * localStorage shape never changes — but `reload()` reads it back with
+       * `JSON.parse(raw).savedAt`, and `save()` was writing only `this.state`. The two
+       * disagreed, so every slot written by `save()` came back with no timestamp and
+       * `reload()` left `savedAt` at 0.
+       *
+       * Which quietly disabled two conflict guards at once. `push()` fell back to
+       * `Date.now()` for its timestamp, and `pull(false)` compared the cloud against 0,
+       * so the "this device is newer" branch could never fire and a second device would
+       * overwrite a newer local save with a stale cloud copy on every sync.
+       *
+       * The envelope matches what `reload()` already expected, so both agree now. A save
+       * written by an older build has no envelope and still loads — `reload()` treats a
+       * missing timestamp as 0, which is the safe direction: it makes this device look
+       * older, so the cloud wins rather than the other way round.
+       */
+      localStorage.setItem(saveSlotKey(getActiveAccountId()), JSON.stringify({ ...this.state, savedAt: this.savedAt }));
     } catch {
       // ignore quota / privacy mode
     }
@@ -448,12 +472,66 @@ export class GameStore {
    * save written by an older build — or one that lost a field to a partial write —
    * comes back with its pity counters, garden day and discovery lists repaired
    * rather than crashing the first screen that touches them.
+   *
+   * ## Why this writes to disk, and why that used to destroy saves
+   *
+   * This only held the pulled save in memory. It was not written to the account's slot,
+   * and that was fatal, because the slot was *already occupied*.
+   *
+   * Signing in calls `setActiveAccountId`, which makes the store reload; a slot nobody
+   * has written yet reloads as a brand-new garden, and `loadOrCreate` **persists** that
+   * default. So the sequence on a second device was:
+   *
+   *   1. sign in          → slot now holds a fresh empty garden
+   *   2. pull the cloud   → that garden is replaced in memory only
+   *   3. close the tab    → nothing was on disk
+   *   4. come back later  → the store reads the slot from step 1: an empty garden
+   *   5. play for a minute → the empty garden is pushed up, over the real one
+   *
+   * A returning player's account was destroyed by them opening the game again. Nothing
+   * errored; the sync strip said "Đã nạp vườn từ tài khoản." while the disk still held
+   * the opposite of what the player was looking at.
+   *
+   * So the pulled state is written here, immediately, with the server's own timestamp.
+   *
+   * ## Why the timestamp is the server's and not `Date.now()`
+   *
+   * The local clock is almost always *ahead* of the server's — the two are different
+   * machines. Stamping a pulled save with `Date.now()` makes this device believe it is
+   * newer than the cloud, and every later `pull()` then takes the
+   * `remote.savedAt < localAt` branch and reports a conflict instead of updating. A
+   * second device would be permanently, silently out of sync. `savedAt` is what the
+   * server stamped on this exact data, so it is the only value that keeps the comparison
+   * honest.
+   *
+   * Defaults to `Date.now()` only for a caller with no timestamp to offer, which is the
+   * repair-on-import case rather than the sync case.
    */
-  importState(next: unknown): void {
+  importState(next: unknown, savedAt?: number): void {
     if (!next || typeof next !== "object") return;
     const repaired = loadOrCreate(JSON.stringify(next));
     this.state = repaired;
-    this.savedAt = Date.now();
+    const at = typeof savedAt === "number" && Number.isFinite(savedAt) ? savedAt : Date.now();
+    this.savedAt = at;
+
+    /*
+     * Persist before announcing. `emit()` is last so any subscriber that reads the store
+     * — a screen repainting, the top bar — sees the state that is also now on disk. The
+     * reverse order would let a subscriber act on a save that a crash one line later
+     * would throw away.
+     */
+    try {
+      localStorage.setItem(saveSlotKey(getActiveAccountId()), JSON.stringify({ ...repaired, savedAt: at }));
+    } catch {
+      /*
+       * Storage refused. The state is still live in memory and still goes up on the next
+       * push, so the player keeps playing and keeps their cloud save; only the offline
+       * copy of *this particular* device is missing. Reporting nothing is the right call
+       * here — `sync.ts` owns player-facing storage failures, and a second, differently
+       * worded complaint about the same failure is noise.
+       */
+    }
+
     this.emit();
   }
 

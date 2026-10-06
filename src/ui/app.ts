@@ -9,7 +9,18 @@ import { renderArena, currentBattleView } from "./screens/arena";
 import { renderAscent } from "./screens/ascent";
 import { renderLab } from "./screens/lab";
 import { sfx } from "../audio/audio";
-import { accountStatus, initAccount, isSignedIn, onAccountStatus, signOut } from "../account/sync";
+import {
+  accountStatus,
+  initAccount,
+  isSignedIn,
+  onAccountStatus,
+  push,
+  pull,
+  signIn,
+  signInWithGoogle,
+  signOut,
+  signUp,
+} from "../account/sync";
 import { showSignInGateIfNeeded } from "./signInGate";
 
 /**
@@ -619,20 +630,27 @@ export function boot(root: HTMLElement) {
        * exactly the thing a hand-cleared test would miss.
        */
       signOut,
+      /**
+       * The raw sign-in functions, for tests.
+       *
+       * Google needs a real popup and a real account, so an automated test cannot drive
+       * the whole flow through the browser. What it *can* drive is everything after the
+       * token arrives — the Worker exchange, the save-slot switch, the pull, the teardown —
+       * and that is where the save-destroying bugs lived. Reaching them through the public
+       * module means the test exercises the same code the panel does rather than a
+       * reimplementation of it, which would agree with itself forever.
+       */
+      sync: { signInWithGoogle, signIn, signUp, pull, push },
       /** Whether the gate currently admits the player, and why. */
       authState: () => gateState(accountServiceAvailable),
-      /** Sign out *and* put the player back in front of the login screen. */
-      signOutAndGate: () => {
-        signOut();
-        // Deferred, and this is the whole reason the button "does nothing".
-        //
-        // `signOut` finishes a final push first and only then clears the token, the stamp
-        // and the save slot — that is what stops signing out throwing away the session's
-        // work. So a gate shown synchronously straight after still sees a live session and
-        // stands down, and the player is left playing an anonymous garden until they happen
-        // to reload. 400ms is the push's budget, not a guess about it: it is how long the
-        // deferral has been tuned against the real call.
-        window.setTimeout(() => showGate(), 400);
+      /** Sign out *and* put the player back in front of the login screen. Resolves when done. */
+      signOutAndGate: async () => {
+        // Awaited, because a gate raised before the token is gone stands itself down.
+        // The previous version slept 400ms and hoped; the final push this waits on has an
+        // 8s abort, so on any ordinary connection the hope failed silently and the player
+        // stayed in the game, signed in, having pressed "đăng xuất".
+        await signOut();
+        showGate();
       },
     };
   }
@@ -641,9 +659,16 @@ export function boot(root: HTMLElement) {
   // the store exists. Running it earlier would find nothing to sync.
   initAccount({
     read: () => ({ state: store.exportState(), savedAt: store.savedAt }),
+    /*
+     * The server's timestamp goes in with the data, not `Date.now()`.
+     *
+     * `importState` needs it for two reasons that both bite on a second device: it writes
+     * the pulled save to the slot so a reload finds it, and it must stamp it with the
+     * server's own time or this device will believe it is newer than the cloud and refuse
+     * every later sync as a conflict. See `importState`.
+     */
     write: (next, savedAt) => {
-      store.importState(next);
-      store.savedAt = savedAt;
+      store.importState(next, savedAt);
     },
   });
 
