@@ -396,6 +396,7 @@ export function renderAscent(_nav: Navigate): HTMLElement {
             reward: out.reward!,
             drops: out.drops ?? [],
             nextUnlocked: out.nextUnlocked,
+            objectives: out.objectives,
             fighter: me,
             share,
           },

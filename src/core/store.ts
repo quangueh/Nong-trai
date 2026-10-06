@@ -36,6 +36,7 @@ import { applyCare, gainXp, xpRequired } from "../growth/care";
 import type { CareActionId } from "../config/careActions";
 import { tickGrowth } from "../growth/stages";
 import { addSkillXp } from "../genetics/skillGenerator";
+import { evaluateObjectives, objectiveContext, type ObjectiveOutcome } from "../progression/objectives";
 import { canSell, tryAwaken } from "../growth/stages";
 import { sellPrice } from "../economy/shop";
 import { emptyPity, type PityCounters, type Rarity } from "../config/rarity";
@@ -1158,6 +1159,14 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
      * a *different* fight from the one this recorded — see `simulateBattle`.
      */
     seed?: string;
+    /**
+     * Which sub-objectives were met, and the bonus they paid.
+     *
+     * Returned rather than recomputed by the screen, for the reason every receipt in this
+     * store is: two sources of truth for a payout means the receipt and the ledger can
+     * disagree, and a receipt that under-reports what it just paid is worse than no receipt.
+     */
+    objectives?: ObjectiveOutcome;
   } {
     const me = this.get(plantId);
     if (!me) return { ok: false, reason: "Không tìm thấy cây" };
@@ -1210,6 +1219,20 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
       this.creditCurrency(extra.currency, extra.amount, `Vượt ải ${stage}`);
     }
 
+    /*
+     * Sub-objectives, scored off the log this fight just produced.
+     *
+     * Read from `result.events` rather than from any live state, because the session is
+     * finished by now and the log is the only record of what happened. Paid on top of the
+     * stage's own experience, and to the breeder as well — a clean fast fight should move
+     * both progressions, or the ladder's bonus work would only ever advance one of them.
+     */
+    const objectives = won ? evaluateObjectives(stage, objectiveContext(true, result)) : null;
+    const bonusPlantXp = objectives?.bonusPlantXp ?? 0;
+    if (bonusPlantXp > 0) this.addPlantXp(me, bonusPlantXp);
+    const bonusBreederXp = objectives?.bonusBreederXp ?? 0;
+    if (bonusBreederXp > 0) this.addBreederXp(bonusBreederXp);
+
     const levels = this.addPlantXp(me, reward.plantXp);
     for (const s of me.skills) addSkillXp(s, won ? 12 : 4);
 
@@ -1241,7 +1264,7 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
       body: `${monster.name} · +${reward.leafCoin} 🪙` + (levels > 0 ? ` · ${me.name} lên ${levels} cấp` : ""),
     });
 
-    return { ok: true, result, won, monster, reward, drops, nextUnlocked, seed };
+    return { ok: true, result, won, monster, reward, drops, nextUnlocked, seed, objectives: objectives ?? undefined };
   }
 
   runQuickBattle(plantId: string, opponent: Plant): { result: BattleResult; won: boolean } {

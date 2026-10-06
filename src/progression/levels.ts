@@ -106,9 +106,19 @@ export function previewGain(
   return {
     levelsGained: gained,
     finalLevel: level,
-    // At the cap nothing is carried, and the bar is full — so report a full bar rather than
-    // an arbitrary remainder that would render as a half-empty bar at max level.
-    leftover: cap > 0 && level >= cap ? 0 : xp,
+    /*
+     * The leftover is what the store will actually hold — not zero at the cap.
+     *
+     * This used to report 0 once the cap was reached, so a preview said "nothing left over"
+     * while `addBreederXp` went on banking hundreds of thousands. A receipt that disagrees
+     * with the ledger is worse than no receipt: a grant of a million at level 59 promised 0
+     * and stored 899,699.
+     *
+     * Reporting the real figure is safe for the bar, because `breederSnapshot` renders a
+     * capped bar as full on the strength of `capped` alone — so the number can be honest
+     * without the bar ever showing 4,000%.
+     */
+    leftover: xp,
     milestones,
   };
 }

@@ -57,3 +57,131 @@
     transition: none;
   }
 }
+/* ==========================================================================
+   Skill mastery (garden.ts plant sheet)
+
+   The skill model has levels, an XP curve, a power/cooldown gain per level and
+   evolution nodes at 3 and 6. It all ran, and the card printed `Lv3`. These are the
+   missing halves: how far to the next level, and what a level is worth.
+   ========================================================================== */
+
+.mastery {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.mastery-bar {
+  display: block;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(31, 107, 66, 0.16);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.4) inset;
+}
+
+.mastery-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #6f9fe0, #7fc4ff);
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mastery-text {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   Sub-objectives: the brief lists them, the result scores them.
+   ========================================================================== */
+
+.stagebrief-objectives {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.stagebrief-objectives-title,
+.stagelive-objectives-title {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.stagebrief-objective {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  font-size: 12px;
+  text-align: left;
+  background: rgba(120, 160, 220, 0.08);
+  border: 1px solid rgba(120, 160, 220, 0.2);
+}
+
+.stagebrief-objective b {
+  font-weight: 700;
+}
+
+.stagebrief-objective-xp {
+  flex: none;
+  font-weight: 800;
+  color: #2f6f9f;
+}
+
+/* --- the result's scoring ---------------------------------------------- */
+
+.stagelive-objectives {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  text-align: left;
+}
+
+.stagelive-objective {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(255, 253, 241, 0.55);
+}
+
+/* Met: lit. Unmet: dimmed rather than hidden, so the next run has a target —
+   a checklist showing only what was achieved cannot tell the player what to try. */
+.stagelive-objective.is-met {
+  background: rgba(120, 200, 140, 0.16);
+  border: 1px solid rgba(140, 220, 160, 0.3);
+  color: #eafff2;
+}
+
+.stagelive-objective.is-met .mono {
+  color: #bff0cd;
+}
+
+.stagelive-objective .mono {
+  margin-left: auto;
+  flex: none;
+}
+
+/* The bonus receipt, under the EXP total. Separate because "where did this number come
+   from" is the question a result screen exists to answer. */
+.stagelive-xp-bonus {
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: rgba(191, 240, 205, 0.8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mastery-bar i {
+    transition: none;
+  }
+}

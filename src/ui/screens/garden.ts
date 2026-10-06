@@ -19,6 +19,7 @@ import { sfx } from "../../audio/audio";
 import { MAX_PLOTS, plotStatuses, type PlotStatus } from "../../config/unlocks";
 import { seedColor } from "../components";
 import { renderPlantSvg } from "../../render/plantRenderer";
+import { skillMasteryPct, skillMasteryText } from "../../progression/objectives";
 import type { Navigate } from "./types";
 
 // The ceremony renders real plant art, so it needs the renderer. Wiring it here
@@ -827,8 +828,27 @@ export function openDetail(plant: Plant, nav: Navigate, shell: Element) {
 
   // skills
   content.appendChild(el("div", { class: "sec-title", style: "margin-top:12px" }, ["Chiêu thức"]));
+  content.appendChild(
+    el("div", { class: "tiny muted", style: "margin-bottom:6px" }, [
+      // Said once rather than on every card. A skill's level is not decoration: every level
+      // raises its power or shortens its cooldown, and 3 and 6 open an evolution node. The
+      // old card printed "Lv3" and nothing else, so the whole system was paying out silently.
+      "Mỗi cấp tăng 5% sức hoặc giảm 5% hồi chiêu (luân phiên). Cấp 3 và 6 mở node tiến hóa.",
+    ]),
+  );
   for (const skill of plant.skills) {
     const sc = el("div", { class: "card", style: "margin-bottom:8px" });
+    const pct = skillMasteryPct(skill.level, skill.masteryXp);
+    const bar = el("span", {
+      class: "mastery-bar",
+      role: "progressbar",
+      "aria-valuenow": String(Math.round(pct)),
+      "aria-valuemin": "0",
+      "aria-valuemax": "100",
+      "aria-label": `${skill.name} cấp ${skill.level}, ${skillMasteryText(skill.level, skill.masteryXp)}`,
+    });
+    bar.appendChild(el("i", { style: `width:${pct.toFixed(1)}%` }));
+
     sc.append(
       el("div", { class: "row between" }, [
         el("div", { class: "small", style: "font-weight:700" }, [skill.name]),
@@ -837,6 +857,7 @@ export function openDetail(plant: Plant, nav: Navigate, shell: Element) {
       el("div", { class: "tiny muted", style: "margin-top:3px" }, [
         `${skill.core.delivery} · ${skill.core.effect} · CD ${skill.cooldown}s · Sức ${Math.round(skill.power)}`,
       ]),
+      el("div", { class: "mastery" }, [bar, el("span", { class: "mastery-text tiny muted mono" }, [skillMasteryText(skill.level, skill.masteryXp)])]),
       el("div", { class: "row wrap", style: "gap:4px;margin-top:5px" }, skill.tags.slice(0, 4).map((t) => el("span", { class: "tag" }, [t]))),
     );
     content.appendChild(sc);

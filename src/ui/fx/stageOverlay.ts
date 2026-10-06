@@ -32,6 +32,7 @@ import type { MonsterSpec } from "../../pve";
 import { celebrateLevelUp, rewardsFromMilestones } from "./levelUp";
 import { milestoneForLevel, previewPlantGain, xpRemainingText, plantSnapshot } from "../../progression/levels";
 import { stageIdentity } from "../../pve/stages";
+import { stageObjectives, type ObjectiveOutcome } from "../../progression/objectives";
 import type { Plant } from "../../core/types";
 
 /** How long one tally line takes to count. */
@@ -44,6 +45,8 @@ export interface StageOutcome {
   reward: StageReward;
   drops: DropRoll[];
   nextUnlocked?: number;
+  /** Which sub-objectives were met, and what they paid. From the store, not recomputed. */
+  objectives?: ObjectiveOutcome;
   /** The plant that fought, so the result can name it and preview its own EXP. */
   fighter: Plant;
   /**
@@ -131,6 +134,41 @@ export function showStageResult(out: StageOutcome, onContinue: () => void): Prom
   const xpLine = el("div", { class: "stagelive-xp" });
   panel.appendChild(xpLine);
 
+  /*
+   * The sub-objectives, scored.
+   *
+   * Four rows, met and unmet alike. Showing only the ones that landed turns a checklist into
+   * a trophy case — the player cannot tell what to try next, which is the only reason a
+   * checklist is worth having. The unmet ones are greyed rather than hidden for that reason.
+   */
+  if (out.objectives) {
+    const objHost = el("div", { class: "stagelive-objectives" });
+    objHost.appendChild(
+      el("div", { class: "stagelive-objectives-title tiny muted" }, [
+        `Mục tiêu phụ  ${out.objectives.stars}/4`,
+      ]),
+    );
+    for (const o of out.objectives.met) {
+      objHost.appendChild(
+        el("div", { class: "stagelive-objective is-met" }, [
+          el("span", {}, [o.icon]),
+          el("span", { class: "grow" }, [o.label]),
+          el("span", { class: "mono tiny" }, [`+${o.xp}`]),
+        ]),
+      );
+    }
+    for (const o of out.objectives.missed) {
+      objHost.appendChild(
+        el("div", { class: "stagelive-objective" }, [
+          el("span", {}, [o.icon]),
+          el("span", { class: "grow" }, [o.label, el("span", { class: "tiny muted" }, [` — ${o.hint}`])]),
+          el("span", { class: "mono tiny muted" }, ["—"]),
+        ]),
+      );
+    }
+    panel.appendChild(objHost);
+  }
+
   /* The continue button, disabled while the tally runs. */
   const go = el("button", { class: "btn primary block", style: "margin-top:12px" }, [
     out.nextUnlocked ? `Tiếp tục → ải ${out.nextUnlocked}` : "Tiếp tục",
@@ -172,7 +210,16 @@ export function showStageResult(out: StageOutcome, onContinue: () => void): Prom
       requestAnimationFrame(step);
     });
 
-  const xpPreview = previewPlantGain(out.reward.plantXp, out.fighter);
+  /*
+   * The EXP line, counting the base reward and the objective bonus separately.
+   *
+   * Split rather than summed because "where did this number come from" is the question a
+   * result screen exists to answer, and a single total teaches the player that objectives
+   * are decoration. The bonus only appears when it is non-zero, so a scrappy win does not
+   * get an empty line about a bonus it did not earn.
+   */
+  const bonusXp = out.objectives?.bonusPlantXp ?? 0;
+  const xpPreview = previewPlantGain(out.reward.plantXp + bonusXp, out.fighter);
   const snap = plantSnapshot(out.fighter);
 
   (async () => {
@@ -182,8 +229,11 @@ export function showStageResult(out: StageOutcome, onContinue: () => void): Prom
     xpLine.append(
       el("span", { class: "stagelive-xp-icon" }, ["🌱"]),
       el("span", { class: "grow" }, [`${out.fighter.name} nhận EXP`]),
-      el("span", { class: "mono" }, [`+${out.reward.plantXp}`]),
+      el("span", { class: "mono" }, [`+${out.reward.plantXp + bonusXp}`]),
     );
+    if (bonusXp > 0) {
+      xpLine.appendChild(el("div", { class: "stagelive-xp-bonus" }, [`gồm +${bonusXp} EXP mục tiêu phụ`]));
+    }
     if (xpPreview.levelsGained > 0) {
       xpLine.appendChild(
         el("div", { class: "stagelive-xp-next" }, [
@@ -294,6 +344,31 @@ export function showStageBrief(brief: StageBrief, monster: MonsterSpec, fighter:
     );
   }
 
+  /*
+   * The sub-objectives, before the fight.
+   *
+   * Listed here rather than only on the result because an objective the player learns about
+   * afterwards is not an objective — it is a receipt for something they had no way to know
+   * they could have done. Each row states the threshold in the fight's own units ("Liên hoàn
+   * — đánh liên 5 lần không bị trúng đòn"), because "Liên hoàn" on its own is a word.
+   *
+   * The EXP they are worth is shown too, and the brief's EXP preview is recomputed to include
+   * them, so the number the player is deciding on is the number a perfect run would pay.
+   */
+  const objectives = stageObjectives(brief.index);
+  const objHost = el("div", { class: "stagebrief-objectives" });
+  objHost.appendChild(el("div", { class: "stagebrief-objectives-title tiny muted" }, ["Mục tiêu phụ"]));
+  for (const o of objectives) {
+    objHost.appendChild(
+      el("div", { class: "stagebrief-objective" }, [
+        el("span", { class: "stagebrief-objective-icon" }, [o.icon]),
+        el("span", { class: "grow" }, [el("b", {}, [o.label]), el("span", { class: "tiny muted" }, [` — ${o.hint}`])]),
+        el("span", { class: "stagebrief-objective-xp mono tiny" }, [`+${o.xp}`]),
+      ]),
+    );
+  }
+  panel.appendChild(objHost);
+
   /* The payout, and — the part that was missing — what the EXP will become. A player
      deciding whether a fight is worth the risk needs "will this level me", not "this gives
      247 EXP". */
@@ -312,10 +387,20 @@ export function showStageBrief(brief: StageBrief, monster: MonsterSpec, fighter:
   pay.appendChild(payRow);
 
   if (fighter) {
-    const preview = previewPlantGain(brief.reward.plantXp, fighter);
+    /*
+     * The preview covers a *perfect* run, not the base payout.
+     *
+     * The stage's own experience plus every sub-objective, because that is the best the fight
+     * can do and it is the number a player deciding whether to spend an attempt actually wants.
+     * Previewing only the base reward would understate a good run by up to four times, and the
+     * objectives would read as a bonus rather than as most of the reason to fight well.
+     */
+    const perfectXp = brief.reward.plantXp + objectives.reduce((sum, o) => sum + o.xp, 0);
+    const preview = previewPlantGain(perfectXp, fighter);
     pay.appendChild(
       el("div", { class: "stagebrief-xp" }, [
         `🌱 +${brief.reward.plantXp} EXP cho ${fighter.name}` +
+        (objectives.length ? ` (tối đa +${perfectXp - brief.reward.plantXp} từ mục tiêu phụ)` : "") +
         (preview.levelsGained > 0
           ? preview.levelsGained > 1
             ? ` — đủ để lên ${preview.levelsGained} cấp!`
