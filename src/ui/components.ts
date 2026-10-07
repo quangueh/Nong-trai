@@ -250,6 +250,17 @@ export function sheet(content: HTMLElement, onClose?: () => void): { overlay: HT
   s.appendChild(el("div", { class: "handle" }));
   s.appendChild(content);
   overlay.addEventListener("click", onClose ?? (() => {}));
+  /*
+   * Land the keyboard inside the sheet once it mounts: callers append
+   * synchronously, so a microtask runs after mount and moves focus to the
+   * first control. Without it Tab starts behind the overlay and Escape has
+   * nowhere inside the sheet to bubble through. Mouse users see no ring —
+   * :focus-visible follows the last input modality — but the focus position is
+   * still set for anyone who reaches for the keyboard next.
+   */
+  queueMicrotask(() => {
+    s.querySelector<HTMLElement>("button, input, select, textarea, [tabindex]")?.focus({ preventScroll: true });
+  });
   return { overlay, sheet: s };
 }
 
