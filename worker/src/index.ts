@@ -34,6 +34,7 @@
  */
 
 import { googleAccountKey, googleSaveKey, verifyGoogleIdToken } from "./google";
+import { entryFromState, handleLeaderboard, writeEntry } from "./leaderboard";
 import { routeRoom } from "./room";
 import {
   handleDuelAccept,
@@ -478,6 +479,21 @@ async function handlePutSave(req: Request, auth: Session, env: Env): Promise<Res
   if (accountRaw) {
     puts.push(env.DB.put(accountKeyFor, JSON.stringify({ ...(JSON.parse(accountRaw) as object), writes })));
   }
+
+  // One extra small write keeps the leaderboard index current: the ranked numbers are
+  // extracted here, at save time, so a board read never has to open a save at all.
+  // The display name prefers the one inside the save — the name the player actually
+  // plays under — over the account record's, which is an email prefix when the player
+  // never set one.
+  const accountName = accountRaw ? (JSON.parse(accountRaw) as { name?: string; email?: string }) : null;
+  const stateName = (body.state as { name?: unknown })?.name;
+  const displayName =
+    (typeof stateName === "string" && stateName.trim()) ||
+    accountName?.name?.trim() ||
+    accountName?.email?.split("@")[0] ||
+    "Người chơi";
+  puts.push(writeEntry(env, accountKeyFor, entryFromState(body.state, displayName)));
+
   await Promise.all(puts);
   return ROK({ savedAt: body.savedAt, kept: "yours", writes });
 }
@@ -556,6 +572,10 @@ export default {
         // Unauthenticated by design: the room code is the capability, matching the
         // BroadcastChannel transport it replaces for players on different machines.
         res = await routeRoom(req, env);
+      } else if (path === "/api/leaderboard" && req.method === "GET") {
+        const auth = await readAuth(req, env);
+        if (!auth) res = RKO("unauthorised", 401);
+        else res = await handleLeaderboard(env, auth.sub ? googleAccountKey(auth.sub) : accountKey(auth.email!));
       } else if (path === "/api/health") {
         res = ROK({ ok: true, at: Date.now() });
       } else {

@@ -76,6 +76,8 @@ export type Refusal =
   | "no_such_invite"
   | "not_a_friend"
   | "empty_query"
+  | "not_found"
+  | "server"
   | "network";
 
 export type Outcome<T> = { ok: true; value: T } | { ok: false; why: Refusal };
@@ -100,6 +102,8 @@ export const REFUSAL_TEXT: Record<Refusal, string> = {
   no_such_invite: "Lời mời không còn hiệu lực.",
   not_a_friend: "Họ không có trong danh sách bạn của bạn.",
   empty_query: "Nhập tên hoặc email trước đã.",
+  not_found: "Máy chủ chưa có tính năng này — Worker đang chạy bản cũ, cần deploy lại (worker/README.md).",
+  server: "Máy chủ đang lỗi. Thử lại sau ít phút.",
   network: "Không kết nối được. Kiểm tra mạng rồi thử lại.",
 };
 

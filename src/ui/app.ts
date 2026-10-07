@@ -9,6 +9,7 @@ import { renderBreeding } from "./screens/breeding";
 import { renderArena, currentBattleView } from "./screens/arena";
 import { renderAscent } from "./screens/ascent";
 import { renderLab } from "./screens/lab";
+import { leaderboardFab, leaderboardPanel, openLeaderboardSheet } from "./leaderboard";
 import { sfx } from "../audio/audio";
 import { music, type MusicMood } from "../audio/music";
 import {
@@ -196,6 +197,13 @@ function paint(params?: unknown) {
     sideLeft.appendChild(left);
     sideRight.appendChild(right);
   }
+  /*
+   * The leaderboard is pinned under whatever else the right rail carries — on the
+   * garden that is the weather and the seed bag, everywhere else it is the rail's
+   * only occupant, which is what stops it collapsing to nothing. On phones the
+   * rails are hidden entirely, so the same board is reachable through the 🏆 FAB.
+   */
+  sideRight?.appendChild(leaderboardPanel());
   updatePills();
 }
 
@@ -817,6 +825,9 @@ export function boot(root: HTMLElement) {
   noticeHost = el("div", { class: "notice-host", role: "status", "aria-live": "polite" });
 
   shell.append(topbar, noticeHost, workspace, navHost);
+  // Phones have no side rail, so the board that lives there gets a floating button
+  // instead — the stylesheet hides it once the rail is wide enough to show itself.
+  shell.appendChild(leaderboardFab(openLeaderboardSheet));
   root.appendChild(shell);
 
   store.subscribe(() => {

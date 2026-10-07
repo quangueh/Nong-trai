@@ -424,6 +424,64 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   check("a third live challenge is refused", (await code(third)) === "already_challenged", await code(third));
 }
 
+/* --- 9. the leaderboard ----------------------------------------------------- */
+
+{
+  const { entryFromState, handleLeaderboard, writeEntry, lbKey, BOARD_SIZE } = await import("../worker/src/leaderboard");
+
+  // A KV whose list honours the prefix — the fake above returns nothing, which is
+  // correct for the friend tests and wrong for an index that lives under `lb:`.
+  const lbMap = new Map<string, string>();
+  const lbDb = {
+    get: async (k: string) => lbMap.get(k) ?? null,
+    put: async (k: string, v: string) => void lbMap.set(k, v),
+    delete: async (k: string) => void lbMap.delete(k),
+    list: async (o: { prefix: string }) => ({
+      keys: [...lbMap.keys()].filter((k) => k.startsWith(o.prefix)).sort().map((name) => ({ name })),
+      list_complete: true,
+    }),
+  };
+  const lbEnv = { DB: lbDb };
+
+  check("entryFromState reads the strongest plant and the level",
+    entryFromState({ plants: [{ powerRating: 120 }, { powerRating: 480.6 }], breederLevel: 7 }, "A").power === 481 &&
+    entryFromState({ plants: [{ powerRating: 120 }], breederLevel: 7 }, "A").level === 7);
+  check("a save with no plants still ranks", entryFromState({ plants: [] }, "A").power === 0);
+  check("a malformed save does not throw", entryFromState("junk", "A").level === 1);
+
+  // Three players: two on power order, one level king.
+  await writeEntry(lbEnv, "acct:a", { name: "Alice", power: 500, level: 9, at: 100 });
+  await writeEntry(lbEnv, "acct:b", { name: "Bob", power: 900, level: 5, at: 200 });
+  await writeEntry(lbEnv, "acct:c", { name: "Carol", power: 100, level: 30, at: 300 });
+
+  const res = await handleLeaderboard(lbEnv, "acct:a");
+  const board = (await res.json()) as {
+    power: { rank: number; name: string; power: number; me: boolean }[];
+    level: { rank: number; name: string; level: number; me: boolean }[];
+    me: { powerRank: number; levelRank: number } | null;
+    total: number;
+  };
+  check("power board sorts strongest first", board.power[0].name === "Bob" && board.power[0].power === 900, JSON.stringify(board.power.map(r => r.name)));
+  check("level board sorts highest first", board.level[0].name === "Carol" && board.level[0].level === 30);
+  check("the caller is marked in the list", board.power.find((r) => r.name === "Alice")?.me === true);
+  check("the caller's own ranks are returned", board.me?.powerRank === 2 && board.me?.levelRank === 2, JSON.stringify(board.me));
+  check("the roster size is reported", board.total === 3);
+
+  // A player outside the visible list still learns their rank.
+  for (let i = 0; i < BOARD_SIZE + 3; i++) {
+    await writeEntry(lbEnv, `acct:x${i}`, { name: `Filler${i}`, power: 10_000 + i, level: 99, at: i });
+  }
+  const deep = (await (await handleLeaderboard(lbEnv, "acct:a")).json()) as { me: { powerRank: number } | null; power: unknown[] };
+  check("a rank outside the visible list is still computed", (deep.me?.powerRank ?? 0) === BOARD_SIZE + 5, `rank=${deep.me?.powerRank} list=${deep.power.length}`);
+  check("the visible list stays capped", deep.power.length === BOARD_SIZE, `${deep.power.length}`);
+
+  // The index key is the account key — the same namespacing the rest of KV uses.
+  check("entries live under lb:", lbKey("acct:x") === "lb:acct:x");
+  const second = await handleLeaderboard(lbEnv, "acct:never-saved");
+  const nobody = (await second.json()) as { me: unknown };
+  check("a player with no save is unranked, not an error", nobody.me === null);
+}
+
 /* --- 8. reading a save ------------------------------------------------------- */
 
 {

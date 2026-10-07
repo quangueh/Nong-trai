@@ -106,6 +106,15 @@ check(
 );
 check("topbar shows currency", ($(".topbar")?.textContent ?? "").includes("1."));
 
+// The leaderboard is pinned to the right rail on every screen — a player should be
+// able to glance at their rank from anywhere, and the phone FAB covers the layout
+// where the rail is hidden.
+check("leaderboard panel sits in the right rail", !!$(".side-panel.right .lb-panel"));
+check("leaderboard shows the power board", ($(".lb-panel")?.textContent ?? "").includes("Sức mạnh"));
+check("leaderboard shows the level board", ($(".lb-panel")?.textContent ?? "").includes("Cấp nhà lai tạo"));
+check("the player sees their own row even offline", ($(".lb-panel")?.textContent ?? "").includes("bạn"));
+check("the phone FAB exists for when the rail is hidden", !!$(".lb-fab"));
+
 section("1. Garden screen");
 await render("garden renders", () => navigate("garden"));
 // The capacity count sits in the plots section title ("Vườn  n/m · 25 ô"),

@@ -692,8 +692,12 @@ function renderRoomHost(nav: Navigate, myPlant: Plant): HTMLElement {
   client.onMessage((m: RoomMessage) => {
     if (m.code !== code) return;
     switch (m.kind) {
-      case "join":
-        host.addGuest(m.playerId, m.name);
+      case "join": {
+        // A guest that has not yet seen itself in a snapshot keeps re-sending its join
+        // — every one of those is the same arrival. The state broadcast still goes out
+        // each time because it is the acknowledgement that stops the loop, but the
+        // "đã vào phòng" toast and the roster churn belong to the first join alone.
+        const added = host.addGuest(m.playerId, m.name);
         // The guest builds the mirror battle from the host's full plant data, and
         // nothing else ever sends it: the snapshot only carries the public summary,
         // which is not enough to simulate. Without this the guest sat on "đang chờ
@@ -701,8 +705,9 @@ function renderRoomHost(nav: Navigate, myPlant: Plant): HTMLElement {
         client.sendPlant(myPlant);
         client.broadcastState(host.snapshot);
         paintLobby();
-        toast(`${m.name} đã vào phòng`);
+        if (added) toast(`${m.name} đã vào phòng`);
         break;
+      }
       case "plant_data":
         host.registerPlant(m.plant);
         host.setPlant(m.playerId, m.plant.plantId);
@@ -806,11 +811,23 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
 
   // Announce ourselves and hand our full plant snapshot to the host, which is
   // the only side allowed to build the authoritative match.
-  setTimeout(() => {
+  //
+  // Re-sent until the snapshot proves it landed: the first send can arrive while
+  // the host's tab is still wiring its listeners or die next to a lost join, and a
+  // guest who never retries stays on "đang kết nối" for a match that never starts.
+  // The host dedupes on ids, so repeats are cheap. Two minutes is long enough for
+  // a host to notice and open its lobby again; after that the warning below says so.
+  let registered = false;
+  let announceCount = 0;
+  const announceTimer = window.setInterval(() => {
+    if (registered || ++announceCount > 60) {
+      window.clearInterval(announceTimer);
+      return;
+    }
     client.sendPlant(myPlant);
     client.sendSelect(myPlant.plantId);
     client.requestState();
-  }, 200);
+  }, 2000);
 
   client.onMessage((m: RoomMessage) => {
     if (m.code !== code) return;
@@ -827,8 +844,15 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
     }
   });
 
+  let everSynced = false;
   client.onState((snap: RoomSnapshot) => {
     if (snap.code !== code) return;
+    everSynced = true;
+    // The plant handshake is done once the host's roster shows this plant as chosen —
+    // until then the announce timer above keeps re-sending it.
+    if (snap.players.some((p) => p.playerId === myId && p.plantId === myPlant.plantId)) {
+      registered = true;
+    }
     statusCard.replaceChildren();
     statusCard.appendChild(el("div", { class: "small", style: "font-weight:700;margin-bottom:6px" }, [`Trạng thái: ${STATE_LABEL[snap.state] ?? snap.state}`]));
     for (const p of snap.players) {
@@ -915,12 +939,24 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
     note.textContent = "Kết quả đã được máy chủ chốt.";
   }
 
+  // A silent wire means something real: the code is wrong, the host closed their tab,
+  // or the relay is down. "Đang kết nối" forever is a promise the game cannot keep —
+  // after twelve seconds without a single snapshot, say what the silence probably is.
+  const silentTimer = window.setTimeout(() => {
+    if (everSynced) return;
+    statusCard.appendChild(el("div", { class: "callout warn", style: "margin-top:8px" }, [
+      "Chủ phòng chưa trả lời — kiểm tra lại mã, hoặc nhờ họ mở lại phòng. Nếu cả hai đều online mà vẫn im, máy chủ phòng có thể chưa được cập nhật.",
+    ]));
+  }, 12000);
+
   const leaveBtn = el("button", { class: "btn ghost block", style: "margin-top:12px" }, ["← Rời phòng"]);
   leaveBtn.addEventListener("click", () => {
     /* Leaving mid-fight abandons it — the lock the fight put on the plant has to
        go with it, or the fighter stays unsellable and unbreedable until reload
        (load repair also clears it, but the garden should not wait for one). */
     myPlant.locks.battle = false;
+    window.clearInterval(announceTimer);
+    window.clearTimeout(silentTimer);
     activeView?.destroy();
     client.destroy();
     nav("arena");

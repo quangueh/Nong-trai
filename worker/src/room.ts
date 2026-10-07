@@ -82,6 +82,18 @@ function keyTs(prefixLen: number, name: string): number {
   return Number.isFinite(ts) ? ts : 0;
 }
 
+/** Where one message lands in KV, stamped with the worker's own clock. */
+async function putMsg(env: RoomKvEnv, code: string, msg: unknown): Promise<string | null> {
+  if (!msg || typeof msg !== "object" || Array.isArray(msg)) return null;
+  const packed = JSON.stringify(msg);
+  if (packed.length > MAX_MSG_BYTES) return null;
+  const key = `${prefix(code)}${String(Date.now()).padStart(TS_WIDTH, "0")}:${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+  await env.DB.put(key, packed, { expirationTtl: MSG_TTL_S });
+  return key;
+}
+
 export async function routeRoom(req: Request, env: RoomKvEnv): Promise<Response> {
   const body = (await req.json().catch(() => null)) as
     | { action?: string; code?: string; msg?: unknown; afterTs?: number }
@@ -100,10 +112,7 @@ export async function routeRoom(req: Request, env: RoomKvEnv): Promise<Response>
       const existing = await env.DB.list({ prefix: prefix(code) });
       if (existing.keys.length >= MAX_ROOM_MSGS) return fail("room_full", 429);
 
-      const key = `${prefix(code)}${String(Date.now()).padStart(TS_WIDTH, "0")}:${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
-      await env.DB.put(key, packed, { expirationTtl: MSG_TTL_S });
+      const key = await putMsg(env, code, msg);
       return ok({ k: key });
     }
 
@@ -131,16 +140,38 @@ export async function routeRoom(req: Request, env: RoomKvEnv): Promise<Response>
     }
 
     case "reset": {
-      // The host calls this before sharing a freshly minted code, so a message left over
-      // from a previous match cannot leak into the new lobby. The cutoff is the reset
-      // moment itself: a join written even a millisecond later — by any clock — sorts
-      // after it and survives.
+      // The host calls this before sharing a freshly minted code, so a message left
+      // over from a previous match cannot leak into the new lobby.
+      //
+      // The cutoff used to be `Date.now()` at the moment this request arrived, which
+      // was wrong in a way only two devices could ever produce: the reset and the
+      // guest's join travel on different connections, and nothing orders them. A
+      // reset that arrived *after* a join deleted it — the host never saw the
+      // second player and the room stayed a one-person lobby forever.
+      //
+      // The fix is to make the reset carry the room's own `create` message. It is
+      // written first, in this same request, so its key is the boundary: everything
+      // before it is from a previous match, everything after it — any join that
+      // could only have been sent by someone holding the code — survives. Ordering
+      // inside one request is the only ordering two devices can be given.
+      //
+      // The deletion compares whole key names, not timestamps: two writes in the same
+      // millisecond sort by their random suffix, and a stale message that happened to
+      // sort after the marker would survive it. Anything that is not the marker is
+      // older than the room by definition — a join written "between" the marker and
+      // this list would have had to arrive inside a single request's microseconds.
       const p = prefix(code);
-      const cutoff = `${p}${String(Date.now()).padStart(TS_WIDTH, "0")}:`;
+      let cutoff = `${p}${String(Date.now()).padStart(TS_WIDTH, "0")}:`;
+      let marker: string | null = null;
+      if (body?.msg && typeof body.msg === "object") {
+        marker = await putMsg(env, code, body.msg);
+      }
       const list = await env.DB.list({ prefix: p });
-      const stale = list.keys.map((k) => k.name).filter((k) => k < cutoff);
+      const stale = list.keys
+        .map((k) => k.name)
+        .filter((k) => (marker ? k !== marker : k < cutoff));
       await Promise.all(stale.map((k) => env.DB.delete(k)));
-      return ok({ cleared: stale.length });
+      return ok({ cleared: stale.length, k: marker });
     }
 
     default:

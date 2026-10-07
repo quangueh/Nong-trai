@@ -8980,3 +8980,112 @@ button.qachip:active {
   height: 100%;
   display: block;
 }
+
+/* ==========================================================================
+   Leaderboard — pinned board in the right rail, FAB on phones.
+   ========================================================================== */
+
+.lb-panel {
+  margin-top: 10px;
+  padding: 10px 10px 12px;
+}
+
+.lb-sub {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 6px 0 4px;
+}
+
+.lb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.lb-row:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.lb-row.me {
+  background: rgba(123, 190, 90, 0.14);
+  border: 1px solid rgba(123, 190, 90, 0.35);
+}
+
+.lb-rank {
+  flex: none;
+  width: 30px;
+  text-align: center;
+  font-weight: 800;
+  font-size: 11px;
+}
+
+.lb-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.lb-val {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-2, #ffd76e);
+}
+
+.lb-me {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+
+.lb-refresh {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.lb-refresh:hover {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* The phone has no rail; the board opens as a sheet from this button instead. */
+.lb-fab {
+  position: fixed;
+  right: 14px;
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: linear-gradient(160deg, rgba(52, 76, 41, 0.95), rgba(30, 44, 26, 0.95));
+  font-size: 20px;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+}
+
+@media (min-width: 1024px) {
+  .lb-fab {
+    display: none;
+  }
+  .side-panel .lb-panel {
+    margin-top: 12px;
+  }
+}

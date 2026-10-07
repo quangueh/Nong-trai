@@ -177,6 +177,15 @@ export class RoomClient {
   private seq = 0;
   private readonly relay: string;
   private readonly pollMs: number;
+  /**
+   * A guest keeps announcing itself until the host's snapshot names it — a join can be
+   * lost to a race on the wire, and the state snapshot is the only proof the host saw it.
+   * Bounded so a dead room stops costing requests; a host that comes back late still gets
+   * a few announcements before the guest gives up.
+   */
+  private acked = false;
+  private announces = 0;
+  private announceTick = 0;
 
   constructor(
     private readonly playerId: string,
@@ -214,6 +223,11 @@ export class RoomClient {
     if (m.mid) {
       if (this.seen.has(m.mid)) return;
       this.remember(m.mid);
+    }
+    // The host's own snapshot is the acknowledgement: once it lists this guest, the
+    // join landed and the announce loop can stop.
+    if (m.kind === "state" && m.snapshot.players.some((p) => p.playerId === this.playerId)) {
+      this.acked = true;
     }
     this.dispatch(m);
   }
@@ -261,13 +275,23 @@ export class RoomClient {
    * over the last one's leftovers. The worker keeps anything newer than the reset
    * moment, so a join that landed already is safe.
    */
-  private relayReset() {
+  /**
+   * Clear a recycled code's mailbox — atomically with the room's first message.
+   *
+   * Codes are six characters and live fifteen minutes, so two matches can share one.
+   * The reset carries the `create` message in the same request and the worker writes
+   * it before wiping anything older: a request that deletes "everything before now"
+   * can arrive *after* a guest's join and eat it, while one that deletes "everything
+   * before this create" cannot, because a join can only ever be sent by someone who
+   * was already shown the code.
+   */
+  private relayReset(marker: RoomMessage) {
     const code = this.code;
     if (!this.relay || !code) return;
     void fetch(`${this.relay}/api/room`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "reset", code }),
+      body: JSON.stringify({ action: "reset", code, msg: marker }),
     }).catch(() => {});
   }
 
@@ -296,9 +320,29 @@ export class RoomClient {
       } catch {
         // A dead relay costs the remote half of the room, not the local one.
       }
+      this.maybeReannounce();
     };
     void tick();
     this.relayTimer = setInterval(tick, this.pollMs);
+  }
+
+  /**
+   * Re-send the join until the host's snapshot proves it arrived.
+   *
+   * A join can die on the wire — a reset still in flight, a dropped request, a host
+   * tab that was mid-navigation — and nothing else retries it, so the guest used to
+   * sit on "đang kết nối" forever while the host waited in an empty lobby. Every
+   * fourth poll the guest says "I am here" again, for about a minute and a half;
+   * the host dedupes on `playerId`, so repeats are cheap, and the first snapshot
+   * that names this player flips `acked` and stops the loop.
+   */
+  private maybeReannounce() {
+    if (this.isHostRole || this.acked || !this.code) return;
+    if (++this.announceTick % 4 !== 0) return;
+    if (this.announces >= 40) return;
+    this.announces++;
+    this.publish({ kind: "join", code: this.code, playerId: this.playerId, name: this.playerName });
+    this.publish({ kind: "req_state", code: this.code, playerId: this.playerId });
   }
 
   private stopRelay() {
@@ -325,11 +369,17 @@ export class RoomClient {
     const code = randomCode();
     this.code = code;
     this.isHostRole = true;
-    this.relayReset();
+    this.acked = true;
     const msg: RoomMessage = { kind: "create", code, hostId: this.playerId, hostName: this.playerName };
-    this.publish(msg);
-    // Local echo, bypassing dedupe — the publish already marked the mid, and the host's
-    // own listeners still expect to see the room they just made.
+    msg.mid = `${this.playerId}:${++this.seq}:${Math.random().toString(36).slice(2, 6)}`;
+    this.remember(msg.mid);
+    this.ensureChannel()?.postMessage(msg);
+    // The create goes out inside the reset, so the mailbox wipe and the message that
+    // opens the room are one atomic request — see relayReset for why that ordering
+    // has to be atomic rather than two requests.
+    this.relayReset(msg);
+    // Local echo, bypassing dedupe — the mid is already marked, and the host's own
+    // listeners still expect to see the room they just made.
     this.dispatch(msg);
     this.startRelay();
     return code;
@@ -338,6 +388,9 @@ export class RoomClient {
   join(code: string) {
     this.code = code.toUpperCase();
     this.isHostRole = false;
+    this.acked = false;
+    this.announces = 0;
+    this.announceTick = 0;
     this.publish({ kind: "join", code: this.code, playerId: this.playerId, name: this.playerName });
     this.startRelay();
   }
@@ -428,13 +481,20 @@ export class HostRoom {
     return this.plants.get(plantId);
   }
 
-  addGuest(playerId: string, name: string) {
-    if (this.snapshot.players.some((p) => p.playerId === playerId)) return;
+  /**
+   * Add a joining player. Returns true only when the roster actually grew — a guest
+   * re-announcing an already-known join must not spam the lobby with repeats of
+   * "đã vào phòng", so the caller needs to be able to tell a fresh arrival from an
+   * echo.
+   */
+  addGuest(playerId: string, name: string): boolean {
+    if (this.snapshot.players.some((p) => p.playerId === playerId)) return false;
     // A room is a 1v1. Without a cap a third tab would join, never pick a plant the
     // battle knows about, and block `canStart` for the two who are actually playing.
-    if (this.snapshot.players.length >= 2) return;
+    if (this.snapshot.players.length >= 2) return false;
     this.snapshot.players.push({ playerId, name, isHost: false, plantId: null, ready: false, connected: true, stance: "aggressive" });
     this.refreshState();
+    return true;
   }
 
   removePlayer(playerId: string) {

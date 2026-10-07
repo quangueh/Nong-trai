@@ -182,6 +182,53 @@ console.log("\n5. google sign-in refuses what it should");
   check("password change still works for an email account", pwOnEmail.status === 200, JSON.stringify(pwOnEmail.body));
 }
 
+console.log("\n6. the room relay actually exists");
+{
+  // These three routes are the ones a stale deploy loses first: the account routes
+  // existed from day one, so health passing tells you nothing about the build's age.
+  // `not_found` here is the exact failure that made rooms and friends silently dead.
+  const code = "SMK" + String(Date.now()).slice(-3);
+  const send = await req("/api/room", {
+    method: "POST",
+    body: { action: "send", code, msg: { kind: "create", code, hostId: "smoke", hostName: "Smoke" } },
+  });
+  check("/api/room send works (worker is current)", send.status === 200 && Boolean(send.body.k), `${send.status} ${JSON.stringify(send.body)}`);
+
+  const poll = await req("/api/room", { method: "POST", body: { action: "poll", code, afterTs: 0 } });
+  const msgs = (poll.body.msgs ?? []) as { m?: { kind?: string } }[];
+  check("the written message polls back", poll.status === 200 && msgs.some((m) => m.m?.kind === "create"), `${poll.status} ${msgs.length} msgs`);
+
+  // The reset carries the new room's marker message; anything older must go.
+  const reset = await req("/api/room", {
+    method: "POST",
+    body: { action: "reset", code, msg: { kind: "create", code, hostId: "smoke", hostName: "Smoke2" } },
+  });
+  check("reset keeps its own marker", reset.status === 200, `${reset.status} ${JSON.stringify(reset.body)}`);
+  const after = await req("/api/room", { method: "POST", body: { action: "poll", code, afterTs: 0 } });
+  const left = ((after.body.msgs ?? []) as { m?: { hostName?: string } }[]).map((m) => m.m?.hostName);
+  check("reset wiped the old message but kept the marker", left.length === 1 && left[0] === "Smoke2", JSON.stringify(left));
+}
+
+console.log("\n7. friends exist on this deploy");
+{
+  const list = await req("/api/friend", { method: "POST", token, body: { action: "list" } });
+  check("/api/friend list works", list.status === 200 && Array.isArray(list.body.friends), `${list.status} ${JSON.stringify(list.body)}`);
+
+  const selfAdd = await req("/api/friend", { method: "POST", token, body: { action: "add", query: email } });
+  check("adding yourself is refused, not a 404", selfAdd.status === 400 && selfAdd.body.error === "that_is_you", `${selfAdd.status} ${JSON.stringify(selfAdd.body)}`);
+
+  const noUser = await req("/api/friend", { method: "POST", token, body: { action: "add", query: "nobody-at-all-zzz@example.com" } });
+  check("an unknown player is refused by name", noUser.status === 404 && noUser.body.error === "no_such_player", `${noUser.status} ${JSON.stringify(noUser.body)}`);
+}
+
+console.log("\n8. the leaderboard ranks the save just pushed");
+{
+  const board = await req("/api/leaderboard", { token });
+  check("/api/leaderboard works", board.status === 200 && Array.isArray(board.body.power), `${board.status} ${JSON.stringify(board.body).slice(0, 160)}`);
+  const me = board.body.me as { powerRank?: number; levelRank?: number } | null;
+  check("the caller is ranked after one save push", Boolean(me && me.powerRank), JSON.stringify(me));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 console.log(`\nthrowaway account left behind: ${email}`);
 if (fail > 0) process.exitCode = 1;
