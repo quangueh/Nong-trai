@@ -1170,6 +1170,16 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
      */
     seed?: string;
     /**
+     * The fighter as it was when the bell rang, so the replay fights the same plant.
+     *
+     * Returned rather than letting the screen re-read the live plant, because the settle
+     * has already paid out by the time the replay mounts — skill XP has strengthened the
+     * skills and plant XP has lifted the level. `snapshotFromPlant` reads those fields,
+     * so a replay built from the post-settle object is a different fight: same seed,
+     * different log, and the watched ending can disagree with the recorded one.
+     */
+    replayAs?: Plant;
+    /**
      * Which sub-objectives were met, and the bonus they paid.
      *
      * Returned rather than recomputed by the screen, for the reason every receipt in this
@@ -1202,7 +1212,24 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
      * a local: one value, used by both.
      */
     const seed = seedToken(me.plantId, monster.plant.plantId, stage, Date.now());
-    const result = simulateBattle(me, monster.plant, {
+    /*
+     * The fighter, frozen the way the bell will see it.
+     *
+     * The settle below pays out before the screen replays the fight — skill XP
+     * raises `skill.power` and shortens `cooldown`, plant XP lifts the level —
+     * and every one of those writes lands on the same live `me` the replay
+     * snapshots. A replay that fights with post-reward skills is a different
+     * fight: same seed, different event log, and a plant can "die" on screen in
+     * a fight the store recorded as a win. The clone is returned so the view
+     * replays the fighter the settle actually used.
+     */
+    const fighterAsSettled: Plant = {
+      ...me,
+      stats: { ...me.stats },
+      skills: me.skills.map((s) => ({ ...s })),
+      growth: { ...me.growth },
+    };
+    const result = simulateBattle(fighterAsSettled, monster.plant, {
       seed,
       maxSeconds: 90,
       arena: "sunny",
@@ -1303,7 +1330,7 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
       this.settling--;
     }
 
-    return { ok: true, result, won, monster, reward, drops, nextUnlocked, seed, objectives: objectives ?? undefined };
+    return { ok: true, result, won, monster, reward, drops, nextUnlocked, seed, replayAs: fighterAsSettled, objectives: objectives ?? undefined };
   }
 
   runQuickBattle(plantId: string, opponent: Plant): { result: BattleResult; won: boolean } {

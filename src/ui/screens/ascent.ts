@@ -410,7 +410,16 @@ export function renderAscent(_nav: Navigate): HTMLElement {
      */
     const view = new BattleView({
       container: host,
-      plantA: me,
+      /*
+       * The fighter as it was at the bell, not the live plant.
+       *
+       * The settle has already paid out by now — its skill XP strengthened the skills and
+       * its plant XP lifted the level — so `me` is no longer the plant that fought. The
+       * replay is seeded to reproduce the settled fight, and it can only do that off the
+       * same combat fields; off the mutated plant it is a different fight that can show
+       * a death in a battle the store recorded as a win.
+       */
+      plantA: out.replayAs ?? me,
       plantB: monster.plant,
       mySide: "a",
       /*

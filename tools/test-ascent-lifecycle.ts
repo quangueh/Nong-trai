@@ -78,6 +78,59 @@ console.log("one engine, so a stage result is a record of what was watched:");
   check("and agree on damage, not just the verdict", sameDamage === N, `${sameDamage}/${N}`);
 }
 
+console.log("\nthe replay fights the plant that was settled, not the rewarded one:");
+{
+  /* Same seed is not enough: the settle pays out before the screen replays,
+     and the payout mutates the live plant — `addSkillXp` raises power and
+     shortens cooldowns, `gainXp` lifts the level. A replay snapshotting the
+     post-settle plant runs a different fight, so the store returns
+     `replayAs`: the fighter frozen at the bell. Checked end to end here
+     because the drift only exists inside `runAscentStage`. */
+  const mem = new Map<string, string>();
+  (globalThis as unknown as { localStorage: Storage }).localStorage = {
+    getItem: (k: string) => mem.get(k) ?? null,
+    setItem: (k: string, v: string) => void mem.set(k, v),
+    removeItem: (k: string) => void mem.delete(k),
+    clear: () => mem.clear(),
+    key: (i: number) => [...mem.keys()][i] ?? null,
+    get length() { return mem.size; },
+  } as Storage;
+  const { GameStore } = await import("../src/core/store");
+  const store = new GameStore();
+  const p = store.state.plants[0];
+  p.growth.stage = "mature";
+  /* Park every skill just under its first level boundary so the settle's own
+     XP grant (+12 win / +4 loss) crosses it whichever way the fight goes —
+     the live plant provably diverges from the fighter the bell saw. */
+  for (const s of p.skills) s.masteryXp = 28;
+  const out = store.runAscentStage(p.plantId, 1);
+  check("the stage settles", out.ok === true, String(out.reason));
+  const replayed =
+    out.replayAs && out.seed && out.monster
+      ? simulateBattle(out.replayAs, out.monster.plant, { seed: out.seed, maxSeconds: 90, arena: "sunny" })
+      : null;
+  check(
+    "the frozen fighter replays to the settled verdict",
+    replayed !== null && replayed.winner === out.result!.winner,
+    `settle ${out.result?.winner} vs replay ${replayed?.winner}`,
+  );
+  check(
+    "and reproduces the same event log, not just the verdict",
+    replayed !== null && replayed.events.length === out.result!.events.length,
+    `${out.result?.events.length} vs ${replayed?.events.length}`,
+  );
+  const drifted = p.skills.some(
+    (s, i) =>
+      s.power !== out.replayAs!.skills[i].power ||
+      s.cooldown !== out.replayAs!.skills[i].cooldown,
+  );
+  check(
+    "the live plant provably drifted, which is why the frozen copy exists",
+    drifted,
+    `skill power ${out.replayAs?.skills[0]?.power} -> ${p.skills[0]?.power}`,
+  );
+}
+
 console.log("\nstage identity:");
 {
   check("a stage has a name", stageName(1).length > 2, stageName(1));

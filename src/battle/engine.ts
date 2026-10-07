@@ -428,7 +428,9 @@ export function simulateBattle(plantA: Plant, plantB: Plant, config: BattleConfi
 
 function sideSummary(s: BattleSideState) {
   return {
-    hp: Math.max(0, Math.round(s.hp)),
+    /* Same rounding rule as the live bar: a survivor at 0.4 HP is reported as 1,
+       never 0 — a winner that "had 0 HP left" reads as a corpse. */
+    hp: s.died ? 0 : Math.max(1, Math.round(s.hp)),
     hpPct: round2(clamp((s.hp / s.snap.maxHp) * 100, 0, 100)),
     damageDealt: Math.round(s.damageDealt),
     damageTaken: Math.round(s.damageTaken),
@@ -665,11 +667,15 @@ function applyDamage(
      * which is arguably correct, and is left alone deliberately, but only once death is
      * actually recorded.
      */
+    events.push({ seq: seq.v++, type: "REFLECT", t: round2(time), side: foeSide, amount: round2(reflect), hpAfter: Math.max(0, Math.round(attacker.hp)), text: `Vỏ Cứng phản lại ${Math.round(reflect)}` });
     if (attacker.hp <= 0) {
       attacker.hp = 0;
       attacker.died = true;
+      /* A death without a death line: the REFLECT entry alone leaves a plant
+         greyed out with nothing in the log saying it fell — and the player
+         reading "chết trước" has no way to name why. */
+      events.push({ seq: seq.v++, type: "DEATH", t: round2(time), side, text: `${attacker.snap.name} gục ngã vì phản sát thương` });
     }
-    events.push({ seq: seq.v++, type: "REFLECT", t: round2(time), side: foeSide, amount: round2(reflect), hpAfter: Math.max(0, Math.round(attacker.hp)), text: `Vỏ Cứng phản lại ${Math.round(reflect)}` });
   }
 
   // Lifesteal.

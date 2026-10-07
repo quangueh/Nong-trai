@@ -123,7 +123,8 @@ export class BattleView {
   private speed = 1;
   /** Whether the fight is stopped on purpose, as opposed to finished. */
   private paused = false;
-  /** Whether this fight has announced itself. See estartTimer. */
+  /** Whether this fight has announced itself. See 
+estartTimer. */
   private started = false;
   private pauseBtn: HTMLButtonElement | null = null;
   /** Detached in `destroy`, or every fight ever opened would leave a keydown behind. */
@@ -945,7 +946,10 @@ class FighterView {
     const shieldPct = clampPct(Math.min(hpPct, (this.state.shield / max) * 100));
     this.shieldFill.style.transform = `scaleX(${shieldPct / 100})`;
     this.shieldFill.style.display = this.state.shield > 0 ? "block" : "none";
-    this.hpText.textContent = `${Math.max(0, Math.round(this.state.hp))}/${max}${this.state.shield > 0 ? ` · 🛡 ${Math.round(this.state.shield)}` : ""}`;
+    /* A live fighter never prints 0: `Math.round(0.4)` reads "0" on a plant that
+       is still swinging, which looks like a corpse that won the fight. */
+    const hpShown = this.state.died ? 0 : Math.max(1, Math.round(this.state.hp));
+    this.hpText.textContent = `${hpShown}/${max}${this.state.shield > 0 ? ` · 🛡 ${Math.round(this.state.shield)}` : ""}`;
     this.root.classList.toggle("dead", this.state.died);
   }
 
