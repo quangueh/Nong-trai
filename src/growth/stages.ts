@@ -7,15 +7,32 @@ export function tickGrowth(plant: Plant, now: number): { stageChanged: boolean; 
   if (plant.growth.stage === "mature" || plant.growth.stage === "awakened") {
     return { stageChanged: false, readyToHarvest: true };
   }
-  if (now >= plant.growth.stageReadyAt) {
+  /*
+   * Catch up every boundary that elapsed, not just the first. The old
+   * single-step version stamped `stageStartedAt = now`, so a player gone for
+   * two stages' worth of time came back to a plant restarted at 0% of the next
+   * stage — the overshoot was discarded. Anchoring each new stage to the
+   * boundary that passed carries the overshoot forward: offline time advances
+   * growth exactly as online time does.
+   */
+  let changed = false;
+  let finalStage: GrowthStage | undefined;
+  while (plant.growth.stage !== "mature" && plant.growth.stage !== "awakened" && now >= plant.growth.stageReadyAt) {
+    const boundary = plant.growth.stageReadyAt;
     const idx = STAGE_ORDER.indexOf(plant.growth.stage);
     const next = STAGE_ORDER[Math.min(STAGE_ORDER.length - 2, idx + 1)];
     plant.growth.stage = next;
-    plant.growth.stageStartedAt = now;
-    plant.growth.stageReadyAt = next === "mature" ? now : now + STAGE_SECONDS[next] * 1000;
+    plant.growth.stageStartedAt = boundary;
+    plant.growth.stageReadyAt = next === "mature" ? boundary : boundary + STAGE_SECONDS[next] * 1000;
     gainXp(plant, 40 + Math.random() * 40); // stage-up XP; small jitter is fine, not battle-critical
     plant.updatedAt = now;
-    return { stageChanged: true, newStage: next, readyToHarvest: next === "mature" };
+    changed = true;
+    finalStage = next;
+  }
+  if (changed) {
+    // One entry for however many boundaries crossed: the toast announces where
+    // the plant ended up, not every stage it skipped past while the player was away.
+    return { stageChanged: true, newStage: finalStage, readyToHarvest: finalStage === "mature" };
   }
   return { stageChanged: false, readyToHarvest: false };
 }

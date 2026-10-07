@@ -12,6 +12,7 @@ import { computeEcr } from "../src/genetics/ecrCalculator";
 import { simulateBattle } from "../src/battle/engine";
 import { createBenchmarkPlant } from "../src/genetics/benchmarkRoster";
 import { applyCare } from "../src/growth/care";
+import { tickGrowth, stageProgress } from "../src/growth/stages";
 import { sellPrice } from "../src/economy/shop";
 import { finalRarityWeights, rarityWeightsForLevel, RARITY_ORDER } from "../src/config/rarity";
 import { TIER_META } from "../src/config/balance";
@@ -400,6 +401,42 @@ section("15. Validator keeps power budget (docs/15 §15)");
   const fresh = makeParent("validate2");
   check("re-validating is stable", validateGenome(fresh).buildValue === fresh.validation.buildValue);
   check("power rating is positive and finite", Number.isFinite(estimatePower(fresh)) && estimatePower(fresh) > 0);
+}
+
+// ---------------------------------------------------------------------------
+section("16. Growth catch-up keeps elapsed time (offline progress)");
+// ---------------------------------------------------------------------------
+{
+  // A plant gone past a boundary keeps the overshoot instead of restarting the
+  // next stage at zero: sprout crossed at t=60s, ticked at t=200s, resumes young
+  // at 140/180s — not 0/180s.
+  const p = createSeedPlant(SPECIES_IDS[0], "test", "catchup-a", 0);
+  p.growth.stage = "sprout";
+  p.growth.stageStartedAt = 0;
+  p.growth.stageReadyAt = 60_000;
+  const r = tickGrowth(p, 200_000);
+  check("partial catch-up lands in the next stage", r.stageChanged && p.growth.stage === "young", p.growth.stage);
+  check("overshoot carries into the new stage", p.growth.stageStartedAt === 60_000 && p.growth.stageReadyAt === 240_000,
+    `${p.growth.stageStartedAt} → ${p.growth.stageReadyAt}`);
+  check("progress shows the carried time", Math.abs(stageProgress(p, 200_000) - 140 / 180) < 1e-9, stageProgress(p, 200_000).toFixed(3));
+
+  // Every boundary crossed in one call — a long-absent player returns to a
+  // mature plant, not one stage further along per session open.
+  const q = createSeedPlant(SPECIES_IDS[0], "test", "catchup-b", 0);
+  q.growth.stage = "seed";
+  q.growth.stageStartedAt = 0;
+  q.growth.stageReadyAt = 15_000;
+  const r2 = tickGrowth(q, 400_000);
+  check("multi-boundary catch-up reaches mature", r2.stageChanged && q.growth.stage === "mature", q.growth.stage);
+  check("single entry reports the final stage", r2.newStage === "mature", `${r2.newStage}`);
+
+  // Online timing is unchanged: a tick inside a stage still does nothing.
+  const onl = createSeedPlant(SPECIES_IDS[0], "test", "catchup-c", 0);
+  onl.growth.stage = "sprout";
+  onl.growth.stageStartedAt = 100_000;
+  onl.growth.stageReadyAt = 160_000;
+  const r3 = tickGrowth(onl, 130_000);
+  check("mid-stage tick is a no-op", !r3.stageChanged && onl.growth.stage === "sprout");
 }
 
 // ---------------------------------------------------------------------------
