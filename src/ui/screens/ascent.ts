@@ -27,7 +27,7 @@ import { BattleView } from "../../battle/battleView";
 import { showStageBrief, showStageResult } from "../fx/stageOverlay";
 import { stageIdentity } from "../../pve/stages";
 import { store } from "../app";
-import { ELEMENT_INFO } from "../../config/elements";
+import { ELEMENT_INFO, dominantElement } from "../../config/elements";
 import { ARCHETYPE_ROLE, TIER_META } from "../../config/balance";
 import { RARITY_META } from "../../config/rarity";
 import { BAND_LABEL, LOOKAHEAD, gateCheck, gateLabel, stageGate, type MonsterSpec, type StageBrief } from "../../pve";
@@ -75,9 +75,9 @@ export function renderAscent(_nav: Navigate): HTMLElement {
   );
   let chosen: string | null = best?.plantId ?? null;
 
-  // Wraps downward rather than scrolling sideways: a garden of twelve plants should
-  // not be a strip the player drags left. The screen's own scroll carries the rows.
-  const roster = el("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:4px" });
+  // A grid of fighter cards rather than a wrap of pills: the same tiles the pickers
+  // use, so choosing a champion looks like choosing rather than reading a list.
+  const roster = el("div", { class: "rostergrid" });
   const listHost = el("div");
   if (mature.length) {
     root.append(
@@ -201,23 +201,33 @@ export function renderAscent(_nav: Navigate): HTMLElement {
     });
     for (const p of sorted) {
       const why = battleBlock(p);
-      const chip = el("button", {
-        class: "btn xs" + (chosen === p.plantId ? " primary" : ""),
-        style: "display:inline-flex;align-items:center;gap:6px;padding:4px 8px 4px 4px" + (why ? ";opacity:.5" : ""),
+      const picked = chosen === p.plantId;
+      const tile = el("button", {
+        class: "rostertile" + (picked ? " is-picked" : "") + (why ? " is-blocked" : ""),
         ...(why ? { title: why } : {}),
+        "aria-pressed": picked ? "true" : "false",
       });
-      const thumb = el("span", { style: "display:inline-block;width:34px;height:34px;flex:none" });
-      thumb.innerHTML = renderPlantSvg(p, 34);
-      chip.append(
-        thumb,
-        el("span", { style: "display:inline-flex;flex-direction:column;line-height:1.25;text-align:left" }, [
-          el("span", { style: "font-weight:700" }, [plantDisplayName(p, store.state.plants)]),
-          el("span", { class: "tiny muted mono" }, [why ?? `Lv${p.growth.level} · ⚔${fmt(p.powerRating)}`]),
-        ]),
-      );
-      chip.disabled = why !== null;
+      // Portrait on an element-tinted bed, so the card reads "this fighter" at a glance
+      // and the garden's variety shows up as colour rather than a row of grey chips.
+      const art = el("span", { class: "rostertile-art" });
+      const dom = ELEMENT_INFO[dominantElement(p.dna.elementGenes).id];
+      art.style.background = dom.tint;
+      art.innerHTML = renderPlantSvg(p, 52);
+      tile.appendChild(art);
+      tile.appendChild(el("span", { class: "rostertile-name" }, [plantDisplayName(p, store.state.plants)]));
+      if (why) {
+        tile.appendChild(el("span", { class: "rostertile-meta is-why" }, [why]));
+      } else {
+        tile.appendChild(
+          el("span", { class: "rostertile-meta" }, [
+            `Lv${p.growth.level} · ⚔${fmt(p.powerRating)} · ${dom.name}`,
+          ]),
+        );
+      }
+      if (picked) tile.appendChild(el("span", { class: "rostertile-check" }, ["✓"]));
+      tile.disabled = why !== null;
       if (!why) {
-        chip.addEventListener("click", () => {
+        tile.addEventListener("click", () => {
           chosen = p.plantId;
           sfx.play("tap");
           // Rebuilt rather than re-rendered, so the ladder does not scroll back to the top and
@@ -226,7 +236,7 @@ export function renderAscent(_nav: Navigate): HTMLElement {
           buildList();
         });
       }
-      roster.appendChild(chip);
+      roster.appendChild(tile);
     }
   }
 
