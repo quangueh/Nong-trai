@@ -349,27 +349,29 @@ function paintQuests(body: HTMLElement, nav: Navigate): void {
  * Mapped from the event the quest listens to rather than stored on the definition: the
  * catalogue is data about *what* is measured, and the screen it is measured on is a UI fact.
  */
-function questDestination(v: QuestView): Screen | null {
+function questDestination(v: QuestView): { screen: Screen; params?: unknown } | null {
   switch (v.def.track.event) {
     case "plant":
-      return "garden";
+      return { screen: "garden" };
     case "care":
-      return "garden";
+      return { screen: "garden" };
     case "breed":
-      return "breeding";
+      return { screen: "breeding" };
     case "stage_completed":
     case "stage_failed":
     case "enemy_defeated":
     case "combo_reached":
-      return "ascent";
+      return { screen: "ascent" };
     case "level_up":
-      return "ascent";
+      return { screen: "ascent" };
     case "item_collected":
-      return "lab";
+      // "Sở hữu hạt X" means the shop — and it means *that* species' card, so the
+      // player lands on the thing to buy rather than a 12,000-species shelf.
+      return { screen: "lab", params: v.def.track.match?.species ? { seed: v.def.track.match.species } : undefined };
     case "exp_gained":
-      return "ascent";
+      return { screen: "ascent" };
     case "skill_unlocked":
-      return "lab";
+      return { screen: "lab" };
     case "reward_claimed":
       return null;
     default:
@@ -465,10 +467,10 @@ function questCard(v: QuestView, nav: Navigate): HTMLElement {
       return;
     }
     const dest = questDestination(v);
-    if (dest && dest !== "garden") {
+    if (dest && dest.screen !== "garden") {
       sfx.play("tap");
-      nav(dest);
-    } else if (dest === "garden") {
+      nav(dest.screen, dest.params);
+    } else if (dest?.screen === "garden") {
       gardenTab = "plots";
       sfx.play("tap");
       nav("garden");

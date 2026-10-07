@@ -8,7 +8,7 @@ import { store } from "../app";
 import { plantDisplayName } from "../../core/plantNames";
 import { CURRENCIES } from "../../core/currency";
 import { currencyIcon } from "../../core/currency";
-import { getSpecies, type SpeciesDef } from "../../config/species";
+import { getSpecies, SPECIES_BY_ID, type SpeciesDef, type SpeciesId } from "../../config/species";
 import { ELEMENTS, ELEMENT_INFO } from "../../config/elements";
 import { ARCHETYPE_ROLE } from "../../config/balance";
 import {
@@ -25,9 +25,14 @@ import type { Navigate } from "./types";
 
 type Tab = "seeds" | "items" | "land" | "orders";
 
-export function renderLab(_nav: Navigate): HTMLElement {
+export function renderLab(_nav: Navigate, params?: unknown): HTMLElement {
   const root = el("div", { class: "fadein" });
   const shell = document.querySelector(".shell")!;
+  /**
+   * A quest can send the player straight to one species' card ("Mở giống X" → this
+   * shop, filtered to X). The pin is applied when the seeds tab first paints.
+   */
+  const seedFocus = (params as { seed?: SpeciesId } | undefined)?.seed;
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "seeds", label: "Hạt cơ bản" },
@@ -62,7 +67,7 @@ export function renderLab(_nav: Navigate): HTMLElement {
      * "seeds". The top bar already repaints itself through store.subscribe, so
      * a purchase needs nothing from a navigation.
      */
-    if (active === "seeds") paintSeeds(body);
+    if (active === "seeds") paintSeeds(body, seedFocus);
     else if (active === "items") paintItems(body, paint);
     else if (active === "land") paintLand(body, paint);
     else paintOrders(body, paint);
@@ -72,11 +77,16 @@ export function renderLab(_nav: Navigate): HTMLElement {
   return root;
 }
 
-function paintSeeds(body: HTMLElement) {
+function paintSeeds(body: HTMLElement, seedFocus?: SpeciesId) {
   const day = Math.floor(Date.now() / 86400000);
   // Filter state lives across repaints so typing in the search box or paging
   // through the catalogue does not reset the shelf.
   let search = "";
+  /**
+   * The quest deep-link pin: a species id that holds the shelf to one card until the
+   * player dismisses it. Kept out of `search` so the box stays free for real typing.
+   */
+  let pinned: SpeciesId | undefined = seedFocus && SPECIES_BY_ID[seedFocus] ? seedFocus : undefined;
   let tier: number | null = null;
   /**
    * Three states, not two.
@@ -113,15 +123,27 @@ function paintSeeds(body: HTMLElement) {
     list,
   );
 
+  /**
+   * Two repaints, deliberately.
+   *
+   * `repaint` rebuilds the toolbar *and* the shelf — the right answer when a chip
+   * toggles, because the chips' own lit state is part of what changed.
+   *
+   * `repaintShelf` leaves the toolbar alone — the right answer for typing, because
+   * rebuilding the search box on every keystroke detaches it and kills its focus:
+   * one character in, the input was gone and every key after the first typed into
+   * nothing. The old code tried to re-focus by querying the *stale* wrap, so even
+   * the repair never actually landed on the live input.
+   */
+  const repaintShelf = () => {
+    list.replaceChildren(buildFeatured(), buildCatalogue());
+  };
   const repaint = () => {
-    list.replaceChildren();
-    list.append(buildTools());
-    list.append(buildFeatured());
-    list.append(buildCatalogue());
+    tools.replaceChildren(buildTools());
+    repaintShelf();
   };
 
   const buildTools = (): HTMLElement => {
-    tools.replaceChildren();
     const wrap = el("div");
 
     const searchRow = el("div", { class: "row", style: "gap:8px;margin-bottom:10px" });
@@ -130,15 +152,23 @@ function paintSeeds(body: HTMLElement) {
     box.addEventListener("input", () => {
       search = box.value;
       page = 1;
-      repaint();
-      // Re-focus: repaint replaces the DOM, so the caret would otherwise jump.
-      const again = wrap.querySelector("input") as HTMLInputElement | null;
-      if (again) {
-        again.focus();
-        again.setSelectionRange(search.length, search.length);
-      }
+      // Shelf only: this input is inside `tools`, and `repaintShelf` never touches it,
+      // so focus and caret survive the whole word instead of the first letter.
+      repaintShelf();
     });
     searchRow.append(box);
+    // The quest pin — a chip rather than a hidden filter, so the player sees why the
+    // shelf is showing one species and can let it go with a tap.
+    if (pinned) {
+      const sp = SPECIES_BY_ID[pinned];
+      const pin = el("button", { class: "btn xs primary", title: "Bỏ lọc" }, [`🎯 ${sp.name} ✕`]);
+      pin.addEventListener("click", () => {
+        pinned = undefined;
+        page = 1;
+        repaint();
+      });
+      searchRow.appendChild(pin);
+    }
     wrap.appendChild(searchRow);
 
     // Tier chips.
@@ -331,6 +361,7 @@ function paintSeeds(body: HTMLElement) {
       playerId: store.state.playerId,
       breederLevel: store.state.breederLevel,
       search,
+      species: pinned,
       tier,
       element,
       archetype,

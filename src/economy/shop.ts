@@ -205,6 +205,13 @@ export interface CatalogueQuery {
    * thing that makes a four-currency shop usable.
    */
   currency?: string | null;
+  /**
+   * Pin the shelf to exactly one species.
+   *
+   * Used by the quest deep-link: "Mở giống X" lands here and should show that one
+   * card, gate and all, not a name-search that may also match a longer-named species.
+   */
+  species?: string;
 }
 
 /**
@@ -263,6 +270,7 @@ export function queryCatalogue(q: CatalogueQuery): CataloguePage {
   // unlockedTier`, which is the gate from before the per-species rules existed and
   // no longer describes what can actually be bought.
   const matched = SPECIES.filter((s) => {
+    if (q.species && s.id !== q.species) return false;
     if (q.tier != null && s.tier !== q.tier) return false;
     if (q.archetype && s.archetype !== q.archetype) return false;
     if (q.element && dominantElement(speciesAffinity(s.id)).id !== q.element) return false;

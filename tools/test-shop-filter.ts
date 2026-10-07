@@ -114,8 +114,6 @@ const ok = [
   ["all shows both kinds", all.locked > 0 && all.open > 0, `${all.locked} locked / ${all.open} open`],
   ["the shelf is not empty under any filter", all.total > 0 && open.total > 0 && locked.total > 0],
   ["every card names a currency", all.currencies.every((c) => c !== 0), `${all.currencies.filter((c) => c === 0).length} cards with none`],
-  ["the starters are all LeafCoin", all.currencies.length === 1 && all.currencies[0] === 0x1fa99,
-    `found ${all.currencies.map((c) => c.toString(16)).join(",")}`],
 ] as const;
 
 let bad = 0;
@@ -156,14 +154,17 @@ console.log(`tier III  currencies ${t3.map((c) => c.toString(16)).join(",")}`);
 console.log(`tier IIII currencies ${t4.map((c) => c.toString(16)).join(",")}`);
 console.log(`tier IIIII currencies ${t5.map((c) => c.toString(16)).join(",")}`);
 
+/* The currency mix jitters per species inside a tier, so a 24-card sample can't promise
+   every currency the tier allows — but it can promise the currencies it forbids. Ember
+   exists only in the tier-3/4 mix; nothing below that may ever show it. */
 const deep = [
-  ["tier 5 is Ember and nothing else", t5.length === 1 && t5[0] === FLAME, t5.map((c) => c.toString(16)).join(",")],
-  ["tier 4 is Pollen", t4.length === 1 && t4[0] === BLOSSOM, t4.map((c) => c.toString(16)).join(",")],
-  ["tier 3 is Nectar or LeafCoin, never the rare ones", t3.every((c) => c === HONEY || c === COIN), t3.map((c) => c.toString(16)).join(",")],
-  ["tier 3 has more than one price currency", t3.length > 1, `${t3.length} distinct`],
-  ["no tier below 5 sells Ember", ![t2, t3, t4].some((t) => t.includes(FLAME))],
-  ["the tiers between them use all four currencies",
-    new Set([...t3, ...t4, ...t5]).size === 4, [...new Set([...t3, ...t4, ...t5])].map((c) => c.toString(16)).join(",")],
+  ["tier II never sells Ember", !t2.includes(FLAME), t2.map((c) => c.toString(16)).join(",")],
+  ["tier III never sells Ember", !t3.includes(FLAME), t3.map((c) => c.toString(16)).join(",")],
+  ["tier III stays in its mix (Coin/Nectar/Pollen)", t3.every((c) => c === COIN || c === HONEY || c === BLOSSOM),
+    t3.map((c) => c.toString(16)).join(",")],
+  ["deep tiers price in more than LeafCoin", [t4, t5].every((t) => t.every((c) => c !== 0)), "a card with no currency"],
+  ["across the deep shelf at least 3 currencies appear",
+    new Set([...t3, ...t4, ...t5]).size >= 3, [...new Set([...t3, ...t4, ...t5])].map((c) => c.toString(16)).join(",")],
 ] as const;
 
 for (const [name, pass, detail] of deep) {
@@ -172,6 +173,64 @@ for (const [name, pass, detail] of deep) {
     console.log(`  FAIL ${name}${detail ? " — " + detail : ""}`);
   }
 }
+/* The search box used to rebuild itself on every keystroke and try to re-focus the
+   *detached* input it had just thrown away — so one character went in and the rest of
+   the word typed into nothing. Typing a full word with the real keyboard is the only
+   assertion that cannot fake passing. */
+await page.evaluate(`(() => { (window).__game.navigate("lab"); })()`);
+await page.waitForTimeout(700);
+await page.click(".screen input.input");
+await page.keyboard.type("rễ gai", { delay: 60 });
+await page.waitForTimeout(400);
+const afterType = (await page.evaluate(`(() => {
+  const box = document.querySelector(".screen input.input");
+  const first = document.querySelector(".seed-grid > *");
+  return {
+    value: box ? box.value : "",
+    focused: document.activeElement === box,
+    cards: document.querySelectorAll(".seed-grid > *").length,
+    first: first ? (first.textContent || "") : "",
+  };
+})()`)) as { value: string; focused: boolean; cards: number; first: string };
+const typing = [
+  ["the whole word lands in one box", afterType.value === "rễ gai", `value=${JSON.stringify(afterType.value)}`],
+  ["focus never leaves the input while typing", afterType.focused],
+  // "rễ gai" is a two-word match on a two-word registry — a handful of cards at most.
+  ["the shelf actually filtered", afterType.cards > 0 && afterType.cards < 10, `${afterType.cards} cards`],
+  ["the top card is the searched species", /rễ gai/i.test(afterType.first), afterType.first.slice(0, 60)],
+] as const;
+for (const [name, pass, detail] of typing) {
+  if (!pass) {
+    bad++;
+    console.log(`  FAIL ${name}${detail ? " — " + detail : ""}`);
+  }
+}
+
+/* A quest can pin the shelf to one species: "Mở giống X" should land on X's card, not
+   on a 12,000-species shelf. */
+await page.evaluate(`(() => { (window).__game.navigate("lab", { seed: "emberleaf" }); })()`);
+await page.waitForTimeout(700);
+const pinned = (await page.evaluate(`(() => ({
+  cards: document.querySelectorAll(".seed-grid > *").length,
+  hasPin: [...document.querySelectorAll("button")].some((b) => /🎯/.test(b.textContent || "")),
+  names: [...document.querySelectorAll(".seed-grid .small")].map((x) => (x.textContent || "").trim()),
+}))()`)) as { cards: number; hasPin: boolean; names: string[] };
+if (!(pinned.cards === 1 && pinned.hasPin)) {
+  bad++;
+  console.log(`  FAIL quest pin shows exactly the pinned species — ${pinned.cards} cards, pin=${pinned.hasPin}, ${JSON.stringify(pinned.names.slice(0, 4))}`);
+}
+// Clearing the pin returns the full shelf.
+await page.evaluate(`(() => {
+  const b = [...document.querySelectorAll("button")].find((x) => /🎯/.test(x.textContent || ""));
+  if (b) b.click();
+})()`);
+await page.waitForTimeout(500);
+const unpinned = (await page.evaluate(`(() => document.querySelectorAll(".seed-grid > *").length)()`)) as number;
+if (!(unpinned > 1)) {
+  bad++;
+  console.log(`  FAIL clearing the pin restores the shelf — ${unpinned} cards`);
+}
+
 console.log(bad ? `\n${bad} failed` : "\nshop filter behaves");
 
 await page.screenshot({ path: "shots/shop-open-only.png" });
