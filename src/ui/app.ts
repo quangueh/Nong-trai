@@ -98,6 +98,7 @@ let levelBadge: HTMLElement | null = null;
 let noticeHost: HTMLElement | null = null;
 
 let current: Screen = "garden";
+let lastRoute: Screen | null = null;
 let screenHost: HTMLElement;
 let navHost: HTMLElement;
 /** The wide-layout rails beside the screen. Empty panels collapse in CSS. */
@@ -169,7 +170,16 @@ function paint(params?: unknown) {
     ascent: renderAscent,
     lab: renderLab,
   }[current];
-  screenHost.appendChild(view(navigate, params));
+  const node = view(navigate, params);
+  /*
+   * A route change gets a soft entrance; a same-route repaint must stay
+   * instant. Every care action re-navigates to "garden", so animating those
+   * too would make the garden breathe once per watering can — motion that
+   * means nothing teaches the eye to ignore motion that does.
+   */
+  if (current !== lastRoute) node.classList.add("route-enter");
+  lastRoute = current;
+  screenHost.appendChild(node);
 
   /*
    * The desktop rails. Only the garden fills them — quests on the left, the

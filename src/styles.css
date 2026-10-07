@@ -218,6 +218,24 @@ body {
   scrollbar-color: var(--line) transparent;
 }
 
+/* Route transitions: a short rise-and-fade when a different screen mounts.
+   Same-route repaints never get the class — every care action re-navigates to
+   "garden", and animating those would make the garden breathe once per
+   watering can. */
+.route-enter {
+  animation: routeIn 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes routeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .garden-pulse {
   position: relative;
   overflow: hidden;
@@ -776,6 +794,14 @@ h4 {
   gap: 8px;
 }
 
+/* Hover lift is gated on a real pointer: on touch, :hover sticks after the
+   tap and the button would sit raised until something else was touched. */
+@media (hover: hover) {
+  .btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+  }
+}
 .btn:active {
   transform: scale(0.975);
 }
@@ -973,8 +999,10 @@ h4 {
   gap: 8px;
   min-width: 0;
 }
-/* The enemy is mirrored so the two plants face each other across the clock. */
-.battler.enemy .avatar .plantart {
+/* The fighter on the left — yours — is mirrored so the two plants face each
+   other across the clock. The base art faces left, which is what the enemy on
+   the right wants already. */
+.battler.b-side .avatar .plantart {
   transform: scaleX(-1);
 }
 
@@ -1070,8 +1098,8 @@ h4 {
   transform: rotate(16deg) translateY(14px) scale(0.94);
   transition: transform 0.45s cubic-bezier(0.3, 0.7, 0.4, 1);
 }
-.battler.enemy.dead .avatar .plantart {
-  /* The enemy is mirrored, so the same fall needs the mirror composed in. */
+.battler.b-side.dead .avatar .plantart {
+  /* Your fighter is mirrored, so the same fall needs the mirror composed in. */
   transform: scaleX(-1) rotate(16deg) translateY(14px) scale(0.94);
 }
 .battler .avatar {
@@ -1789,7 +1817,10 @@ h4 {
   box-shadow: 0 22px 16px rgba(48, 78, 100, 0.3);
 }
 
-.plot:hover {
+/* :not(:active) keeps the press-sink honest — without it this rule outranks
+   .plot:active and a click would lift the island instead of pressing it. */
+.plot:hover:not(:active) {
+  transform: translateY(-3px);
   box-shadow: 0 38px 28px rgba(48, 78, 100, 0.34);
 }
 
@@ -2101,20 +2132,24 @@ h4 {
     transform: translateX(0) scale(1);
   }
 }
-.battler.b-enemy.attack .plantart {
-  animation-name: lunge-back;
+/* Your fighter attacks from the left: the lunge travels right, and because the
+   plant is mirrored the whole keyframe composes scaleX(-1) — otherwise the
+   sprite would un-flip for the duration of its own attack. */
+.battler.b-side.attack .plantart {
+  animation-name: lunge-mirror;
 }
-@keyframes lunge-back {
+@keyframes lunge-mirror {
   0% {
-    transform: translateX(0) scale(1);
+    transform: scaleX(-1) translateX(0) scale(1);
   }
   38% {
-    transform: translateX(14px) scale(1.06);
+    transform: scaleX(-1) translateX(-14px) scale(1.06);
   }
   100% {
-    transform: translateX(0) scale(1);
+    transform: scaleX(-1) translateX(0) scale(1);
   }
 }
+
 
 .plot .ribbon {
   position: absolute;

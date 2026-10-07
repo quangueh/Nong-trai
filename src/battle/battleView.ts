@@ -260,7 +260,9 @@ estartTimer. */
     this.clock = el("div", { class: "clock" }, [`${this.maxSeconds}`]);
     center.append(this.phaseLabel, this.clock);
 
-    field.append(this.sides[other].root, center, this.sides[mine].root);
+    /* Mine reads from the left — the convention every battler on this planet
+       taught its players. The opponent stands on the right. */
+    field.append(this.sides[mine].root, center, this.sides[other].root);
 
     // The contact wash. Owned by the arena so the juice layer has something to
     // drive without reaching into the effects markup.
@@ -634,8 +636,12 @@ estartTimer. */
           const maxHp = Math.max(1, this.session.side(victim).snap.maxHp);
           const weight = weightFor(amount / maxHp, ev.isCrit === true, (ev.hpAfter ?? 1) <= 0);
           const attacker = (ev.side ?? (victim === "a" ? "b" : "a")) as FxSide;
-          // The victim is pushed away from whoever hit it.
-          const push = victim === "a" ? -1 : 1;
+          /* The victim is pushed away from whoever hit it — outward, off the
+             side of the screen it stands on. Mine always stands on the left
+             now, so the sign keys off mySide, not the engine's a/b: under a
+             mirrored view (the PvP guest) the engine's `a` is the fighter on
+             the right. */
+          const push = victim === this.opts.mySide ? -1 : 1;
           const cast = this.lastCast;
           // Reuse the cast's delivery and colour if it was recent enough to be the
           // same action, so a trap that armed and then erupts erupts as a trap.
