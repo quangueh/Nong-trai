@@ -342,9 +342,16 @@ export function gardenBar(deps: GardenBarDeps): GardenBarHandle {
       chips.appendChild(chip(`🎁 Nhận ${claimable.length} thưởng`, "act", () => {
         let got = 0;
         for (const q of claimable) if (store.claimQuest(q.id).ok) got++;
-        if (got > 0) sfx.play("collect", { pitch: Math.min(10, got * 2) });
-        toast(got > 0 ? `Đã nhận ${got} phần thưởng nhiệm vụ` : "Chưa nhận được thưởng nào");
-        refresh();
+        try {
+          if (got > 0) sfx.play("collect", { pitch: Math.min(10, got * 2) });
+          toast(got > 0 ? `Đã nhận ${got} phần thưởng nhiệm vụ` : "Chưa nhận được thưởng nào");
+        } finally {
+          /* Full repaint, not refresh(): the claim emptied the shelf — the tab badge,
+             the tracker, the desktop rail cards and this chip are all still showing
+             the pre-claim state. A stale "Nhận" card answers its next tap with
+             "đã nhận rồi", which reads as the claim having failed when it landed. */
+          deps.nav("garden");
+        }
       }));
     }
 

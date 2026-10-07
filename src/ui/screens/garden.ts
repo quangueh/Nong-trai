@@ -314,22 +314,27 @@ function paintQuests(body: HTMLElement, nav: Navigate): void {
         totals.items += res.rewards.items ?? 0;
         totals.geneCrystal += res.rewards.geneCrystal ?? 0;
       }
-      if (got > 0) {
-        rewardFly(all, totals);
-        const parts = [
-          totals.coins ? `🪙 ${totals.coins.toLocaleString("vi-VN")}` : "",
-          totals.exp ? `✨ ${totals.exp} EXP cây` : "",
-          totals.breederXp ? `🎖️ ${totals.breederXp} EXP nhà lai` : "",
-          totals.items ? `🧺 ${totals.items}` : "",
-          totals.geneCrystal ? `💎 ${totals.geneCrystal}` : "",
-        ]
-          .filter(Boolean)
-          .join("  ");
-        toast(`Đã nhận ${got} nhiệm vụ${parts ? `: ${parts}` : ""}`, 3000);
-      } else {
-        toast("Chưa nhận được thưởng nào");
+      try {
+        if (got > 0) {
+          rewardFly(all, totals);
+          const parts = [
+            totals.coins ? `🪙 ${totals.coins.toLocaleString("vi-VN")}` : "",
+            totals.exp ? `✨ ${totals.exp} EXP cây` : "",
+            totals.breederXp ? `🎖️ ${totals.breederXp} EXP nhà lai` : "",
+            totals.items ? `🧺 ${totals.items}` : "",
+            totals.geneCrystal ? `💎 ${totals.geneCrystal}` : "",
+          ]
+            .filter(Boolean)
+            .join("  ");
+          toast(`Đã nhận ${got} nhiệm vụ${parts ? `: ${parts}` : ""}`, 3000);
+        } else {
+          toast("Chưa nhận được thưởng nào");
+        }
+      } finally {
+        // Same rule as the single-card claim: the rewards already landed, so the
+        // shelf must repaint no matter what the celebration did.
+        nav("garden");
       }
-      nav("garden");
     });
     body.append(tabs, all, list);
   } else {
@@ -431,20 +436,26 @@ function questCard(v: QuestView, nav: Navigate): HTMLElement {
   card.addEventListener("click", () => {
     if (v.status === "completed") {
       const res = store.claimQuest(v.def.id);
-      if (res.ok) {
-        // Rewards visibly fly into the HUD pills, then the pill bumps — the
-        // claim is the moment the garden pays out, and it should look like one.
-        rewardFly(card, v.def.rewards);
-        sfx.play("reward");
-        const what = questRewardChips(v)
-          .map((c) => c.textContent ?? "")
-          .join("  ");
-        toast(`Nhận thưởng ${res.title}: ${what || "xong"}`, 2600);
-      } else {
-        sfx.play("error");
-        toast(res.reason ?? "Chưa nhận được");
+      try {
+        if (res.ok) {
+          // Rewards visibly fly into the HUD pills, then the pill bumps — the
+          // claim is the moment the garden pays out, and it should look like one.
+          rewardFly(card, v.def.rewards);
+          sfx.play("reward");
+          const what = questRewardChips(v)
+            .map((c) => c.textContent ?? "")
+            .join("  ");
+          toast(`Nhận thưởng ${res.title}: ${what || "xong"}`, 2600);
+        } else {
+          sfx.play("error");
+          toast(res.reason ?? "Chưa nhận được");
+        }
+      } finally {
+        // The repaint is not optional: the claim already landed in the store, so a
+        // screen that keeps the old "Nhận" card answers the next tap with
+        // "đã nhận rồi" — success wearing the clothes of failure.
+        nav("garden");
       }
-      nav("garden");
       return;
     }
     if (v.status === "claimed") return;
