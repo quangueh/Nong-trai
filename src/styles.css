@@ -2086,9 +2086,12 @@ h4 {
   }
 }
 
-/* Hit reaction: the attacker flinches back along its own axis. Applied by
-   battleView via a class on the avatar wrapper, not baked into the art. */
-.battler.hit .plantart {
+/* Hit reaction: the victim flinches AWAY from whoever hit it — yours on the
+   left goes left, theirs on the right goes right. The mirrored fighter needs
+   the mirror composed into its keyframe, the same reason `lunge-mirror`
+   exists: a bare translateX under scaleX(-1) walks the wrong way and drops the
+   flip for the whole animation. */
+.battler.hit-enemy .plantart {
   animation: flinch 0.34s ease-out;
 }
 @keyframes flinch {
@@ -2102,18 +2105,19 @@ h4 {
     transform: translateX(0);
   }
 }
-.battler.hit-enemy .plantart {
-  animation-name: flinch-back;
+.battler.hit .plantart {
+  animation: flinch-mirror 0.34s ease-out;
 }
-@keyframes flinch-back {
+@keyframes flinch-mirror {
   0% {
-    transform: translateX(0);
+    transform: scaleX(-1) translateX(0);
   }
   22% {
-    transform: translateX(-9px) scaleX(0.96);
+    /* +9 inside the mirror is -9 on screen: away from the right-side attacker. */
+    transform: scaleX(-1) translateX(9px) scaleX(0.96);
   }
   100% {
-    transform: translateX(0);
+    transform: scaleX(-1) translateX(0);
   }
 }
 
