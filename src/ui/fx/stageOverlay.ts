@@ -306,14 +306,22 @@ export function showStageResult(out: StageOutcome, onContinue: () => void): Prom
   }
 
   return new Promise<void>((resolve) => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        finish();
+      }
+    };
     const finish = (): void => {
       cancelled = true;
+      document.removeEventListener("keydown", onKey);
       sfx.play("tap");
       overlay.remove();
       onContinue();
       resolve();
     };
     go.addEventListener("click", finish);
+    document.addEventListener("keydown", onKey);
   });
 }
 
@@ -461,7 +469,16 @@ export function showStageBrief(brief: StageBrief, monster: MonsterSpec, fighter:
   overlay.appendChild(panel);
   (document.querySelector(".shell") ?? document.body).appendChild(overlay);
 
-  const close = (): void => overlay.remove();
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      close();
+    }
+  };
+  const close = (): void => {
+    document.removeEventListener("keydown", onKey);
+    overlay.remove();
+  };
   go.addEventListener("click", () => {
     close();
     onFight();
@@ -470,6 +487,7 @@ export function showStageBrief(brief: StageBrief, monster: MonsterSpec, fighter:
   overlay.addEventListener("click", (e: Event) => {
     if (e.target === overlay) close();
   });
+  document.addEventListener("keydown", onKey);
   go.focus();
 }
 

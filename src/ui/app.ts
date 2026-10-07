@@ -2,7 +2,7 @@
 
 import { GameStore, resetSave, type Notice } from "../core/store";
 import { motionPref, setMotionPref, type MotionPref } from "../core/prefs";
-import { el, toast, seedIcon } from "./components";
+import { el, toast, seedIcon, dismissOnEscape } from "./components";
 import { renderGarden, gardenSidebars } from "./screens/garden";
 import { renderCollection } from "./screens/collection";
 import { renderBreeding } from "./screens/breeding";
@@ -394,6 +394,7 @@ function openSettings(): void {
   );
   s.querySelector("button")!.addEventListener("click", close);
   overlay.addEventListener("click", close);
+  dismissOnEscape(s, close);
   document.querySelector(".shell")!.append(overlay, s);
 }
 

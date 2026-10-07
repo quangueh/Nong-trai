@@ -127,11 +127,18 @@ export function playFusion(child: Plant, onDone: () => void): void {
   const revealTimer = window.setTimeout(() => sfx.play("levelUp", { gain: 0.7 }), calm ? 60 : 900);
 
   let finished = false;
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      finish();
+    }
+  };
   const finish = (): void => {
     if (finished) return;
     finished = true;
     window.clearTimeout(timer);
     window.clearTimeout(revealTimer);
+    document.removeEventListener("keydown", onKey);
     sfx.play("tap", { gain: 0.5 });
     overlay.remove();
     onDone();
@@ -139,12 +146,9 @@ export function playFusion(child: Plant, onDone: () => void): void {
   const timer = window.setTimeout(finish, calm ? 700 : TOTAL_MS);
 
   overlay.addEventListener("click", finish);
-  // Escape should leave, not trap.
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") finish();
-  };
+  // Escape should leave, not trap — and not linger: the listener leaves with
+  // the overlay, not on a guess-ahead timeout.
   document.addEventListener("keydown", onKey);
-  window.setTimeout(() => document.removeEventListener("keydown", onKey), TOTAL_MS + 200);
 }
 
 /**

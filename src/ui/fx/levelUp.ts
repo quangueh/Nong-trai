@@ -126,7 +126,14 @@ export function celebrateLevelUp(options: LevelUpOptions): Promise<void> {
   host.appendChild(overlay);
 
   const done = new Promise<void>((resolve) => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        finish();
+      }
+    };
     const finish = (): void => {
+      document.removeEventListener("keydown", onKey);
       sfx.play("tap");
       overlay.classList.add("is-leaving");
       // Removed on the animation's own end rather than after a guessed delay: a timeout
@@ -143,6 +150,9 @@ export function celebrateLevelUp(options: LevelUpOptions): Promise<void> {
     overlay.addEventListener("click", (e: Event) => {
       if (e.target === overlay) finish();
     });
+    // Escape dismisses like the button and the backdrop — a celebration that
+    // cannot be left by the keyboard is a celebration that traps it.
+    document.addEventListener("keydown", onKey);
   });
 
   /* The bar animates from empty, because "your bar filled" is the fact the celebration is

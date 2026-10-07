@@ -9,7 +9,7 @@ import {
   protocolUnlocked,
   type ProtocolId,
 } from "../../genetics/protocols";
-import { el, toast, oddsBar, probabilityRows, rarityTag, traitChips, plantThumb, archetypeRadar, fmt } from "../components";
+import { el, toast, oddsBar, probabilityRows, rarityTag, traitChips, plantThumb, archetypeRadar, fmt, dismissOnEscape } from "../components";
 import { store } from "../app";
 import type { Plant } from "../../core/types";
 
@@ -334,10 +334,12 @@ function openPicker(onPick: (id: string) => void) {
   const s = el("div", { class: "sheet" });
   s.appendChild(el("div", { class: "handle" }));
   s.appendChild(content);
-  overlay.addEventListener("click", () => {
+  const dismiss = (): void => {
     overlay.remove();
     s.remove();
-  });
+  };
+  overlay.addEventListener("click", dismiss);
+  dismissOnEscape(s, dismiss);
   shell.append(overlay, s);
 }
 
@@ -453,15 +455,17 @@ export function openMutationReport(result: BreedingResult, onClose: () => void) 
   est.textContent = `Giá bán ước tính: ~${fmt(sellPriceOf(plant))}🪙 · ECR ${plant.validation.ecr.toFixed(3)} · Thi đấu: ${plant.validation.rankedLegal ? "hợp lệ" : "không hợp lệ"}`;
   content.appendChild(est);
 
-  const close = el("button", { class: "btn primary block", style: "margin-top:12px" }, ["🌿 Đưa vào vườn"]);
-  close.addEventListener("click", () => {
+  const dismiss = (): void => {
     overlay.remove();
     s.remove();
     onClose();
-  });
+  };
+  const close = el("button", { class: "btn primary block", style: "margin-top:12px" }, ["🌿 Đưa vào vườn"]);
+  close.addEventListener("click", dismiss);
   content.appendChild(close);
 
   s.appendChild(content);
+  dismissOnEscape(s, dismiss);
   shell.append(overlay, s);
 
   // Mutations land first, then the skills that carry them, then the assessment.

@@ -1,6 +1,6 @@
 /** Arena screen: PvE, room create/join, lobby, result (docs/05 §7-§10). */
 
-import { el, toast, elementTags, traitChips, fmt, plantThumb } from "../components";
+import { el, toast, elementTags, traitChips, fmt, plantThumb, dismissOnEscape } from "../components";
 import { store } from "../app";
 import type { Plant } from "../../core/types";
 import { canBattle } from "../../growth/stages";
@@ -285,10 +285,12 @@ function pickPlant(nav: Navigate, onPick: (plant: Plant) => HTMLElement | void) 
   const overlay = el("div", { class: "overlay" });
   const s = el("div", { class: "sheet" });
   s.append(el("div", { class: "handle" }), content);
-  overlay.addEventListener("click", () => {
+  const dismiss = (): void => {
     overlay.remove();
     s.remove();
-  });
+  };
+  overlay.addEventListener("click", dismiss);
+  dismissOnEscape(s, dismiss);
   shell.append(overlay, s);
   void nav;
 }

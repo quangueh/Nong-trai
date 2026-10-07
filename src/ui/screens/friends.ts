@@ -23,7 +23,7 @@
  * to explain that a plant has to be ready.
  */
 
-import { el, toast, fmt, plantThumb } from "../components";
+import { el, toast, fmt, plantThumb, dismissOnEscape } from "../components";
 import { store } from "../app";
 import { canBattle } from "../../growth/stages";
 import type { Plant } from "../../core/types";
@@ -327,10 +327,12 @@ function pickFighter(ready: Plant[], onPick: (plant: Plant) => void | Promise<vo
   // `append`, not `appendChild`: the handle and the body are two children, and
   // `appendChild` takes one. The arena's own sheet does the same thing.
   sheet.append(el("div", { class: "handle" }), content);
-  overlay.addEventListener("click", () => {
+  const dismiss = (): void => {
     overlay.remove();
     sheet.remove();
-  });
+  };
+  overlay.addEventListener("click", dismiss);
+  dismissOnEscape(sheet, dismiss);
   (shell ?? document.body).append(overlay, sheet);
 }
 

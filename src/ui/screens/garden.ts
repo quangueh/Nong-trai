@@ -788,12 +788,9 @@ function openSeedPicker(nav: Navigate, _anchor?: HTMLElement): void {
     sfx.play("back");
     overlay.remove();
     s.remove();
-    document.removeEventListener("keydown", onKey);
   };
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") close();
-  };
-  document.addEventListener("keydown", onKey);
+  // Escape is handled inside `sheet()` — a second listener here would fire
+  // close() twice and double the sound.
   document.querySelector(".shell")!.append(overlay, s);
   showPick();
 }
@@ -1069,15 +1066,6 @@ export function openDetail(plant: Plant, nav: Navigate, shell: Element) {
     overlay.remove();
     s.remove();
   });
-  /* Escape lives on the sheet, not the document: the overlay click already
-     dismisses through onClose, and a document listener would outlive the
-     sheet — every path above removes `s`, which retires this handler with it. */
-  s.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      overlay.remove();
-      s.remove();
-    }
-  });
   shell.append(overlay, s);
 }
 
@@ -1163,16 +1151,6 @@ export function openCare(plant: Plant, nav: Navigate, shell: Element) {
     overlay.remove();
     s.remove();
     nav("garden");
-  });
-  /* Escape dismisses like the backdrop does — re-rendered via openCare, so a
-     document-level listener would stack one per care action; element-level
-     dies with `s`. */
-  s.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      overlay.remove();
-      s.remove();
-      nav("garden");
-    }
   });
   shell.append(overlay, s);
 }

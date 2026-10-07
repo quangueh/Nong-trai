@@ -244,23 +244,51 @@ export function statRow(label: string, value: string, extra = ""): HTMLElement {
   return row;
 }
 
+/* ---------------------------------------------------------------------------
+ * Modal dismissal, once.
+ *
+ * Two halves that only work together: focus must land inside the modal for
+ * keydown to bubble through it, and Escape that reaches the modal must stop
+ * there — an Escape that also fires the game input underneath (the battle
+ * pause toggle listens on `window`) is a ghost input.
+ *
+ * Bound to the element, not the document: a document listener outlives its
+ * overlay and would stack one handler per reopen.
+ * ------------------------------------------------------------------------- */
+function focusFirstIn(root: HTMLElement): void {
+  queueMicrotask(() => {
+    root.querySelector<HTMLElement>("button, input, select, textarea, [tabindex]")?.focus({ preventScroll: true });
+  });
+}
+
+/** Focus `root`'s first control on mount and run `close` when Escape bubbles to it. */
+export function dismissOnEscape(root: HTMLElement, close: () => void): void {
+  focusFirstIn(root);
+  root.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      close();
+    }
+  });
+}
+
 export function sheet(content: HTMLElement, onClose?: () => void): { overlay: HTMLElement; sheet: HTMLElement } {
   const overlay = el("div", { class: "overlay" });
   const s = el("div", { class: "sheet" });
   s.appendChild(el("div", { class: "handle" }));
   s.appendChild(content);
   overlay.addEventListener("click", onClose ?? (() => {}));
-  /*
-   * Land the keyboard inside the sheet once it mounts: callers append
-   * synchronously, so a microtask runs after mount and moves focus to the
-   * first control. Without it Tab starts behind the overlay and Escape has
-   * nowhere inside the sheet to bubble through. Mouse users see no ring —
-   * :focus-visible follows the last input modality — but the focus position is
-   * still set for anyone who reaches for the keyboard next.
-   */
-  queueMicrotask(() => {
-    s.querySelector<HTMLElement>("button, input, select, textarea, [tabindex]")?.focus({ preventScroll: true });
-  });
+  /* Mouse users see no focus ring — :focus-visible follows the last input
+     modality — but the position is set for whoever reaches for the keyboard. */
+  focusFirstIn(s);
+  if (onClose) {
+    s.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    });
+  }
   return { overlay, sheet: s };
 }
 

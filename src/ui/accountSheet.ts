@@ -1,6 +1,6 @@
 /** Account sheet: sign in, sign up, and see the sync state. */
 
-import { el, toast } from "./components";
+import { el, toast, dismissOnEscape } from "./components";
 import { showGate } from "./app";
 import { googleSignInAvailable } from "../account/google";
 import { googlePanel } from "./googlePanel";
@@ -130,6 +130,7 @@ export function openAccount(): void {
   );
   s.querySelector("button")!.addEventListener("click", close);
   overlay.addEventListener("click", close);
+  dismissOnEscape(s, close);
 
   document.querySelector(".shell")!.append(overlay, s);
 }
