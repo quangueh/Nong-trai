@@ -11,7 +11,7 @@ import { createSeedPlant, breedPlants, validateGenome, estimatePower } from "../
 import { computeEcr } from "../src/genetics/ecrCalculator";
 import { simulateBattle } from "../src/battle/engine";
 import { createBenchmarkPlant } from "../src/genetics/benchmarkRoster";
-import { applyCare } from "../src/growth/care";
+import { applyCare, previewCare } from "../src/growth/care";
 import { tickGrowth, stageProgress } from "../src/growth/stages";
 import { sellPrice } from "../src/economy/shop";
 import { finalRarityWeights, rarityWeightsForLevel, RARITY_ORDER } from "../src/config/rarity";
@@ -414,6 +414,7 @@ section("16. Growth catch-up keeps elapsed time (offline progress)");
   p.growth.stage = "sprout";
   p.growth.stageStartedAt = 0;
   p.growth.stageReadyAt = 60_000;
+  p.growthStats.growthRate = 0.5; // neutral baseline: stage durations stay at the flat rate
   const r = tickGrowth(p, 200_000);
   check("partial catch-up lands in the next stage", r.stageChanged && p.growth.stage === "young", p.growth.stage);
   check("overshoot carries into the new stage", p.growth.stageStartedAt === 60_000 && p.growth.stageReadyAt === 240_000,
@@ -426,6 +427,7 @@ section("16. Growth catch-up keeps elapsed time (offline progress)");
   q.growth.stage = "seed";
   q.growth.stageStartedAt = 0;
   q.growth.stageReadyAt = 15_000;
+  q.growthStats.growthRate = 0.5;
   const r2 = tickGrowth(q, 400_000);
   check("multi-boundary catch-up reaches mature", r2.stageChanged && q.growth.stage === "mature", q.growth.stage);
   check("single entry reports the final stage", r2.newStage === "mature", `${r2.newStage}`);
@@ -437,6 +439,48 @@ section("16. Growth catch-up keeps elapsed time (offline progress)");
   onl.growth.stageReadyAt = 160_000;
   const r3 = tickGrowth(onl, 130_000);
   check("mid-stage tick is a no-op", !r3.stageChanged && onl.growth.stage === "sprout");
+
+  // A trained growth rate genuinely shortens the next stage.
+  const fast = createSeedPlant(SPECIES_IDS[0], "test", "catchup-d", 0);
+  fast.growth.stage = "sprout";
+  fast.growth.stageStartedAt = 0;
+  fast.growth.stageReadyAt = 60_000;
+  fast.growthStats.growthRate = 0.9;
+  tickGrowth(fast, 61_000);
+  check("high growthRate shortens the next stage", fast.growth.stageReadyAt - fast.growth.stageStartedAt < 180_000,
+    `${(fast.growth.stageReadyAt - fast.growth.stageStartedAt) / 1000}s`);
+}
+
+// ---------------------------------------------------------------------------
+section("17. Every announced care gain lands somewhere real");
+// ---------------------------------------------------------------------------
+{
+  // statusPower/elementPower used to roll, print, and vanish — no field ever
+  // changed. Their weights now feed live stats, and the farm-side stats
+  // (mutationChance, growthRate) write to growthStats where applyCare reads
+  // them back.
+  const mg = makeParent("phantom-mg");
+  mg.growth.stage = "mature";
+  const before = mg.growthStats.mutationChance;
+  mg.careMemory.lastAction = null;
+  applyCare(mg, "moonlight", 1000, { items: 99, geneCrystal: 99, leafCoin: 9999 });
+  check("moonlight raises the real mutation chance", mg.growthStats.mutationChance > before,
+    `${before} → ${mg.growthStats.mutationChance}`);
+
+  const gr = makeParent("phantom-gr");
+  gr.growth.stage = "mature";
+  const grBefore = gr.growthStats.growthRate;
+  gr.careMemory.lastAction = null;
+  applyCare(gr, "sunlight", 1000, { items: 99, geneCrystal: 99, leafCoin: 9999 });
+  check("sunlight raises the real growth rate", gr.growthStats.growthRate > grBefore,
+    `${grBefore} → ${gr.growthStats.growthRate}`);
+
+  // The preview and the action agree on which stats move.
+  const pv = makeParent("phantom-pv");
+  pv.growth.stage = "young";
+  const preview = previewCare(pv, "pruning");
+  check("preview announces real stats", preview.gains.length > 0 && preview.gains.every((g) => g.stat in pv.stats || g.stat in pv.growthStats),
+    JSON.stringify(preview.gains));
 }
 
 // ---------------------------------------------------------------------------

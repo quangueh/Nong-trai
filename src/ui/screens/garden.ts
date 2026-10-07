@@ -6,6 +6,7 @@ import type { Plant } from "../../core/types";
 import { STAGE_LABEL, STAT_LABEL } from "../../core/types";
 import type { GardenWeather } from "../../core/store";
 import { canBattle, stageProgress } from "../../growth/stages";
+import { previewCare } from "../../growth/care";
 import { plotCard, canWaterNow } from "./plotCard";
 import { WEATHER_INFO, streakLabel } from "../../config/quests";
 import { QUEST_TABS } from "../../quests/catalog";
@@ -1099,7 +1100,15 @@ export function openCare(plant: Plant, nav: Navigate, shell: Element) {
     const title = el("div", { class: "small", style: "font-weight:700" }, [`${action.emoji} ${action.name}`]);
     const cost = costLabel(action.id);
     const desc = el("div", { class: "tiny muted" }, [descLabel(action.id)]);
-    b.append(title, el("div", { class: "tiny", style: `color:${cost.ok ? "var(--muted)" : "var(--danger)"}` }, [cost.label]), desc);
+    /* The decision-facing line: what this plant stands to gain, computed by the
+       same math the action applies — "≈ +12 HP · +5 Thủ" is a choice, a bare
+       label is a guess. Mutation odds surface only where they move. */
+    const preview = previewCare(plant, action.id as CareActionId);
+    // mutationChance applies as a permanent percent bump — show the unit.
+    const parts = preview.gains.slice(0, 3).map((g) => (g.stat === "mutationChance" ? `+${g.amount}% ĐB` : `+${g.amount} ${g.label}`));
+    if (preview.mutationChance >= 0.05) parts.push(`ĐB ${Math.round(preview.mutationChance * 100)}%`);
+    const effect = el("div", { class: "tiny", style: "color:#7fb069;font-weight:600" }, [parts.length ? `≈ ${parts.join(" · ")}` : "Hết dư địa"]);
+    b.append(title, el("div", { class: "tiny", style: `color:${cost.ok ? "var(--muted)" : "var(--danger)"}` }, [cost.label]), effect, desc);
     if (!cost.ok) b.disabled = true;
     b.addEventListener("click", () => {
       const before = { leafCoin: store.state.leafCoin, items: store.state.items, geneCrystal: store.state.geneCrystal };

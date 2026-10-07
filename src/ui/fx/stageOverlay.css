@@ -314,8 +314,10 @@
 .stagemap-cell {
   position: relative;
   flex: none;
-  min-width: 38px;
-  height: 38px;
+  /* 44px is the touch-target floor; the row scrolls sideways so the extra
+     width costs nothing and thumbs stop missing the frontier cell. */
+  min-width: 44px;
+  height: 44px;
   padding: 0 4px;
   border-radius: 10px;
   font-size: 12px;

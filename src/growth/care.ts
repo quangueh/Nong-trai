@@ -44,6 +44,60 @@ export function remainingPotential(plant: Plant, stat: string): number {
   return clamp((pot.softCap - cur) / pot.softCap, 0.15, 1);
 }
 
+/**
+ * What a care action is expected to yield — the decision-facing half of
+ * `applyCare`, run without the random roll and without touching the plant.
+ *
+ * Spending items and coins on a button that says only "Tưới nước" is a blind
+ * purchase; the interesting part of tending — which stat this plant actually
+ * needs, and how much room its genes still leave for it — was invisible until
+ * after the spend. The estimate is the midpoint of the same ±15% roll the real
+ * action makes, so the preview can promise "~12 HP" and the action may pay
+ * 10–14: honest about the shape, silent about the exact number.
+ */
+export interface CarePreview {
+  gains: { stat: string; amount: number; label: string }[];
+  /** Final mutation chance after this action's own bonus, 0–0.6. */
+  mutationChance: number;
+  affinityElement?: ElementId;
+}
+
+export function previewCare(plant: Plant, actionId: CareActionId): CarePreview {
+  const action = CARE_ACTIONS[actionId];
+  const stageMult = STAGE_GAIN[plant.growth.stage] ?? 1;
+  const mood = MOOD_EFFECTS[plant.mood];
+  const count24h = plant.careMemory.counts[actionId] ?? 0;
+  const memoryFactor = clamp(1 - count24h * 0.14, 0.4, 1);
+  const stressFactor = 1 - stressForAction(plant, actionId);
+
+  const gains: CarePreview["gains"] = [];
+  const est = (stat: GrowthStatId, weight: number): void => {
+    if (weight <= 0) return;
+    const expected =
+      action.baseGain * stageMult * weight * (0.5 + geneAffinityFor(plant, stat)) *
+      remainingPotential(plant, stat) * memoryFactor * stressFactor * mood.gain;
+    const cur = statValue(plant, stat);
+    const hardCap = plant.potential[stat]?.hardCap ?? Infinity;
+    const room = Math.max(0, Math.round(hardCap - cur));
+    if (room <= 0) return;
+    gains.push({ stat, amount: Math.min(Math.max(1, Math.round(expected)), room), label: statLabel(stat) });
+  };
+  for (const [stat, weight] of Object.entries(action.primary)) est(stat as GrowthStatId, weight);
+  for (const [stat, weight] of Object.entries(action.secondary)) est(stat as GrowthStatId, weight * 0.5);
+
+  const mutationChance = clamp(
+    plant.growthStats.mutationChance +
+      (actionId === "fertilizer" ? 0.05 : 0) +
+      (actionId === "gene_serum" ? 0.16 : 0) +
+      (actionId === "moonlight" ? 0.14 : 0) +
+      mood.mutation,
+    0,
+    0.6,
+  );
+
+  return { gains, mutationChance, affinityElement: action.affinity?.element as ElementId | undefined };
+}
+
 function statValue(plant: Plant, stat: string): number {
   const s = plant.stats as unknown as Record<string, number>;
   const v = s[stat];
@@ -281,8 +335,6 @@ function geneAffinityFor(plant: Plant, stat: GrowthStatId): number {
     skillPower: plant.dna.statGenes.skillPower,
     crit: plant.dna.statGenes.crit,
     evasion: plant.dna.statGenes.evasion,
-    statusPower: plant.dna.skillGenes.control * 0.8,
-    elementPower: plant.dna.mutationGenes.wildness * 0.5,
     growthRate: plant.dna.statGenes.speed * 0.6,
   };
   return map[stat] ?? 0.5;
@@ -293,7 +345,17 @@ function applyStatGain(plant: Plant, stat: string, amount: number) {
   if (stat in s) {
     if (stat === "crit" || stat === "evasion") s[stat] = round2(clamp(s[stat] + amount / 200, 0.01, 0.6));
     else s[stat] = Math.round(s[stat] + amount);
+    return;
   }
+  /*
+   * Farm-side stats live in growthStats. mutationChance feeds the mutation roll
+   * on the next care action; growthRate shortens the next stage (stages.ts).
+   * Both are point-per-percent: +1 announced is +1% applied. Caps keep a
+   * dedicated gardener from saturating the farm economy.
+   */
+  const g = plant.growthStats;
+  if (stat === "mutationChance") g.mutationChance = round2(clamp(g.mutationChance + amount / 100, 0, 0.45));
+  else if (stat === "growthRate") g.growthRate = round2(clamp(g.growthRate + amount / 100, 0, 0.9));
 }
 
 /**
@@ -366,6 +428,7 @@ export function statLabel(stat: string): string {
     statusPower: "Sức trạng thái",
     elementPower: "Sức hệ",
     growthRate: "Tốc lớn",
+    mutationChance: "Tỉ lệ ĐB",
   };
   return map[stat] ?? stat;
 }

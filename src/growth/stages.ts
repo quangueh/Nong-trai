@@ -1,7 +1,20 @@
 /** Growth stage progression + offline progress (docs/12 §3, §14). */
 
 import { STAGE_SECONDS, STAGE_ORDER, type GrowthStage, type Plant } from "../core/types";
+import { clamp } from "../core/rng";
 import { gainXp } from "./care";
+
+/**
+ * How long `stage` lasts for this plant. `growthStats.growthRate` — trained via
+ * sunlight/music/serum care — tilts the wait around a neutral 0.5 baseline:
+ * fresh genomes (≈0.4–0.7) stay within ±5% of the old flat pace, while a plant
+ * deliberately trained to the 0.9 cap grows ~20% faster. That is what
+ * "Tốc lớn" was always supposed to mean.
+ */
+export function stageDurationMs(stage: GrowthStage, plant: Plant): number {
+  const gr = plant.growthStats?.growthRate ?? 0.5;
+  return Math.round(STAGE_SECONDS[stage] * 1000 * clamp(1.25 - gr * 0.5, 0.75, 1.25));
+}
 
 export function tickGrowth(plant: Plant, now: number): { stageChanged: boolean; newStage?: GrowthStage; readyToHarvest: boolean } {
   if (plant.growth.stage === "mature" || plant.growth.stage === "awakened") {
@@ -23,7 +36,7 @@ export function tickGrowth(plant: Plant, now: number): { stageChanged: boolean; 
     const next = STAGE_ORDER[Math.min(STAGE_ORDER.length - 2, idx + 1)];
     plant.growth.stage = next;
     plant.growth.stageStartedAt = boundary;
-    plant.growth.stageReadyAt = next === "mature" ? boundary : boundary + STAGE_SECONDS[next] * 1000;
+    plant.growth.stageReadyAt = next === "mature" ? boundary : boundary + stageDurationMs(next, plant);
     gainXp(plant, 40 + Math.random() * 40); // stage-up XP; small jitter is fine, not battle-critical
     plant.updatedAt = now;
     changed = true;

@@ -39,6 +39,7 @@ export const STAT_LABEL: Record<string, string> = {
   statusPower: "Sức trạng thái",
   elementPower: "Sức hệ",
   growthRate: "Tốc lớn",
+  mutationChance: "Tỉ lệ ĐB",
 };
 
 export interface ElementAffinity extends Record<ElementId, number> {}

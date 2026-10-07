@@ -11,7 +11,15 @@ export type CareActionId =
   | "moonlight"
   | "gene_serum";
 
-export type GrowthStatId = StatGeneId | "statusPower" | "elementPower" | "growthRate" | "skillPower" | "mutationChance";
+/**
+ * Every id here must resolve to a field that is actually read by a mechanic —
+ * `stats.*` for combat stats, `growthStats.mutationChance` / `growthStats.growthRate`
+ * for farm-side effects. Earlier ids like statusPower/elementPower had no home:
+ * the gain was rolled, announced, and silently discarded. Weights that used them
+ * now feed skillPower instead, which is where status and elemental potency
+ * actually flow (skill strength covers both).
+ */
+export type GrowthStatId = StatGeneId | "skillPower" | "growthRate" | "mutationChance";
 
 export type StressKind = "overwater" | "heat" | "overfeed" | "mutationDebt" | "battleFatigue" | "neglect";
 
@@ -41,7 +49,7 @@ export const CARE_ACTIONS: Record<CareActionId, CareActionDef> = {
     cost: { items: 1 },
     cooldownSeconds: 45,
     primary: { hp: 0.6, defense: 0.25 },
-    secondary: { statusPower: 0.1, growthRate: 0.05 },
+    secondary: { skillPower: 0.1, growthRate: 0.05 },
     riskTags: ["overwater"],
     skillTags: ["heal", "shield", "regen"],
     baseGain: 5,
@@ -54,7 +62,7 @@ export const CARE_ACTIONS: Record<CareActionId, CareActionDef> = {
     emoji: "☀️",
     cost: { leafCoin: 5 },
     cooldownSeconds: 60,
-    primary: { attack: 0.55, elementPower: 0.2 },
+    primary: { attack: 0.55, skillPower: 0.2 },
     secondary: { growthRate: 0.15, crit: 0.1 },
     riskTags: ["heat"],
     skillTags: ["fire", "burst", "attack"],
@@ -94,7 +102,7 @@ export const CARE_ACTIONS: Record<CareActionId, CareActionDef> = {
     emoji: "🎵",
     cost: { leafCoin: 8 },
     cooldownSeconds: 100,
-    primary: { skillPower: 0.5, statusPower: 0.25 },
+    primary: { skillPower: 0.7 },
     secondary: { growthRate: 0.1 },
     riskTags: ["wildness"],
     skillTags: ["music", "resonance", "control"],
@@ -107,7 +115,7 @@ export const CARE_ACTIONS: Record<CareActionId, CareActionDef> = {
     emoji: "🌙",
     cost: { geneCrystal: 1 },
     cooldownSeconds: 300,
-    primary: { skillPower: 0.3, statusPower: 0.2 },
+    primary: { skillPower: 0.5 },
     secondary: { mutationChance: 0.2 },
     riskTags: ["latent"],
     skillTags: ["rare", "shadow", "mutation"],

@@ -832,6 +832,8 @@ h4 {
   padding: 8px 12px;
   font-size: 12px;
   border-radius: 10px;
+  /* Compact, not sub-thumb: dense filter rows still clear 36px. */
+  min-height: 36px;
 }
 .btn.block {
   width: 100%;
