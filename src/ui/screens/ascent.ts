@@ -75,7 +75,9 @@ export function renderAscent(_nav: Navigate): HTMLElement {
   );
   let chosen: string | null = best?.plantId ?? null;
 
-  const roster = el("div", { class: "row", style: "gap:8px;overflow-x:auto;margin-bottom:12px;padding-bottom:4px" });
+  // Wraps downward rather than scrolling sideways: a garden of twelve plants should
+  // not be a strip the player drags left. The screen's own scroll carries the rows.
+  const roster = el("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:4px" });
   const listHost = el("div");
   if (mature.length) {
     root.append(

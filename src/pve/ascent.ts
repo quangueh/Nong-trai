@@ -100,9 +100,13 @@ export const FIRST_STAGE_POWER = 150;
  * Bisecting each account's real parity point put the strongest bred account at about 1300.
  * That is the top of the ladder, and it is what `LADDER_TOP_POWER` is.
  *
- * Sixty stages of stat climbing is a career; the rest is kit.
+ * Fifty stages of stat climbing is a career; the rest is kit. Fifty rather than sixty
+ * because the climb is a *felt* ramp: at the old sixty-stage fit each stage added 3.7%,
+ * which inside the handful of stages a player sees at once read as no movement at all.
+ * The same two ends over fifty stages is ~4.5% a stage — every stage is visibly a step,
+ * and the wall still lands exactly where a maxed account stops.
  */
-export const STAT_LADDER_END = 60;
+export const STAT_LADDER_END = 50;
 
 /** Power at the last stat stage: measured parity for a fully bred, fully levelled account. */
 const LADDER_TOP_POWER = 1300;
@@ -113,7 +117,7 @@ const LADDER_TOP_POWER = 1300;
  * `LADDER_TOP_POWER / FIRST_STAGE_POWER` spread over the ladder's length - which is the whole
  * reason it is a formula and not a literal. Change either end and the ladder re-fits itself,
  * so the first stage stays winnable for a new account and the last stays reachable for a
- * maxed one. At today's numbers it comes out near 3.7% a stage.
+ * maxed one. At today's numbers it comes out near 4.5% a stage.
  */
 export const STAGE_GROWTH = Math.pow(LADDER_TOP_POWER / FIRST_STAGE_POWER, 1 / (STAT_LADDER_END - 1));
 
@@ -145,12 +149,22 @@ export const BAND_LABEL: Record<AscentBand, string> = {
   "khong-duong": "Không đường",
 };
 
-/** Bands, by stage. The names are the player's sense of distance, not a difficulty index. */
+/**
+ * Bands, by stage. The names are the player's sense of distance, not a difficulty index.
+ *
+ * The boundaries are the same ones `BAND_CHARACTER` in `stages.ts` uses — 1/11/31/61/91 —
+ * because the stage card's band label and the stage's identity/name/hazard are two answers
+ * to the same question, and disagreeing is how a stage gets called "Vực thẳm" on the map
+ * while its card still says "Thung lũng". (They cannot share the table directly: `stages.ts`
+ * imports this module's constants, so importing back would be a cycle.) The old split —
+ * one "Thung lũng" label spanning stages 9 to 60 — is also why a long climb felt like the
+ * same stage repeated: the map never changed what it called the road.
+ */
 export function stageBand(stage: number): AscentBand {
-  if (stage <= 8) return "khoi-dau";
-  if (stage <= STAT_LADDER_END) return "thung-lung";
-  if (stage <= 150) return "vuc-tham";
-  if (stage <= 400) return "vuot-han";
+  if (stage <= 10) return "khoi-dau";
+  if (stage <= 30) return "thung-lung";
+  if (stage <= 60) return "vuc-tham";
+  if (stage <= 90) return "vuot-han";
   return "khong-duong";
 }
 
@@ -159,12 +173,14 @@ export function stageBand(stage: number): AscentBand {
  *
  * Tied to the stage rather than to the player, so a levelled player meeting a stage-40
  * monster meets the biggest body that stage has, and the affixes on top of it are the part
- * that still moves. Above stage 120 the body stops growing and only the kit does.
+ * that still moves. The steps are compressed inside the stat ladder rather than ending with
+ * it — a bloom body arriving at stage 15 and an ancient one at 41 means the middle of the
+ * climb visibly changes shape instead of wearing the same body for fifty stages.
  */
 export function stageTier(stage: number): CombatTier {
-  if (stage <= 6) return "seedling";
-  if (stage <= 18) return "sprout";
-  if (stage <= STAT_LADDER_END) return "bloom";
+  if (stage <= 4) return "seedling";
+  if (stage <= 14) return "sprout";
+  if (stage <= 40) return "bloom";
   return "ancient";
 }
 
@@ -179,18 +195,18 @@ export function stageTier(stage: number): CombatTier {
  */
 export function stageRarity(stage: number): Rarity {
   if (stage <= 3) return "C";
-  if (stage <= 9) return "B";
-  if (stage <= 24) return "A";
-  if (stage <= 55) return "S";
-  if (stage <= 140) return "SS";
+  if (stage <= 8) return "B";
+  if (stage <= 20) return "A";
+  if (stage <= 40) return "S";
+  if (stage <= 120) return "SS";
   return "SSS";
 }
 
 /** Mutation tier. Chaotic grants the extra skill slot, so it lands with the body stopping. */
 export function stageMutation(stage: number): MutationTier {
-  if (stage <= 10) return "micro";
-  if (stage <= 30) return "minor";
-  if (stage <= 60) return "major";
+  if (stage <= 8) return "micro";
+  if (stage <= 24) return "minor";
+  if (stage <= STAT_LADDER_END) return "major";
   return "chaotic";
 }
 
@@ -468,8 +484,8 @@ export function stageAffixes(playerId: string, stage: number, dayIndex: number):
   if (stage <= STAT_LADDER_END) return [];
   // Starts at the *first* stage past the ladder, not a second one past it. `Math.floor` of
   // anything below one is zero, so an affix-free band immediately after the stat ladder is
-  // just a gap where the difficulty stalls flat - measured, stage 61 and stage 62 came out
-  // with no affix while stage 63 had one.
+  // just a gap where the difficulty stalls flat - measured, the first two stages past the
+  // ladder came out with no affix while the third had one.
   const from = stage - STAT_LADDER_END;
   const raw = 1 + Math.floor((from - 1) / AFFIX_EVERY) + Math.floor(dayIndex / 7);
   /*

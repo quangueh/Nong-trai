@@ -6801,6 +6801,34 @@ body.planting {
   border-color: rgba(159, 105, 26, 0.4);
 }
 
+/* The shared plant picker: square tiles that wrap into rows and scroll downward
+   inside the sheet, instead of a strip the player drags sideways. */
+.pickgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(98px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pickcell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 5px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  text-align: center;
+  font: inherit;
+  color: inherit;
+}
+
+.pickcell.is-blocked {
+  filter: grayscale(0.5);
+}
+
 /* The add field. A real form, so Enter submits and the browser's own heuristics about
    what the box is for apply - the same reason the sign-in sheet uses one. */
 .add-friend {

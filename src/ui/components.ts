@@ -176,11 +176,11 @@ export function breedBlock(p: Plant): string | null {
  * It lists the *whole* garden, not only the eligible subset: a plant that is missing
  * from the list entirely reads as a bug ("vườn có mà chỗ này không có"), while a plant
  * that is present but dimmed with its reason reads as a rule. `blocked` answers
- * "why can't I take this one" in a phrase; a null answer makes the row a button.
+ * "why can't I take this one" in a phrase; a null answer makes the tile a button.
  *
- * Rows are vertical rather than the old horizontal card strip, because picking carries
- * real consequences — a fight or a fusion — and the choice deserves the plant's level,
- * generation, elements and traits in view, not a name and a power number alone.
+ * The list is a wrapping grid of square tiles rather than a sideways strip — a row of
+ * cards you drag left is fine for three plants and miserable for twelve, while a grid
+ * that wraps downward lets the sheet's own vertical scroll do the work.
  */
 export function pickPlantSheet(opts: {
   title: string;
@@ -212,40 +212,35 @@ export function pickPlantSheet(opts: {
 
   if (!rows.length) content.appendChild(el("div", { class: "empty" }, [opts.emptyText]));
 
-  const list = el("div");
+  const list = el("div", { class: "pickgrid" });
   for (const p of rows) {
     const why = opts.blocked(p);
-    const row = el("div", {
-      class: "friend-row pickrow" + (why ? " is-blocked" : ""),
+    // `pickrow` is the test hook for "a plant in the picker" — the class survived the
+    // row-to-tile reshape because the tests were written against it.
+    const tile = el("button", {
+      class: "pickrow pickcell" + (why ? " is-blocked" : ""),
       style: why ? "opacity:.55;cursor:default" : "cursor:pointer",
     });
-    const thumb = plantThumb(p, 56);
-    thumb.style.flex = "none";
-    const body = el("div", { class: "grow", style: "min-width:0" });
-    body.append(
-      el("div", { class: "small", style: "font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, [
-        plantDisplayName(p, opts.plants),
-      ]),
-      el("div", { class: "tiny muted mono" }, [
-        `Lv${p.growth.level} · Đời ${p.generation} · ⚔${fmt(p.powerRating)} · `,
-      ]),
+    tile.append(
+      plantThumb(p, 52),
+      el("div", {
+        class: "small",
+        style: "font-weight:700;font-size:11px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap",
+      }, [plantDisplayName(p, opts.plants)]),
+      el("div", { class: "tiny muted mono" }, [`Lv${p.growth.level} · Đ${p.generation} · ⚔${fmt(p.powerRating)}`]),
+      rarityTag(p.rarity),
     );
-    // Rarity is part of the line it measures, not a separate row: "Lv12 · Đời 3 ·
-    // ⚔420 · A" is read as one fact.
-    body.lastElementChild?.appendChild(rarityTag(p.rarity));
-
-    const chips = el("div", { class: "row wrap", style: "gap:4px;margin-top:4px" });
+    const chips = el("div", { class: "row wrap", style: "gap:3px;justify-content:center" });
     for (const t of elementTags(p).slice(0, 3)) chips.appendChild(t);
-    for (const t of traitChips(p).slice(0, 3)) chips.appendChild(t);
-    if (chips.children.length) body.appendChild(chips);
+    for (const t of traitChips(p).slice(0, 2)) chips.appendChild(t);
+    if (chips.children.length) tile.appendChild(chips);
 
-    if (why) body.appendChild(el("div", { class: "tiny", style: "color:var(--danger);margin-top:3px" }, [why]));
-    else row.addEventListener("click", () => {
+    if (why) tile.appendChild(el("div", { class: "tiny", style: "color:var(--danger);line-height:1.2" }, [why]));
+    else tile.addEventListener("click", () => {
       dismiss();
       opts.onPick(p);
     });
-    row.append(thumb, body);
-    list.appendChild(row);
+    list.appendChild(tile);
   }
   content.appendChild(list);
 

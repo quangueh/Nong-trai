@@ -8,7 +8,14 @@
  * coefficient the battle does not honour. So the curve is calibrated in fight space.
  */
 import { monsterFor } from "../src/pve/monster";
-import { LOOKAHEAD, describeStage, stageAffixes, stageIsOpen, stageTargetPower } from "../src/pve/ascent";
+import {
+  LOOKAHEAD,
+  STAT_LADDER_END,
+  describeStage,
+  stageAffixes,
+  stageIsOpen,
+  stageTargetPower,
+} from "../src/pve/ascent";
 import { createSeedPlant, breedPlants, fitToBudget } from "../src/genetics/genomeGenerator";
 import { SPECIES } from "../src/config/species";
 import { quickPower } from "../src/genetics/ecrCalculator";
@@ -295,14 +302,14 @@ check("a negative stage is never a stage", !stageIsOpen(-3, 40));
 
 console.log("\nthe endless tail");
 console.log("  stage   affixes   target power");
-for (const stage of [10, 20, 59, 60, 61, 62, 75, 100, 200, 400, 4000]) {
+for (const stage of [10, 20, STAT_LADDER_END - 1, STAT_LADDER_END, STAT_LADDER_END + 1, STAT_LADDER_END + 2, 75, 100, 200, 400, 4000]) {
   const brief = describeStage(stage, quickPower(accounts[3][1]), ME, 0);
   console.log(`  ${String(stage).padStart(5)}   ${String(brief.affixes.length).padStart(5)}   ${brief.targetPower}`);
 }
-check("the stat ladder carries no affix", stageAffixes(ME, 60, 0).length === 0, `${stageAffixes(ME, 60, 0).length} at stage 60`);
-check("the very next stage does", stageAffixes(ME, 61, 0).length === 1, `${stageAffixes(ME, 61, 0).length} at stage 61`);
-check("and they accumulate with depth", stageAffixes(ME, 200, 0).length > stageAffixes(ME, 61, 0).length);
-check("no gap where the difficulty stalls", stageAffixes(ME, 61, 0).length > 0 && stageAffixes(ME, 62, 0).length > 0);
+check("the stat ladder carries no affix", stageAffixes(ME, STAT_LADDER_END, 0).length === 0, `${stageAffixes(ME, STAT_LADDER_END, 0).length} at stage ${STAT_LADDER_END}`);
+check("the very next stage does", stageAffixes(ME, STAT_LADDER_END + 1, 0).length === 1, `${stageAffixes(ME, STAT_LADDER_END + 1, 0).length} at stage ${STAT_LADDER_END + 1}`);
+check("and they accumulate with depth", stageAffixes(ME, 200, 0).length > stageAffixes(ME, STAT_LADDER_END + 1, 0).length);
+check("no gap where the difficulty stalls", stageAffixes(ME, STAT_LADDER_END + 1, 0).length > 0 && stageAffixes(ME, STAT_LADDER_END + 2, 0).length > 0);
 
 /* The tail has to stay flat in power. Left running, the geometric term took stage 400 to
    6.4 billion - a number no screen can print and no player can read. */
