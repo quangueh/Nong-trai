@@ -37,6 +37,34 @@ const STATE_LABEL: Record<string, string> = {
   expired: "Đã hết hạn",
 };
 
+const TAB_ID_KEY = "nong-trai-room-tab";
+
+/**
+ * A per-tab identity for room play.
+ *
+ * Two tabs of one browser share localStorage, so `store.state.playerId` is identical in
+ * both — and everything in the room keys on it: the host's `addGuest` drops the second
+ * tab as a duplicate of itself, and the guest filters the host's messages out as its own.
+ * The result used to be a lobby that never filled and a battle only one side could see.
+ *
+ * `sessionStorage` is per-tab, so a suffix minted there gives each tab a distinct id
+ * while keeping the account id as a readable prefix. The stored id is invalidated when
+ * the account behind it changes, so signing into a different save in the same tab cannot
+ * keep answering to the previous player's name.
+ */
+function roomPlayerId(): string {
+  const mint = () => `${store.state.playerId}#${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    const existing = sessionStorage.getItem(TAB_ID_KEY);
+    if (existing?.startsWith(`${store.state.playerId}#`)) return existing;
+    const id = mint();
+    sessionStorage.setItem(TAB_ID_KEY, id);
+    return id;
+  } catch {
+    return mint();
+  }
+}
+
 export function renderArena(nav: Navigate, params?: unknown): HTMLElement {
   const p = params as { plantId?: string } | undefined;
   if (p?.plantId) {
@@ -545,11 +573,12 @@ function statBlock(label: string, value: string | number): HTMLElement {
 
 function renderRoomHost(nav: Navigate, myPlant: Plant): HTMLElement {
   const root = el("div", { class: "fadein" });
-  const client = new RoomClient(store.state.playerId, store.state.name);
+  const myId = roomPlayerId();
+  const client = new RoomClient(myId, store.state.name);
   const code = client.create();
-  const host = new HostRoom(code, store.state.playerId, store.state.name);
+  const host = new HostRoom(code, myId, store.state.name);
   host.registerPlant(myPlant);
-  host.setPlant(store.state.playerId, myPlant.plantId);
+  host.setPlant(myId, myPlant.plantId);
   client.broadcastState(host.snapshot);
 
   root.appendChild(el("div", { class: "sec-title" }, ["Phòng đấu"]));
@@ -582,7 +611,7 @@ function renderRoomHost(nav: Navigate, myPlant: Plant): HTMLElement {
   let myReady = false;
   readyBtn.addEventListener("click", () => {
     myReady = !myReady;
-    host.setReady(store.state.playerId, myReady);
+    host.setReady(myId, myReady);
     readyBtn.textContent = myReady ? "✅ Đã sẵn sàng" : "✅ Sẵn sàng";
     client.broadcastState(host.snapshot);
     paintLobby();
@@ -683,6 +712,11 @@ function renderRoomHost(nav: Navigate, myPlant: Plant): HTMLElement {
     switch (m.kind) {
       case "join":
         host.addGuest(m.playerId, m.name);
+        // The guest builds the mirror battle from the host's full plant data, and
+        // nothing else ever sends it: the snapshot only carries the public summary,
+        // which is not enough to simulate. Without this the guest sat on "đang chờ
+        // dữ liệu cây đối thủ" for the whole fight.
+        client.sendPlant(myPlant);
         client.broadcastState(host.snapshot);
         paintLobby();
         toast(`${m.name} đã vào phòng`);
@@ -712,6 +746,9 @@ function renderRoomHost(nav: Navigate, myPlant: Plant): HTMLElement {
         paintLobby();
         break;
       case "req_state":
+        // A guest that missed the join-time plant data asks again through the same
+        // message, so both are answered together.
+        client.sendPlant(myPlant);
         client.broadcastState(host.snapshot);
         break;
       default:
@@ -734,7 +771,8 @@ function renderRoomHost(nav: Navigate, myPlant: Plant): HTMLElement {
 
 function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLElement {
   const root = el("div", { class: "fadein" });
-  const client = new RoomClient(store.state.playerId, store.state.name);
+  const myId = roomPlayerId();
+  const client = new RoomClient(myId, store.state.name);
   client.join(code);
 
   root.appendChild(el("div", { class: "sec-title" }, [`Phòng ${code}`]));
@@ -787,11 +825,11 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
 
   client.onMessage((m: RoomMessage) => {
     if (m.code !== code) return;
-    if (m.kind === "plant_data" && m.playerId !== store.state.playerId) {
+    if (m.kind === "plant_data" && m.playerId !== myId) {
       opponent = m.plant;
       if (mirrored && !activeView && opponent) startMirror(pendingSeed);
     }
-    if (m.kind === "result" && m.playerId !== store.state.playerId) {
+    if (m.kind === "result" && m.playerId !== myId) {
       // Orientation applied once, by the shared helper: the host's `a` is this client's
       // opponent, and its `mine`/`theirs` are the wrong way round for this side.
       pendingResult = resultForPlayer(m, "b");
@@ -801,6 +839,7 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
   });
 
   client.onState((snap: RoomSnapshot) => {
+    if (snap.code !== code) return;
     statusCard.replaceChildren();
     statusCard.appendChild(el("div", { class: "small", style: "font-weight:700;margin-bottom:6px" }, [`Trạng thái: ${STATE_LABEL[snap.state] ?? snap.state}`]));
     for (const p of snap.players) {
@@ -815,6 +854,13 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
       rt.style.color = p.ready ? "var(--accent)" : "var(--muted)";
       row.append(info, rt);
       statusCard.appendChild(row);
+    }
+
+    // The host caps the room at two, so a third tab's join is simply never answered.
+    // Say so rather than leaving "đang kết nối" spinning forever.
+    if (snap.players.length >= 2 && !snap.players.some((p) => p.playerId === myId)) {
+      statusCard.appendChild(el("div", { class: "callout warn", style: "margin-top:8px" }, ["Phòng đã đủ 2 người chơi."]));
+      return;
     }
 
     if (snap.state === "in_battle" && !mirrored) {

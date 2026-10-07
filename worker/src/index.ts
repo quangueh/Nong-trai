@@ -38,6 +38,7 @@ import {
   handleDuelAccept,
   handleDuelDecline,
   handleDuelInbox,
+  handleDuelOutbox,
   handleDuelResult,
   handleDuelSend,
   handleFriend,
@@ -71,6 +72,8 @@ interface Account {
   hash: string;
   playerId: string;
   createdAt: number;
+  /** Display name for the friend list. Absent on older records; the email prefix is used. */
+  name?: string;
   /** Counted so a client that syncs too eagerly is visible rather than mysterious. */
   writes: number;
 }
@@ -245,6 +248,20 @@ async function verify(token: string, secret: string): Promise<Session | null> {
 const accountKey = (email: string): string => `acct:${email}`;
 const saveKey = (email: string): string => `save:${email}`;
 
+/**
+ * Publish an account to the friend-search indexes.
+ *
+ * This used to happen only inside `readIdentity` — which runs for `/api/friend` and
+ * `/api/duel` and nothing else. An account that had signed in but never opened the
+ * friends panel was absent from both indexes, so adding anyone by name or email
+ * answered `no_such_player` until the *target* happened to use the feature first.
+ * Indexing here, at the moment an identity is established, is what the design doc
+ * for the index already describes.
+ */
+function identityFor(key: string, save: string, email: string, name?: string): Identity {
+  return { handle: email, name: name?.trim() || email.split("@")[0] || email, key, saveKey: save };
+}
+
 /** Ninety days, matching the password session. */
 const SESSION_MS = 1000 * 60 * 60 * 24 * 90;
 
@@ -309,6 +326,7 @@ async function handleRegister(req: Request, env: Env): Promise<Response> {
     writes: 0,
   };
   await env.DB.put(accountKey(email), JSON.stringify(account));
+  await indexAccount(env, identityFor(accountKey(email), saveKey(email), email));
   return ROK({ playerId: account.playerId }, 201);
 }
 
@@ -335,6 +353,7 @@ async function handleLogin(req: Request, env: Env): Promise<Response> {
   const account = JSON.parse(raw) as Account;
   if (b64(hash) !== account.hash) return RKO("bad_credentials", 401);
 
+  await indexAccount(env, identityFor(accountKey(email), saveKey(email), email, account.name));
   const token = await sign({ email, exp: Date.now() + 1000 * 60 * 60 * 24 * 90 }, env.TOKEN_SECRET);
   return ROK({ token, playerId: account.playerId });
 }
@@ -376,6 +395,7 @@ async function handleGoogleSignIn(req: Request, env: Env): Promise<Response> {
 
   if (existing) {
     const account = JSON.parse(existing) as GoogleAccount;
+    await indexAccount(env, identityFor(key, googleSaveKey(account.sub), account.email, account.name));
     const token = await sign({ sub: account.sub, exp: Date.now() + SESSION_MS }, env.TOKEN_SECRET);
     return ROK({
       token,
@@ -400,6 +420,7 @@ async function handleGoogleSignIn(req: Request, env: Env): Promise<Response> {
     writes: 0,
   };
   await env.DB.put(key, JSON.stringify(account));
+  await indexAccount(env, identityFor(key, googleSaveKey(account.sub), account.email, account.name));
 
   const token = await sign({ sub: claims.sub, exp: Date.now() + SESSION_MS }, env.TOKEN_SECRET);
   return ROK({
@@ -603,6 +624,8 @@ async function routeDuel(req: Request, env: Env): Promise<Response> {
       return handleDuelSend(env, me, String(body?.to ?? ""), String(body?.plantId ?? ""), await loadSave(env, me.saveKey));
     case "inbox":
       return handleDuelInbox(env, me);
+    case "sent":
+      return handleDuelOutbox(env, me);
     case "accept":
       return handleDuelAccept(env, me, String(body?.id ?? ""), String(body?.plantId ?? ""), await loadSave(env, me.saveKey));
     case "decline":

@@ -31,6 +31,20 @@ export interface DuelInvite {
   state: "pending" | "declined" | "done";
   toPlantName?: string;
   toPlantPower?: number;
+  /** Set once the fight exists, so a finished invite can be re-watched. */
+  resultKey?: string;
+}
+
+/** A challenge I sent, from the sender's side — the outbox counterpart of DuelInvite. */
+export interface SentDuel {
+  id: string;
+  to: string;
+  toName: string;
+  plantName: string;
+  plantPower: number;
+  at: number;
+  state: "pending" | "declined" | "done";
+  resultKey?: string;
 }
 
 /** The resolved fight. The event log is the fight: both sides replay this one list. */
@@ -143,7 +157,13 @@ export async function duelInbox(): Promise<Outcome<DuelInvite[]>> {
   return r.ok ? { ok: true, value: r.value.invites ?? [] } : r;
 }
 
-export async function sendChallenge(to: string, plantId: string): Promise<Outcome<{ id: string }>> {
+/** Challenges I have sent, so the sender can see the answer rather than nothing. */
+export async function duelOutbox(): Promise<Outcome<SentDuel[]>> {
+  const r = await post<{ sent: SentDuel[] }>("/api/duel", { action: "sent" });
+  return r.ok ? { ok: true, value: r.value.sent ?? [] } : r;
+}
+
+export async function sendChallenge(to: string, plantId: string): Promise<Outcome<{ sent: string; to: string }>> {
   return post("/api/duel", { action: "send", to, plantId });
 }
 

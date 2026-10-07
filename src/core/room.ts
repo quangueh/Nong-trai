@@ -281,6 +281,9 @@ export class HostRoom {
 
   addGuest(playerId: string, name: string) {
     if (this.snapshot.players.some((p) => p.playerId === playerId)) return;
+    // A room is a 1v1. Without a cap a third tab would join, never pick a plant the
+    // battle knows about, and block `canStart` for the two who are actually playing.
+    if (this.snapshot.players.length >= 2) return;
     this.snapshot.players.push({ playerId, name, isHost: false, plantId: null, ready: false, connected: true, stance: "aggressive" });
     this.refreshState();
   }

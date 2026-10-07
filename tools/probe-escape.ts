@@ -41,7 +41,7 @@ check("sign-in gate bypassed", gateUp === 0, `${gateUp} gate`);
 // 1. Detail sheet: tap a plant card, focus must move inside, Escape closes.
 await page.evaluate(`(() => { document.querySelector(".plot")?.click(); })()`);
 await page.waitForTimeout(500);
-const sheetOpen = await page.evaluate(`document.querySelectorAll(".sheet:not(.gate-card)").length`);
+const sheetOpen = Number(await page.evaluate(`document.querySelectorAll(".sheet:not(.gate-card)").length`));
 check("sheet opens from a plot tap", sheetOpen > 0, `${sheetOpen} sheets`);
 const focusInside = await page.evaluate(`(() => {
   const s = document.querySelector(".sheet:not(.gate-card)");
@@ -56,7 +56,7 @@ check("Escape closes the sheet", sheetAfter === 0, `${sheetAfter} left`);
 // 2. Settings sheet (app.ts path).
 await page.evaluate(`(() => { document.querySelector("button[title='Cài đặt']")?.click(); })()`);
 await page.waitForTimeout(400);
-const settingsOpen = await page.evaluate(`document.querySelectorAll(".sheet:not(.gate-card)").length`);
+const settingsOpen = Number(await page.evaluate(`document.querySelectorAll(".sheet:not(.gate-card)").length`));
 check("settings sheet opens", settingsOpen > 0, `${settingsOpen} sheets`);
 await page.keyboard.press("Escape");
 await page.waitForTimeout(400);

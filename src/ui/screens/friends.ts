@@ -33,6 +33,7 @@ import {
   addFriend,
   declineChallenge,
   duelInbox,
+  duelOutbox,
   listFriends,
   readDuel,
   removeFriend,
@@ -42,15 +43,15 @@ import {
   type DuelInvite,
   type DuelResult,
   type Friend,
+  type SentDuel,
 } from "../../account/social";
 
 /** State that has to outlive a repaint, because the arena re-renders on every tick. */
 let friends: Friend[] = [];
 let invites: DuelInvite[] = [];
+let sentDuels: SentDuel[] = [];
 let loadedAt = 0;
 let loading = false;
-/** Set when a duel has been fetched and is waiting to be shown, so a repaint cannot lose it. */
-let pendingResult: { result: DuelResult; iAm: "a" | "b" } | null = null;
 
 /** The inbox is polled, not pushed, so it is not read on every single paint. */
 const INBOX_FRESH_MS = 20_000;
@@ -87,15 +88,31 @@ export function friendsPanel(onWatch: (result: DuelResult, iAm: "a" | "b") => vo
 
     // --- inbox ------------------------------------------------------------
     const pending = invites.filter((i) => i.state === "pending");
-    if (pending.length) {
+    const finished = invites.filter((i) => i.state === "done" && i.resultKey);
+    if (pending.length || finished.length) {
       const box = el("div", { class: "card inbox" });
-      box.appendChild(
-        el("div", { class: "sec-title" }, [
-          `📩 Lời mời đấu${pending.length > 1 ? ` (${pending.length})` : ""}`,
-        ]),
-      );
-      for (const invite of pending) bits.push(inviteRow(invite, paint, onWatch));
-      box.append(...bits.splice(0, bits.length));
+      if (pending.length) {
+        box.appendChild(
+          el("div", { class: "sec-title" }, [
+            `📩 Lời mời đấu${pending.length > 1 ? ` (${pending.length})` : ""}`,
+          ]),
+        );
+        for (const invite of pending) box.appendChild(inviteRow(invite, paint, onWatch));
+      }
+      // A duel already fought stays re-watchable — the result id is the capability.
+      for (const invite of finished) box.appendChild(finishedInviteRow(invite, onWatch));
+      bits.push(box);
+    }
+
+    // --- outbox -------------------------------------------------------------
+    //
+    // The challenger's half. A sent invite used to go silent until the defender acted
+    // and then stay silent; these rows say "đang chờ", "đã từ chối", or offer the
+    // finished fight to watch.
+    if (sentDuels.length) {
+      const box = el("div", { class: "card" });
+      box.appendChild(el("div", { class: "sec-title" }, ["📤 Lời mời đã gửi"]));
+      for (const s of sentDuels.slice(-8).reverse()) box.appendChild(sentRow(s, onWatch));
       bits.push(box);
     }
 
@@ -141,26 +158,34 @@ export function friendsPanel(onWatch: (result: DuelResult, iAm: "a" | "b") => vo
   };
 
   const check = () => {
-    if (pendingResult) {
-      const { result, iAm } = pendingResult;
-      pendingResult = null;
-      onWatch(result, iAm);
-      return;
-    }
-    if (!socialUnavailableBecause()) void refresh();
+    if (!socialUnavailableBecause()) void refresh(true);
   };
 
-  const refresh = async () => {
+  const refresh = async (force = false) => {
     if (loading) return;
     const now = Date.now();
     // The list is cheap and changes rarely; the inbox is the part worth re-reading, and
     // only often enough that a challenge does not sit unseen for a minute.
-    if (now - loadedAt < INBOX_FRESH_MS) return;
+    if (!force && now - loadedAt < INBOX_FRESH_MS) return;
     loading = true;
     try {
-      const [f, d] = await Promise.all([listFriends(), duelInbox()]);
+      const before = new Map(sentDuels.map((s) => [s.id, s.state]));
+      const [f, d, o] = await Promise.all([listFriends(), duelInbox(), duelOutbox()]);
       if (f.ok) friends = f.value;
       if (d.ok) invites = d.value;
+      if (o.ok) {
+        sentDuels = o.value;
+        // Surface a duel the moment its answer lands, rather than leaving the sender
+        // to notice a row changed state on the next repaint.
+        for (const s of sentDuels) {
+          const was = before.get(s.id);
+          if (was === "pending" && s.state === "done") {
+            toast(`${s.toName} đã nhận lời mời — trận đấu có kết quả!`);
+          } else if (was === "pending" && s.state === "declined") {
+            toast(`${s.toName} đã từ chối lời mời.`);
+          }
+        }
+      }
       loadedAt = now;
       paint();
     } finally {
@@ -170,6 +195,16 @@ export function friendsPanel(onWatch: (result: DuelResult, iAm: "a" | "b") => vo
 
   paint();
   void refresh();
+
+  // The inbox is polled, and a panel that only refreshes when its parent repaints is
+  // polled almost never. Self-refresh while mounted; stop when the arena swaps us out.
+  const timer = window.setInterval(() => {
+    if (!host.isConnected) {
+      window.clearInterval(timer);
+      return;
+    }
+    void refresh();
+  }, INBOX_FRESH_MS);
 
   return { el: host, check };
 }
@@ -228,6 +263,44 @@ function inviteRow(invite: DuelInvite, repaint: () => void, onWatch: (r: DuelRes
   });
 
   row.append(who, accept, no);
+  return row;
+}
+
+/** A duel that already happened, re-watchable from the defender's inbox. */
+function finishedInviteRow(invite: DuelInvite, onWatch: (r: DuelResult, iAm: "a" | "b") => void): HTMLElement {
+  const row = el("div", { class: "friend-row" });
+  const who = el("div", { class: "grow", style: "min-width:0" });
+  who.append(
+    el("div", { class: "small", style: "font-weight:700" }, [`${invite.fromName} · đã đấu`]),
+    el("div", { class: "tiny muted", style: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, [
+      `${invite.plantName} vs ${invite.toPlantName ?? "?"} · ${sinceWords(invite.at)}`,
+    ]),
+  );
+  const watch = el("button", { class: "btn sm" }, ["📺 Xem lại"]);
+  // The defender is always side b: the Worker puts the challenger on a.
+  watch.addEventListener("click", () => void fetchDuel(invite.id, "b", onWatch));
+  row.append(who, watch);
+  return row;
+}
+
+/** One row of the outbox: where the letter went and how it ended. */
+function sentRow(s: SentDuel, onWatch: (r: DuelResult, iAm: "a" | "b") => void): HTMLElement {
+  const row = el("div", { class: "friend-row" });
+  const who = el("div", { class: "grow", style: "min-width:0" });
+  who.append(
+    el("div", { class: "small", style: "font-weight:700" }, [`→ ${s.toName}`]),
+    el("div", { class: "tiny muted", style: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, [
+      `${s.plantName} · lực ${fmt(s.plantPower)} · ${sinceWords(s.at)}`,
+    ]),
+  );
+  if (s.state === "done") {
+    const watch = el("button", { class: "btn sm primary" }, ["📺 Xem trận"]);
+    // The challenger is always side a.
+    watch.addEventListener("click", () => void fetchDuel(s.id, "a", onWatch));
+    row.append(who, watch);
+  } else {
+    row.append(who, el("span", { class: "tiny muted" }, [s.state === "pending" ? "⏳ đang chờ" : "đã từ chối"]));
+  }
   return row;
 }
 
@@ -344,12 +417,19 @@ function pickFighter(ready: Plant[], onPick: (plant: Plant) => void | Promise<vo
  * Kept apart from the panel so the arena can ask for it on its own schedule - a duel
  * answered by the other player finishes without this client being told.
  */
-export async function fetchDuel(id: string, onWatch: (r: DuelResult, iAm: "a" | "b") => void): Promise<void> {
+export async function fetchDuel(
+  id: string,
+  iAm: "a" | "b",
+  onWatch: (r: DuelResult, iAm: "a" | "b") => void,
+): Promise<void> {
   const r = await readDuel(id);
   if (!r.ok) {
     toast(REFUSAL_TEXT[r.why]);
     return;
   }
-  onWatch(r.value.result, "b");
+  // The side is passed in rather than assumed: the same id is read by the challenger
+  // (side a) and the defender (side b), and hard-coding "b" used to show the
+  // challenger their opponent's stats as their own.
+  onWatch(r.value.result, iAm);
 }
 

@@ -1,4 +1,4 @@
-﻿# Normalise line endings in the repository rather than in each developer's working
+# Normalise line endings in the repository rather than in each developer's working
 # copy.
 #
 # Without this, core.autocrlf decides per machine: Windows checkouts rewrite LF

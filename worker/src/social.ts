@@ -137,10 +137,42 @@ export interface DuelInvite {
   toPlantPower?: number;
   /** Where the resolved fight is, for both sides to read. */
   resultKey?: string;
+  /**
+   * The challenger's account key, save key and chosen plant, recorded at send time.
+   * Accepting used to re-resolve the challenger by handle and find the plant by *name* —
+   * so a renamed plant read as "gone" and two same-named plants could swap. Optional so
+   * invites written before this field existed still work, via the old lookup.
+   */
+  fromKey?: string;
+  fromSaveKey?: string;
+  fromPlantId?: string;
 }
 
 interface Inbox {
   list: DuelInvite[];
+}
+
+/**
+ * One row of the challenger's own outbox: what was sent, to whom, and how it ended.
+ *
+ * Without this the challenger was told "đã gửi" and then nothing — the invite lived in
+ * the defender's inbox and the result under the duel id, but the sender had no key to
+ * either. The outbox is the missing half of the correspondence.
+ */
+export interface SentDuel {
+  id: string;
+  to: string;
+  toName: string;
+  plantName: string;
+  plantPower: number;
+  at: number;
+  state: "pending" | "declined" | "done";
+  /** Set once the fight exists; the duel id reads it back. */
+  resultKey?: string;
+}
+
+interface Outbox {
+  list: SentDuel[];
 }
 
 /** The resolved fight. Small enough for KV, and read-only once written. */
@@ -164,6 +196,7 @@ export interface DuelResult {
 
 export const friendBookKey = (accountKey: string) => `friends:${accountKey}`;
 export const inboxKey = (accountKey: string) => `inbox:${accountKey}`;
+export const outboxKey = (accountKey: string) => `outbox:${accountKey}`;
 export const duelResultKey = (id: string) => `duel:${id}`;
 /**
  * Email to account key.
@@ -212,7 +245,7 @@ export function fail(code: string, status = 400): Response {
 }
 
 /** Drop anything older than the TTL, so a stale invite cannot be accepted tomorrow. */
-function live(invites: DuelInvite[], now: number): DuelInvite[] {
+function live<T extends { at: number }>(invites: T[], now: number): T[] {
   return invites.filter((i) => now - i.at < INVITE_TTL_MS).slice(-MAX_INBOX);
 }
 
@@ -388,6 +421,17 @@ export async function handleDuelSend(
   if ("ambiguous" in target) return fail("ambiguous_name", 409);
   if (target.key === me.key) return fail("that_is_you");
 
+  // Challenges are between friends, which the client enforces by only offering the
+  // button on friend rows — but the endpoint is public, and `not_a_friend` was already
+  // a named refusal that nothing could ever return. Enforcing it here is what makes
+  // "đấu với bạn" mean that rather than "đấu với bất kỳ ai biết email".
+  const bookRaw = await env.DB.get(friendBookKey(me.key));
+  const book: FriendBook = bookRaw ? safeParse<FriendBook>(bookRaw, { list: [] }) : { list: [] };
+  const isFriend = Array.isArray(book.list) && book.list.some(
+    (f) => f && (f.key === target.key || f.handle.toLowerCase() === target.handle.toLowerCase()),
+  );
+  if (!isFriend) return fail("not_a_friend", 403);
+
   const plant = plantFromSave(mySave, plantId);
   if (!plant) return fail("plant_not_in_your_garden", 404);
 
@@ -408,10 +452,44 @@ export async function handleDuelSend(
     plantPower: Math.round(plant.powerRating ?? 0),
     at: Date.now(),
     state: "pending",
+    fromKey: me.key,
+    fromSaveKey: me.saveKey,
+    fromPlantId: plant.plantId,
   };
   inbox.list.push(invite);
-  await env.DB.put(inboxKey(target.key), JSON.stringify(inbox));
+
+  // The challenger's own record of the letter, so accepting it later can tell the sender
+  // what happened instead of the challenge vanishing into somebody else's inbox.
+  const outRaw = await env.DB.get(outboxKey(me.key));
+  const outbox: Outbox = outRaw ? safeParse<Outbox>(outRaw, { list: [] }) : { list: [] };
+  outbox.list = live(Array.isArray(outbox.list) ? outbox.list : [], Date.now());
+  const sentRow: SentDuel = {
+    id: invite.id,
+    to: target.handle,
+    toName: target.name,
+    plantName: plant.name,
+    plantPower: Math.round(plant.powerRating ?? 0),
+    at: invite.at,
+    state: "pending",
+  };
+  outbox.list.push(sentRow);
+
+  await Promise.all([
+    env.DB.put(inboxKey(target.key), JSON.stringify(inbox)),
+    env.DB.put(outboxKey(me.key), JSON.stringify(outbox)),
+  ]);
   return ok({ sent: invite.id, to: target.handle });
+}
+
+/** Everything I have sent, oldest first — the challenger's half of the duel flow. */
+export async function handleDuelOutbox(env: KvEnv, me: Identity): Promise<Response> {
+  const raw = await env.DB.get(outboxKey(me.key));
+  const box: Outbox = raw ? safeParse<Outbox>(raw, { list: [] }) : { list: [] };
+  const kept = live(Array.isArray(box.list) ? box.list : [], Date.now());
+  if (kept.length !== (box.list?.length ?? 0)) {
+    await env.DB.put(outboxKey(me.key), JSON.stringify({ list: kept }));
+  }
+  return ok({ sent: kept });
 }
 
 /** Everything waiting for me, oldest first so the order a player sees is stable. */
@@ -454,13 +532,24 @@ export async function handleDuelAccept(
   const mine = plantFromSave(mySave, plantId);
   if (!mine) return fail("plant_not_in_your_garden", 404);
 
-  const challenger = await resolveTarget(env, invite.from);
-  if (!challenger || "ambiguous" in challenger) return fail("challenger_gone", 404);
-  const theirRaw = await env.DB.get(challenger.saveKey);
+  // New invites carry the challenger's account and save keys, so accepting is one read
+  // and no lookup. Old ones fall back to resolving the handle, which is also how a
+  // challenger whose account vanished is still caught.
+  let challengerKey = invite.fromKey ?? "";
+  let challengerSaveKey = invite.fromSaveKey ?? "";
+  if (!challengerKey || !challengerSaveKey) {
+    const resolved = await resolveTarget(env, invite.from);
+    if (!resolved || "ambiguous" in resolved) return fail("challenger_gone", 404);
+    challengerKey = resolved.key;
+    challengerSaveKey = resolved.saveKey;
+  }
+  const theirRaw = await env.DB.get(challengerSaveKey);
   const theirState = theirRaw
     ? safeParse<{ savedAt: number; state: unknown }>(theirRaw, { savedAt: 0, state: null }).state
     : null;
-  const theirs = plantFromSave(theirState, findPlantIdFor(theirState, invite.plantName));
+  // The exact plant the challenge named when it still existed — falling back to the
+  // name only for invites written before the id was recorded.
+  const theirs = plantFromSave(theirState, invite.fromPlantId ?? findPlantIdFor(theirState, invite.plantName));
   if (!theirs) return fail("challenger_plant_gone", 404);
 
   // Seeded from the invitation and the moment it was sent, so the same challenge always
@@ -496,8 +585,14 @@ export async function handleDuelAccept(
   invite.toPlantPower = Math.round(mine.powerRating ?? 0);
   invite.resultKey = duelResultKey(invite.id);
   invites[at] = invite;
-  await env.DB.put(inboxKey(me.key), JSON.stringify({ list: invites }));
 
+  const writes: Promise<unknown>[] = [env.DB.put(inboxKey(me.key), JSON.stringify({ list: invites }))];
+
+  // Close the loop for the sender: their outbox row flips to done and points at the
+  // result, so a challenge they sent can be watched rather than wondered about.
+  writes.push(markSentDuel(env, challengerKey, invite.id, "done", duelResultKey(invite.id)));
+
+  await Promise.all(writes);
   return ok({ result: payload });
 }
 
@@ -512,9 +607,38 @@ export async function handleDuelDecline(
   const invites = live(Array.isArray(inbox.list) ? inbox.list : [], Date.now());
   const at = invites.findIndex((i) => i.id === id && i.state === "pending");
   if (at < 0) return fail("no_such_invite", 404);
-  invites[at] = { ...invites[at], state: "declined" };
-  await env.DB.put(inboxKey(me.key), JSON.stringify({ list: invites }));
+  const invite = invites[at];
+  invites[at] = { ...invite, state: "declined" };
+
+  const writes: Promise<unknown>[] = [env.DB.put(inboxKey(me.key), JSON.stringify({ list: invites }))];
+
+  // The sender's outbox needs a key rather than a handle, which old invites do not
+  // carry — resolve it in that case, and skip quietly if the account is gone.
+  let challengerKey = invite.fromKey ?? "";
+  if (!challengerKey) {
+    const resolved = await resolveTarget(env, invite.from);
+    if (resolved && !("ambiguous" in resolved)) challengerKey = resolved.key;
+  }
+  if (challengerKey) writes.push(markSentDuel(env, challengerKey, invite.id, "declined"));
+
+  await Promise.all(writes);
   return ok({ invites });
+}
+
+/**
+ * Update the challenger's own record of a sent invite. A missing outbox — the invite
+ * predates it — is skipped rather than created, because a declined or finished duel
+ * nobody can match to a sent row is not worth a write.
+ */
+async function markSentDuel(env: KvEnv, accountKey: string, id: string, state: "done" | "declined", resultKey?: string): Promise<void> {
+  const raw = await env.DB.get(outboxKey(accountKey));
+  if (!raw) return;
+  const box = safeParse<Outbox>(raw, { list: [] });
+  const row = Array.isArray(box.list) ? box.list.find((s) => s.id === id) : undefined;
+  if (!row || row.state !== "pending") return;
+  row.state = state;
+  if (resultKey) row.resultKey = resultKey;
+  await env.DB.put(outboxKey(accountKey), JSON.stringify(box));
 }
 
 /** Read a finished fight. Open to both participants; the id is the capability. */

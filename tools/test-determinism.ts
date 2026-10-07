@@ -416,7 +416,7 @@ section("16. Growth catch-up keeps elapsed time (offline progress)");
   p.growth.stageReadyAt = 60_000;
   p.growthStats.growthRate = 0.5; // neutral baseline: stage durations stay at the flat rate
   const r = tickGrowth(p, 200_000);
-  check("partial catch-up lands in the next stage", r.stageChanged && p.growth.stage === "young", p.growth.stage);
+  check("partial catch-up lands in the next stage", r.stageChanged && p.growth.stage === ("young" as typeof p.growth.stage), p.growth.stage);
   check("overshoot carries into the new stage", p.growth.stageStartedAt === 60_000 && p.growth.stageReadyAt === 240_000,
     `${p.growth.stageStartedAt} → ${p.growth.stageReadyAt}`);
   check("progress shows the carried time", Math.abs(stageProgress(p, 200_000) - 140 / 180) < 1e-9, stageProgress(p, 200_000).toFixed(3));
@@ -429,7 +429,7 @@ section("16. Growth catch-up keeps elapsed time (offline progress)");
   q.growth.stageReadyAt = 15_000;
   q.growthStats.growthRate = 0.5;
   const r2 = tickGrowth(q, 400_000);
-  check("multi-boundary catch-up reaches mature", r2.stageChanged && q.growth.stage === "mature", q.growth.stage);
+  check("multi-boundary catch-up reaches mature", r2.stageChanged && q.growth.stage === ("mature" as typeof q.growth.stage), q.growth.stage);
   check("single entry reports the final stage", r2.newStage === "mature", `${r2.newStage}`);
 
   // Online timing is unchanged: a tick inside a stage still does nothing.

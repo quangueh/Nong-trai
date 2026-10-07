@@ -159,7 +159,10 @@ check("tapping outside closes it", !$(".seed-sheet"));
 click(emptyPlots[0]);
 await wait(30);
 check("the plot still opens the chooser again", !!$(".seed-sheet"));
-document.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+// A real Escape targets the focused element inside the sheet and bubbles up through
+// it — dispatching on `document` skips the sheet entirely, which is not what a key
+// press does.
+(w.document.activeElement ?? w.document).dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 await wait(20);
 check("escape closes it", !$(".seed-sheet"));
 
@@ -304,7 +307,7 @@ check(
   ($$(".seed-pick")[0]?.querySelector(".seed-orb")?.textContent ?? "").trim() === "5",
   ($$(".seed-pick")[0]?.querySelector(".seed-orb")?.textContent ?? "").trim(),
 );
-document.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+(w.document.activeElement ?? w.document).dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 await wait(20);
 check("Escape closes it", !$(".seed-sheet"));
 

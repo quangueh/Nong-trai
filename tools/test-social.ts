@@ -29,6 +29,7 @@ import {
   handleDuelAccept,
   handleDuelDecline,
   handleDuelInbox,
+  handleDuelOutbox,
   handleDuelResult,
   handleDuelSend,
   handleFriend,
@@ -260,9 +261,21 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   await publish(env, db, alice, aliceSave);
   await publish(env, db, bob, bobSave);
 
+  // Challenges are between friends only — strangers by email are refused.
+  check(
+    "a stranger cannot be challenged",
+    (await code(await handleDuelSend(env, alice, bob.handle, "alice@example.com-plant-1", aliceSave.state))) === "not_a_friend",
+  );
+  await handleFriend(post({ action: "add", query: bob.handle }), env, alice);
+
   // Alice challenges with a plant she actually owns.
   const sent = await handleDuelSend(env, alice, bob.handle, "alice@example.com-plant-1", aliceSave.state);
   check("a challenge can be sent", sent.status === 200, await code(sent));
+
+  // And the sender keeps a copy: the outbox row is what lets her see the answer.
+  const outbox = await body<{ sent: { id: string; to: string; state: string }[] }>(await handleDuelOutbox(env, alice));
+  check("the sender sees the challenge in her outbox", outbox.sent.length === 1 && outbox.sent[0].to === "bob@example.com");
+  check("and it is pending", outbox.sent[0].state === "pending");
 
   // The inbox is Bob's, and it names Alice's fighter - read from her save, not from her.
   const inbox = await body<{ invites: { id: string; from: string; fromName: string; plantName: string; plantPower: number; state: string }[] }>(
@@ -321,6 +334,11 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   const after = await body<{ invites: { state: string; toPlantName?: string }[] }>(await handleDuelInbox(env, bob));
   check("the invite is marked done", after.invites[0].state === "done");
   check("and records his fighter", after.invites[0].toPlantName === "B2", String(after.invites[0].toPlantName));
+
+  // The sender's outbox closed too, and points at the fight she can now watch.
+  const outAfter = await body<{ sent: { state: string; resultKey?: string }[] }>(await handleDuelOutbox(env, alice));
+  check("the sender's outbox is marked done", outAfter.sent[0].state === "done");
+  check("and names the result", outAfter.sent[0].resultKey === `duel:${invite.id}`, String(outAfter.sent[0].resultKey));
 }
 
 /* --- 6. determinism ---------------------------------------------------------- */
@@ -334,6 +352,7 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   const b = saveWith("bob@example.com", 2, "B");
   await publish(env, db, alice, a);
   await publish(env, db, bob, b);
+  await handleFriend(post({ action: "add", query: bob.handle }), env, alice);
 
   await handleDuelSend(env, alice, bob.handle, "alice@example.com-plant-0", a.state);
   const id = (await body<{ invites: { id: string }[] }>(await handleDuelInbox(env, bob))).invites[0].id;
@@ -376,6 +395,7 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   const b = saveWith("bob@example.com", 2, "B");
   await publish(env, db, alice, a);
   await publish(env, db, bob, b);
+  await handleFriend(post({ action: "add", query: bob.handle }), env, alice);
 
   check("challenging yourself is refused", (await code(await handleDuelSend(env, alice, alice.handle, "alice@example.com-plant-0", a.state))) === "that_is_you");
 
@@ -397,6 +417,7 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   // Two live challenges from one person is a queue; three is refused.
   const spam = identity("spam@example.com", "Spammer");
   await publish(env, db, spam, saveWith("spam@example.com", 2, "S"));
+  await handleFriend(post({ action: "add", query: bob.handle }), env, spam);
   await handleDuelSend(env, spam, bob.handle, "spam@example.com-plant-0", saveWith("spam@example.com", 2, "S").state);
   await handleDuelSend(env, spam, bob.handle, "spam@example.com-plant-1", saveWith("spam@example.com", 2, "S").state);
   const third = await handleDuelSend(env, spam, bob.handle, "spam@example.com-plant-0", saveWith("spam@example.com", 2, "S").state);
