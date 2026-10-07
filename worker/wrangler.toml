@@ -12,6 +12,18 @@ compatibility_date = "2026-01-15"
 binding = "DB"
 id = "f9a6984ac59f4d70b032516f08aa8316"
 
+# The room mailbox: one Durable Object per room code. KV could relay messages but
+# its edge cache kept a written join invisible for up to a minute — measured ~30 s —
+# which looked like rooms never working. DO storage is strongly consistent, so a
+# send is visible to the very next poll. If this binding is removed, /api/room falls
+# back to the KV relay automatically.
+[durable_objects]
+bindings = [{ name = "ROOMS", class_name = "RoomMailbox" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomMailbox"]
+
 # Secrets are NOT in this file and must never be committed. Set them with:
 #   npx wrangler secret put TOKEN_SECRET
 #   npx wrangler secret put PBKDF2_ROUNDS

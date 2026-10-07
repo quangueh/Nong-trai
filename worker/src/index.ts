@@ -36,6 +36,10 @@
 import { googleAccountKey, googleSaveKey, verifyGoogleIdToken } from "./google";
 import { entryFromState, handleLeaderboard, writeEntry } from "./leaderboard";
 import { routeRoom } from "./room";
+import { RoomMailbox } from "./roomdo";
+
+// Wrangler picks the class up from the entry point's exports.
+export { RoomMailbox };
 import {
   handleDuelAccept,
   handleDuelDecline,
@@ -64,6 +68,13 @@ export interface Env {
    * Google's published public keys, so there is no secret on this side to leak.
    */
   GOOGLE_CLIENT_ID?: string;
+  /**
+   * The room mailbox, one Durable Object per code. Optional: when unbound, /api/room
+   * falls back to the KV relay in room.ts — same wire contract, but a send can take
+   * up to a minute to reach the other player's polls, which is exactly the "guest
+   * never joins" behaviour this object exists to remove.
+   */
+  ROOMS?: DurableObjectNamespace;
 }
 
 interface Account {
@@ -571,7 +582,26 @@ export default {
       } else if (path === "/api/room" && req.method === "POST") {
         // Unauthenticated by design: the room code is the capability, matching the
         // BroadcastChannel transport it replaces for players on different machines.
-        res = await routeRoom(req, env);
+        if (env.ROOMS) {
+          // The code picks the object, so read it first and let the object parse the
+          // rest — the body is forwarded verbatim, the wire contract does not fork.
+          const roomBody = (await req.json().catch(() => null)) as { code?: string } | null;
+          const roomCode = String(roomBody?.code ?? "").trim().toUpperCase();
+          if (!/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(roomCode)) {
+            res = RKO("bad_code");
+          } else {
+            const sub = await env.ROOMS.get(env.ROOMS.idFromName(roomCode)).fetch("https://room.mailbox/", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(roomBody),
+            });
+            // A Durable Object response has immutable headers, and the CORS pass below
+            // writes into every response — copying it out is the only way to annotate it.
+            res = new Response(sub.body, { status: sub.status, headers: sub.headers });
+          }
+        } else {
+          res = await routeRoom(req, env);
+        }
       } else if (path === "/api/leaderboard" && req.method === "GET") {
         const auth = await readAuth(req, env);
         if (!auth) res = RKO("unauthorised", 401);

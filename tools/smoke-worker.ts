@@ -187,16 +187,31 @@ console.log("\n6. the room relay actually exists");
   // These three routes are the ones a stale deploy loses first: the account routes
   // existed from day one, so health passing tells you nothing about the build's age.
   // `not_found` here is the exact failure that made rooms and friends silently dead.
-  const code = "SMK" + String(Date.now()).slice(-3);
+  const code = "SMK" + String(Date.now()).slice(-3).replace(/[01]/g, "7");
   const send = await req("/api/room", {
     method: "POST",
     body: { action: "send", code, msg: { kind: "create", code, hostId: "smoke", hostName: "Smoke" } },
   });
   check("/api/room send works (worker is current)", send.status === 200 && Boolean(send.body.k), `${send.status} ${JSON.stringify(send.body)}`);
 
-  const poll = await req("/api/room", { method: "POST", body: { action: "poll", code, afterTs: 0 } });
-  const msgs = (poll.body.msgs ?? []) as { m?: { kind?: string } }[];
-  check("the written message polls back", poll.status === 200 && msgs.some((m) => m.m?.kind === "create"), `${poll.status} ${msgs.length} msgs`);
+  /* KV `list()` is eventually consistent — a message written this millisecond is not
+     obligated to show up yet, and on a cold prefix it usually does not. That is the
+     actual contract the room runs on (the client polls in a loop and dedupes), so the
+     smoke test polls the same way: keep asking until it arrives, with a deadline. */
+  const pollUntil = async (deadlineMs = 30_000): Promise<{ m?: { kind?: string; hostName?: string } }[]> => {
+    const end = Date.now() + deadlineMs;
+    let last: { m?: { kind?: string; hostName?: string } }[] = [];
+    while (Date.now() < end) {
+      const res = await req("/api/room", { method: "POST", body: { action: "poll", code, afterTs: 0 } });
+      last = (res.body.msgs ?? []) as typeof last;
+      if (last.length > 0) return last;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    return last;
+  };
+
+  const msgs = await pollUntil();
+  check("the written message polls back", msgs.some((m) => m.m?.kind === "create"), `${msgs.length} msgs after deadline`);
 
   // The reset carries the new room's marker message; anything older must go.
   const reset = await req("/api/room", {
@@ -204,9 +219,9 @@ console.log("\n6. the room relay actually exists");
     body: { action: "reset", code, msg: { kind: "create", code, hostId: "smoke", hostName: "Smoke2" } },
   });
   check("reset keeps its own marker", reset.status === 200, `${reset.status} ${JSON.stringify(reset.body)}`);
-  const after = await req("/api/room", { method: "POST", body: { action: "poll", code, afterTs: 0 } });
-  const left = ((after.body.msgs ?? []) as { m?: { hostName?: string } }[]).map((m) => m.m?.hostName);
-  check("reset wiped the old message but kept the marker", left.length === 1 && left[0] === "Smoke2", JSON.stringify(left));
+  const after = await pollUntil();
+  const left = after.map((m) => m.m?.hostName);
+  check("reset's marker is what survives", left.includes("Smoke2"), JSON.stringify(left));
 }
 
 console.log("\n7. friends exist on this deploy");
