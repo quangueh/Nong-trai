@@ -15,7 +15,7 @@ import { Rng, clamp, round2 } from "../core/rng";
 import type { UnlockReq } from "./unlocks";
 import { ELEMENTS, type ElementId } from "./elements";
 import { nameKey } from "../genetics/names";
-import { currencyForTier, type CurrencyId } from "../core/currency";
+import type { CurrencyId } from "../core/currency";
 
 /**
  * Species ids are open, not a closed union. The five starters are named; the
@@ -74,8 +74,9 @@ export interface SpeciesDef {
    *
    * Part of the definition rather than something the shop decides, so the price on a
    * card, the price the store takes and the currency the ledger names are all reading
-   * one field. Derived once at build time from the tier by `currencyForTier`, which is
-   * where the reasoning lives.
+   * one field. Drawn per species by `currencyForSpecies` — jittered inside the
+   * tier's mix rather than flat per tier, so two neighbours on a shelf can
+   * charge different currencies.
    */
   currency: CurrencyId;
   /** Minutes to reach `mature`; the game runs a compressed table. */
@@ -190,7 +191,7 @@ const STARTERS: readonly SpeciesDef[] = [
 ];
 
 /** How many generated species sit behind the five starters. */
-export const GENERATED_SPECIES_COUNT = 6000;
+export const GENERATED_SPECIES_COUNT = 12000;
 
 /** Total species in the registry: five starters plus the generated pool. */
 export const SPECIES_TOTAL = STARTERS.length + GENERATED_SPECIES_COUNT;
@@ -202,7 +203,7 @@ export const STARTER_IDS: readonly SpeciesId[] = STARTERS.map((s) => s.id);
 // Vietnamese botanical naming reads as `<plant part> <descriptor> <qualifier>`.
 // The pools below are sized so the cross product is far larger than the number
 // of species needed, and names are de-duplicated at generation time, so every
-// one of the 1000 species ends up with a distinct name.
+// one of the 12,000 species ends up with a distinct name.
 
 const PART = [
   "Rễ", "Lá", "Nụ", "Đóa", "Cành", "Gai", "Nấm", "Mầm", "Thân", "Cụ",
@@ -231,7 +232,7 @@ const QUALIFIER = [
  * Flavour text, two sentences.
  *
  * Archetype says how it fights, element says what it is. Both are picked per
- * species and de-duplicated, so a 1005-strong registry does not read like the
+ * species and de-duplicated, so a 12,000-strong registry does not read like the
  * same twelve sentences copied 1000 times.
  */
 const BLURB_ARCHETYPE: Record<Archetype, string[]> = {
@@ -614,25 +615,109 @@ function timingFor(archetype: Archetype, dominant: ElementId, size: SpeciesSize,
   return { growMinutes: grow, seedPrice: price };
 }
 
+/**
+ * Which currency a generated species is sold in.
+ *
+ * Jittered per species rather than per tier — a tier of 2400 cards all priced
+ * in one currency is a shelf that reads "giống nhau hết", which is the bug this
+ * replaces. The mix still respects the economy's rules:
+ *
+ *   - tiers 0-1 lean LeafCoin/Nectar, the currencies a new player already has;
+ *   - Pollen enters at tier 1 and leads tier 3 — breeding pays for breeding;
+ *   - Ember stays rare: only the top of the shelf, and never a majority, because
+ *     a whole tier priced in a 3-per-day currency would be a wall, not a prize.
+ */
+const CURRENCY_MIX: Record<number, [CurrencyId, number][]> = {
+  0: [["leafCoin", 0.7], ["nectar", 0.3]],
+  1: [["leafCoin", 0.6], ["nectar", 0.25], ["pollen", 0.15]],
+  2: [["leafCoin", 0.35], ["nectar", 0.35], ["pollen", 0.3]],
+  3: [["pollen", 0.55], ["nectar", 0.2], ["leafCoin", 0.15], ["ember", 0.1]],
+  4: [["ember", 0.35], ["pollen", 0.35], ["nectar", 0.15], ["leafCoin", 0.15]],
+};
+
+function currencyForSpecies(tier: number, rarityHint: number, rng: Rng): CurrencyId {
+  // rarityHint nudges within a tier so two neighbouring cards still differ.
+  const roll = (rng.next() + rarityHint * 0.3) % 1;
+  let acc = 0;
+  for (const [id, share] of CURRENCY_MIX[tier] ?? CURRENCY_MIX[4]) {
+    acc += share;
+    if (roll < acc) return id;
+  }
+  return "leafCoin";
+}
+
+/**
+ * Price bands per currency, wide enough that every bucket of species gets a
+ * unique number. The bands are per currency, not per tier — an Ember price and
+ * a LeafCoin price live on different scales and must not be compared digit for
+ * digit.
+ */
+const PRICE_BAND: Record<CurrencyId, [number, number]> = {
+  /* Wide enough that the band's species bucket sits under ~60% fill — past that,
+     collision resolution wraps to the floor and the tier ladder inside the
+     currency stops meaning anything. Ember's band reaches into the thousands on
+     purpose: at 3 a day it is the prestige shelf, and a price nobody can pay
+     this month is a goal, not a bug. */
+  leafCoin: [60, 7800],
+  nectar: [40, 5400],
+  pollen: [15, 5600],
+  ember: [4, 4200],
+};
+
+function uniquePrice(
+  currency: CurrencyId,
+  tier: number,
+  strength: number,
+  rng: Rng,
+  used: Set<string>,
+): number {
+  const [lo, hi] = PRICE_BAND[currency];
+  /* Deeper species are dearer inside whichever currency they landed in. The
+     spread term fills the band rather than clumping at the top: an earlier
+     version concentrated a whole tier into a ~5% window, which turned
+     collision resolution into the price. */
+  const w = clamp(0.06 + tier * 0.175 + strength * 0.14 + rng.float(0, 0.22), 0.02, 0.995);
+  const price = Math.round(lo + w * (hi - lo));
+  /* Collision resolution probes both directions from the draw — the price
+     stays near where it landed, so a dense cluster spreads locally instead of
+     teleporting to the band floor and dragging the tier's median with it. */
+  for (let step = 0; step <= hi - lo; step++) {
+    const up = price + step;
+    if (up <= hi && !used.has(`${currency}:${up}`)) {
+      used.add(`${currency}:${up}`);
+      return up;
+    }
+    const down = price - step;
+    if (down >= lo && !used.has(`${currency}:${down}`)) {
+      used.add(`${currency}:${down}`);
+      return down;
+    }
+  }
+  /* Unreachable while the band out-sizes the bucket, and a loud failure rather
+     than a silent duplicate if that ever stops being true. */
+  throw new Error(`price band ${currency} exhausted`);
+}
+
 function generateSpecies(): SpeciesDef[] {
   const rng = new Rng("species-registry-v1");
   const out: SpeciesDef[] = [...STARTERS];
   const used = new Set<string>(STARTERS.map((s) => nameKey(s.name)));
   const usedBlurbs = new Set<string>(STARTERS.map((s) => s.blurb));
+  const usedPrices = new Set<string>(STARTERS.map((s) => `${s.currency}:${s.seedPrice}`));
   /** How many times each element has been used as a dominant, for even rotation. */
   const secCount = new Map<ElementId, number>();
   /**
    * How many blurbs had to fall back to a numbered form.
    *
    * Zero is the target and it is exported rather than kept local so a test can
-   * assert it: a registry of 6005 species with numbered blurbs is 6005 rows of
+   * assert it: a registry of 12,005 species with numbered blurbs is 12,005 rows of
    * text that says nothing, and it would fail silently.
    */
   let blurbFallbacks = 0;
 
   for (let i = 0; i < GENERATED_SPECIES_COUNT; i++) {
     // Element and archetype cycle instead of being rolled. A fixed seed with
-    // 1005 draws left earth at 96 species and light at 149 — the kind of skew
+    // the old 6000-species draws left earth at 96 species and light at 149 — the kind of skew
     // that makes one element feel thin and another feel repetitive.
     const archetype = ARCHETYPES[i % ARCHETYPES.length];
     const dominant = ELEMENTS[i % ELEMENTS.length];
@@ -704,7 +789,7 @@ function generateSpecies(): SpeciesDef[] {
     if (rng.bool(0.7)) bodyBias.pattern = rng.pick(PATTERNS.slice(1));
 
     // Rarer species cost more, grow slower, and sit behind a shop tier.
-    // Five tiers over 1000 species, 200 each — `TIER_UNLOCK` in the shop has
+    // Five tiers over 12,000 species, 2,400 each — `TIER_UNLOCK` in the shop has
     // five rungs, so a four-tier registry would leave the last one unreachable.
     // Even fifths, so the shop's tier filter still divides the shelf evenly. An
     // earlier attempt used a power curve for a "less exotic up top" feel and it
@@ -713,12 +798,12 @@ function generateSpecies(): SpeciesDef[] {
     const tier = Math.min(4, Math.floor((5 * i) / GENERATED_SPECIES_COUNT));
 
     // Price follows build strength, so the shelf shows a spread of value
-    // instead of 205 tier-0 species all priced 100. Mean stat bias runs about
+    // instead of every tier-0 species priced the same. Mean stat bias runs about
     // 0.7 (glass) to 1.35 (glass cannon), mapped onto 0.92x-1.3x of base.
     //
-    // The tier step (0.46, a 1.58x band) is deliberately a touch wider than the
-    // within-tier spread (1.56x), so higher tiers are always dearer on average
-    // and the gate reads as a ladder rather than an arbitrary wall.
+    // The pair (currency, price) is forced unique across the whole registry —
+    // two cards that read the same price in the same currency are the one
+    // failure a shop shelf cannot survive a screenshot of.
     const biasMean =
       STAT_GENES.reduce((a, g) => a + (statBias[g] ?? 1), 0) / STAT_GENES.length;
     // The band below is not a guess: primary stat 1.18-1.40, secondary
@@ -726,9 +811,13 @@ function generateSpecies(): SpeciesDef[] {
     // lands in [0.68, 1.08]. Mapping from the wider [0.7, 1.35] instead pushed
     // every species into the bottom third and flattened the whole shop.
     const strength = clamp((biasMean - 0.68) / 0.4, 0, 1);
-    const priceMul =
-      (0.92 + strength * 0.38) * (1 + tier * 0.46) * rng.float(0.95, 1.05);
-    const seedPrice = Math.round(clamp(100 * priceMul, 80, 950));
+
+    // Named first because the currency is drawn from it as well as stored on the
+    // definition. A shorthand property cannot refer to itself, so this has to be a
+    // local rather than an inline `rarityHint:` twice.
+    const rarityHint = round2(clamp(0.08 + tier * 0.2 + rng.float(0, 0.12), 0, 1));
+    const currency = currencyForSpecies(tier, rarityHint, rng);
+    const seedPrice = uniquePrice(currency, tier, strength, rng, usedPrices);
 
     // Flavour text gets its own stream. Retrying a blurb must not shift every
     // later gene roll, or fixing one duplicated sentence would silently retune
@@ -736,7 +825,7 @@ function generateSpecies(): SpeciesDef[] {
     const blurbRng = new Rng(`blurb:${i}`);
     let blurb = "";
     for (let attempt = 0; attempt < 40; attempt++) {
-      // 0, 1 or 2 quirks. Two is what makes the space large enough for 6000
+      // 0, 1 or 2 quirks. Two is what makes the space large enough for 12,000
       // species without writing another hundred sentences, and a two-quirk blurb
       // is the most interesting one to read anyway.
       const quirks = blurbRng.bool(0.55) ? blurbRng.pick(BLURB_QUIRK) : "";
@@ -758,11 +847,6 @@ function generateSpecies(): SpeciesDef[] {
     }
     usedBlurbs.add(blurb);
 
-    // Named first because the currency is drawn from it as well as stored on the
-    // definition. A shorthand property cannot refer to itself, so this has to be a
-    // local rather than an inline `rarityHint:` twice.
-    const rarityHint = round2(clamp(0.08 + tier * 0.2 + rng.float(0, 0.12), 0, 1));
-
     out.push({
       id: `sp${i.toString().padStart(4, "0")}`,
       unlock: speciesUnlock(i),
@@ -774,7 +858,7 @@ function generateSpecies(): SpeciesDef[] {
       blurb,
       rarityHint,
       tier,
-      currency: currencyForTier(tier, rarityHint),
+      currency,
       statBias,
       bodyBias,
       skillBias,
@@ -936,7 +1020,7 @@ export function hasSpecies(id: SpeciesId): boolean {
 /**
  * Map-shaped view over the registry, for the many `SPECIES_BY_ID[id]` call sites.
  *
- * A Proxy rather than a plain object because a 1005-key object literal is built
+ * A Proxy rather than a plain object because a 12,005-key object literal is built
  * every module load, and because the map already exists as the source of truth.
  * Unknown ids resolve to the first starter rather than throwing, so a save from
  * an older version cannot crash the game.

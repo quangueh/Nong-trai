@@ -20,6 +20,7 @@ export {
   gateCheck,
   gateLabel,
   isBossStage,
+  minFighterPower,
   stageAffixes,
   stageGate,
   stageBand,

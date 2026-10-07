@@ -27,10 +27,11 @@ import { BattleView } from "../../battle/battleView";
 import { showStageBrief, showStageResult } from "../fx/stageOverlay";
 import { stageIdentity } from "../../pve/stages";
 import { store } from "../app";
-import { ELEMENT_INFO, dominantElement } from "../../config/elements";
+import { ELEMENT_INFO, dominantElement, elementMultiplier, type ElementId } from "../../config/elements";
+import type { Plant } from "../../core/types";
 import { ARCHETYPE_ROLE, TIER_META } from "../../config/balance";
 import { RARITY_META } from "../../config/rarity";
-import { BAND_LABEL, LOOKAHEAD, gateCheck, gateLabel, stageGate, type MonsterSpec, type StageBrief } from "../../pve";
+import { BAND_LABEL, LOOKAHEAD, gateCheck, gateLabel, minFighterPower, stageGate, stageIsOpen, type MonsterSpec, type StageBrief } from "../../pve";
 import type { Navigate } from "./types";
 
 /** How many stage rows to draw. The list is long by design; scrolling it is the point. */
@@ -112,6 +113,67 @@ export function renderAscent(_nav: Navigate): HTMLElement {
      * numbered gap explains itself; an absent one does not. */
     const frontier = Math.max(1, ascent.highest + 1);
     const mapTop = Math.max(1, frontier - Math.floor(LOOKAHEAD / 2));
+
+    /* The world map — zones, not stages.
+     *
+     * A strip of numbered cells answers "what is stage 22" but never "where is
+     * this ladder going". So above it sits a zone map: the five named bands and,
+     * past them, the numbered strata that never end. The card containing the
+     * frontier is marked; zones behind it show how much of them is already
+     * cleared, and the last card is always "∞" — there is no final zone, and
+     * the map says so rather than implying one by stopping. */
+    const worldmap = el("div", { class: "worldmap" });
+    {
+      /* Zone edges: the five authored bands, then endless 30-stage strata past
+         the last one. `to` of null means "open-ended" — the ∞ card. */
+      const zones: { name: string; from: number; to: number | null }[] = [
+        { name: BAND_LABEL["khoi-dau"], from: 1, to: 10 },
+        { name: BAND_LABEL["thung-lung"], from: 11, to: 30 },
+        { name: BAND_LABEL["vuc-tham"], from: 31, to: 60 },
+        { name: BAND_LABEL["vuot-han"], from: 61, to: 90 },
+        { name: BAND_LABEL["khong-duong"], from: 91, to: 120 },
+      ];
+      while ((zones[zones.length - 1].to ?? Infinity) <= frontier) {
+        const last = zones[zones.length - 1];
+        const from = (last.to ?? last.from) + 1;
+        zones.push({ name: `Tầng ${Math.floor(from / 30)}`, from, to: from + 29 });
+      }
+      /* A window, not a wall: the zone holding the frontier plus the ones behind
+         and ahead that still fit — deep climbers get the tail, not a 40-card
+         strip. */
+      const curZone = zones.findIndex((z) => frontier <= (z.to ?? Infinity));
+      const from = Math.max(0, curZone - 2);
+      const to = Math.min(zones.length - 1, curZone + 2);
+      if (from > 0) {
+        worldmap.appendChild(el("span", { class: "wm-more" }, ["…"]));
+      }
+      for (let zi = from; zi <= to; zi++) {
+        const z = zones[zi];
+        const size = (z.to ?? frontier) - z.from + 1;
+        const clearedHere = Math.max(0, Math.min(ascent.highest, z.to ?? ascent.highest) - z.from + 1);
+        const pct = Math.round((clearedHere / size) * 100);
+        const here = frontier >= z.from && frontier <= (z.to ?? Infinity);
+        const done = z.to !== null && ascent.highest >= z.to;
+        const card = el("div", {
+          class: "wm-zone" + (here ? " is-here" : "") + (done ? " is-done" : "") + (!done && !here ? " is-ahead" : ""),
+          title: `${z.name} · Ải ${z.from}–${z.to ?? "…"}`,
+        });
+        card.append(
+          el("div", { class: "wm-zone-name" }, [z.name]),
+          el("div", { class: "wm-zone-range tiny muted" }, [`Ải ${z.from}–${z.to ?? "…"}`]),
+          el("div", { class: "wm-bar" }, [el("i", { style: `width:${done ? 100 : pct}%` })]),
+        );
+        if (here) card.appendChild(el("div", { class: "wm-now" }, ["▲ bạn ở đây"]));
+        worldmap.appendChild(card);
+      }
+      // The endless tail — the map never prints a last card, it prints this.
+      worldmap.appendChild(
+        el("div", { class: "wm-zone wm-endless", title: "Thang không có điểm kết" }, [
+          el("div", { class: "wm-zone-name" }, ["∞"]),
+          el("div", { class: "wm-zone-range tiny muted" }, ["không kết thúc"]),
+        ]),
+      );
+    }
     const mapHost = el("div", { class: "stagemap" });
 
     /*
@@ -131,7 +193,7 @@ export function renderAscent(_nav: Navigate): HTMLElement {
 
     for (let s = mapTop; s < mapTop + LOOKAHEAD + 4; s++) {
       const cleared = s <= ascent.highest;
-      const open = s <= ascent.highest + LOOKAHEAD;
+      const open = stageIsOpen(s, ascent.highest);
       const isNow = s === frontier;
       const sid = stageIdentity(s, 1);
       const state = cleared ? "đã vượt" : open ? "có thể đánh" : `vượt ải ${frontier} để mở`;
@@ -154,11 +216,11 @@ export function renderAscent(_nav: Navigate): HTMLElement {
       }
       mapHost.appendChild(cell);
     }
-    // Caption then map, appended together. Calling `mapHost.before(...)` instead would have
-    // been a silent no-op: `before` needs a parent, and the map is not in the document until
-    // two lines later — which is exactly what the first version did, and the caption never
-    // appeared.
-    listHost.append(caption, mapHost);
+    // Caption, then world map, then the stage strip. Calling `mapHost.before(...)`
+    // instead would have been a silent no-op: `before` needs a parent, and the map
+    // is not in the document until appended — which is exactly what the first
+    // version did, and the caption never appeared.
+    listHost.append(caption, worldmap, mapHost);
 
     /* Anchored at the frontier, not centred on the record.
      *
@@ -242,9 +304,11 @@ export function renderAscent(_nav: Navigate): HTMLElement {
 
   function stageRow(stage: number): HTMLElement {
     const cleared = stage <= ascent.highest;
-    const open = stage <= ascent.highest + LOOKAHEAD;
+    /* `open` is forward-only now — a cleared stage is visible for its monster and
+       record, but the button that would replay it is simply not rendered. */
+    const open = stageIsOpen(stage, ascent.highest);
     const brief = store.stageBrief(stage);
-    const monster = open ? store.stageMonster(stage) : null;
+    const monster = cleared || open ? store.stageMonster(stage) : null;
 
     const row = el("div", { class: "card", style: "margin-bottom:8px" });
     row.append(
@@ -254,20 +318,20 @@ export function renderAscent(_nav: Navigate): HTMLElement {
       ]),
     );
 
-    if (!open || !monster) {
+    if (!monster) {
       row.appendChild(
         el("div", { class: "tiny muted", style: "margin-top:6px" }, [`Vượt ải ${ascent.highest + 1} để mở.`]),
       );
       return row;
     }
 
-    row.appendChild(monsterStrip(monster, brief));
+    const fighter = chosen ? store.get(chosen) ?? null : null;
+    row.appendChild(monsterStrip(monster, brief, fighter));
 
     /* Milestone stages carry an entry condition — printed on the card rather than
        discovered on a refused click, because a gate nobody can see is just a button
        that does nothing. */
     const gate = stageGate(stage);
-    const fighter = chosen ? store.get(chosen) : null;
     const gateResult = gate && fighter ? gateCheck(fighter, gate) : { ok: true };
     if (gate) {
       const met = gateResult.ok;
@@ -281,9 +345,10 @@ export function renderAscent(_nav: Navigate): HTMLElement {
     if (cleared) {
       row.appendChild(
         el("div", { class: "tiny muted", style: "margin-top:6px" }, [
-          `Đã vượt · ${TIER_META[brief.tier].label} · ${RARITY_META[brief.rarity].label}`,
+          `Đã vượt · ${TIER_META[brief.tier].label} · ${RARITY_META[brief.rarity].label} — thang chỉ đi lên`,
         ]),
       );
+      return row;
     }
 
     if (chosen) {
@@ -301,12 +366,17 @@ export function renderAscent(_nav: Navigate): HTMLElement {
        */
       const isNext = stage === ascent.highest + 1;
       const gated = !gateResult.ok;
+      /* A power floor, surfaced like the gate: a monster at four times the
+         fighter's strength is not a fight, and the store refuses it outright —
+         the button just says so first. */
+      const needPower = minFighterPower(stage, store.ascentDayIndex());
+      const weak = (fighter?.powerRating ?? 0) < needPower;
       const fight = el(
         "button",
         {
-          class: cleared ? "btn ghost sm replaybtn" : isNext ? "btn primary block" : "btn block",
+          class: isNext ? "btn primary block" : "btn block",
           style: "margin-top:10px",
-          title: gated ? gateResult.reason! : cleared ? `Đánh lại ải ${stage} — đã vượt rồi` : `Vượt ải ${stage}`,
+          title: gated ? gateResult.reason! : weak ? `Cần ít nhất ${fmt(needPower)} lực` : `Vượt ải ${stage}`,
           /*
            * A stable hook to the action.
            *
@@ -317,9 +387,9 @@ export function renderAscent(_nav: Navigate): HTMLElement {
            */
           "data-stage-fight": String(stage),
         },
-        [cleared ? `Đánh lại ải ${stage}` : gated ? `Chưa đủ điều kiện` : `Vượt ải ${stage}`],
+        [gated ? `Chưa đủ điều kiện` : weak ? `Cây chưa đủ lực (cần ⚔${fmt(needPower)})` : `Vượt ải ${stage}`],
       );
-      if (gated) fight.disabled = true;
+      if (gated || weak) fight.disabled = true;
       /*
        * The brief comes first.
        *
@@ -342,7 +412,7 @@ export function renderAscent(_nav: Navigate): HTMLElement {
   }
 
   /** The monster's own body and its affixes: what makes a stage legible before it is a fight. */
-  function monsterStrip(monster: MonsterSpec, brief: StageBrief): HTMLElement {
+  function monsterStrip(monster: MonsterSpec, brief: StageBrief, fighter: Plant | null): HTMLElement {
     const box = el("div", { class: "row", style: "gap:10px;margin-top:10px;align-items:flex-start" });
     const tint = monster.affixes[0]?.colour ?? "#2f4a2a";
     const art = el("div", {
@@ -371,6 +441,34 @@ export function renderAscent(_nav: Navigate): HTMLElement {
           pct > 115 ? "Quá mạnh" : pct > 95 ? "Kịch tranh" : `Khoảng ${pct}% sức mạnh của bạn`,
         ]),
       );
+    }
+
+    /* Element matchup, printed rather than left as hidden maths.
+     *
+     * The engine already computes the multiplier for every hit; the player just
+     * never got to see it before committing. With a fighter chosen, the strip
+     * says both directions — what the fighter's hits will do to the monster and
+     * what the monster's will do back — so "khắc hệ" is a number on the card,
+     * not a surprise in the log. */
+    if (fighter) {
+      const myElems = fighter.dna.elementGenes as Record<string, number> as Record<ElementId, number>;
+      const foeElems = monster.plant.dna.elementGenes as Record<string, number> as Record<ElementId, number>;
+      const mine = elementMultiplier(myElems, foeElems);
+      const theirs = elementMultiplier(foeElems, myElems);
+      const pct = (m: number) => `${m > 1 ? "+" : "−"}${Math.round(Math.abs(m - 1) * 100)}%`;
+      const line = el("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-top:6px" });
+      const chipFor = (m: { multiplier: number; reason: string }, label: string) => {
+        const good = m.multiplier > 1.005, bad = m.multiplier < 0.995;
+        const c = el("span", {
+          class: "tiny",
+          style: `border-radius:6px;padding:1px 7px;font-weight:700;background:${good ? "rgba(46,160,67,.16)" : bad ? "rgba(201,74,60,.14)" : "var(--line)"};color:${good ? "var(--accent-2)" : bad ? "var(--bad)" : "var(--muted)"}`,
+          title: m.reason || "Không hệ nào khắc nhau",
+        }, [`${label}: ${good || bad ? pct(m.multiplier) : "trung tính"}${m.reason ? ` · ${m.reason}` : ""}`]);
+        line.appendChild(c);
+      };
+      chipFor(mine, "Bạn đánh");
+      chipFor(theirs, "Quái đánh");
+      info.appendChild(line);
     }
 
     if (monster.affixes.length) {

@@ -94,7 +94,7 @@ const b = await chromium.launch();
 
   /* The brief. Opened by the real button. */
   await page.evaluate(`(() => {
-    const b = [...document.querySelectorAll(".screen button")].find((x) => /Vượt ải này|Đánh lại/.test(x.textContent || ""));
+    const b = [...document.querySelectorAll(".screen button")].find((x) => /Vượt ải [0-9]+/.test(x.textContent || ""));
     if (b) b.click();
   })()`);
   await page.waitForTimeout(700);
@@ -121,7 +121,7 @@ const b = await chromium.launch();
    * against that home means this test cannot drift from it again, and a rule that stops being
    * shown on the brief is still a failure here.
    */
-  const rules = stageIdentity(20, 1).conditions;
+  const rules = stageIdentity(22, 1).conditions;
   check("it states the win condition", String(brief?.text ?? "").includes(rules.win), String(brief?.rows));
   check("and the lose condition", String(brief?.text ?? "").includes(rules.lose));
   check(
@@ -130,7 +130,7 @@ const b = await chromium.launch();
     rules.timeout,
   );
   check("and previews the EXP before the fight", brief?.hasXp === true, String(brief?.xpText));
-  check("and names the stage rather than only numbering it", String(brief?.text ?? "").includes(stageIdentity(20, 1).name), stageIdentity(20, 1).name);
+  check("and names the stage rather than only numbering it", String(brief?.text ?? "").includes(stageIdentity(22, 1).name), stageIdentity(22, 1).name);
 
   /* Fight. */
   await page.evaluate(`(() => {
@@ -185,7 +185,7 @@ const b = await chromium.launch();
   })()`)) as Record<string, unknown>;
   console.log(`  result: ${String(after.text).slice(0, 230)}`);
   check("the button unlocks once the tally is done", after.disabled === false);
-  check("the objective is restated on the result", String(after.text).includes(stageIdentity(20, 1).conditions.win), stageIdentity(20, 1).conditions.win);
+  check("the objective is restated on the result", String(after.text).includes(stageIdentity(22, 1).conditions.win), stageIdentity(22, 1).conditions.win);
   check("and the EXP is shown for the plant", String(after.text).includes("EXP"), String(after.xp));
 
   /* Continue, and catch the celebration if this fight levelled the plant. */
@@ -270,7 +270,7 @@ const b = await chromium.launch();
   await page.screenshot({ path: "shots/progress/phone-1-ladder.png" });
 
   await page.evaluate(`(() => {
-    const b = [...document.querySelectorAll(".screen button")].find((x) => /Vượt ải này|Đánh lại/.test(x.textContent || ""));
+    const b = [...document.querySelectorAll(".screen button")].find((x) => /Vượt ải [0-9]+/.test(x.textContent || ""));
     if (b) b.click();
   })()`);
   await page.waitForTimeout(700);
@@ -328,7 +328,7 @@ const b = await chromium.launch();
   await page.evaluate(SEED);
   await page.waitForTimeout(1200);
   await page.evaluate(`(() => {
-    const b = [...document.querySelectorAll(".screen button")].find((x) => /Vượt ải này|Đánh lại/.test(x.textContent || ""));
+    const b = [...document.querySelectorAll(".screen button")].find((x) => /Vượt ải [0-9]+/.test(x.textContent || ""));
     if (b) b.click();
   })()`);
   await page.waitForTimeout(600);

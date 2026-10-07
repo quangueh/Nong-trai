@@ -5,7 +5,8 @@
  *
  * `test-ascent.ts` fights the difficulty curve out with synthetic plants. It says nothing
  * about whether the game is *playable*: that stage 1 can be entered, that clearing it opens
- * stage 2, that an old stage can be replayed for EXP, that a loss costs nothing, and — the
+ * stage 2, that a cleared stage refuses to be replayed — the ladder only goes forward, so
+ * an old stage is history, not a farm — that a loss costs nothing, and — the
  * one that has bitten before — that the unlock is still there after a reload.
  *
  * That last one is not hypothetical. `AscentState` lives inside the save, the save lives in a
@@ -18,7 +19,7 @@
  *   2. enter stage 1, see the brief, fight it
  *   3. win: the record moves, the next stage unlocks, the result screen says so
  *   4. reload: the unlock survived
- *   5. replay stage 1 and still be paid
+ *   5. replay stage 1 and be refused
  *   6. lose stage 2: the record holds, the consolation pays, the next stage stays locked
  *
  * ## One engine, so a replay is a replay
@@ -153,7 +154,8 @@ console.log("\nprogression gates and rewards:");
   check("stage 1 is open to a new account", stageIsOpen(1, 0));
   check("stage 5 is not", !stageIsOpen(5, 0));
   check("and stage 2 opens once 1 is cleared", stageIsOpen(2, 1));
-  check("a cleared stage stays replayable", stageIsOpen(1, 12));
+  check("a cleared stage is closed for good", !stageIsOpen(1, 12));
+  check("but the next four are open", stageIsOpen(13, 12) && stageIsOpen(16, 12) && !stageIsOpen(17, 12));
   const win = stageReward(10, true, 0);
   const loss = stageReward(10, false, 0);
   check("a loss still pays something", loss.leafCoin > 0 && loss.plantXp > 0, JSON.stringify(loss));
@@ -361,8 +363,12 @@ const frontierOf = (page: Page): Promise<Record<string, unknown>> =>
   check("and still points at the next stage", String(mapReloaded.caption).includes(`Ải ${(afterReload.highest as number) + 1}`), String(mapReloaded.caption));
   await page.screenshot({ path: "shots/ascent/5-after-reload.png" });
 
-  /* --- replay an old stage --- */
-  console.log("\n5. replay the stage already cleared:");
+  /* --- replay an old stage: refused ---
+   *
+   * Cleared stages never reopen. The store refuses, the button is not rendered,
+   * and nothing is paid — replaying for EXP was the one way to grow without
+   * planting or breeding. */
+  console.log("\n5. replay the stage already cleared — refused:");
   const clearedStage = afterReload.highest as number;
   const xpBefore = (await page.evaluate(`(() => (window).__game.store.state.plants[0].growth.xp)()`)) as number;
   const coinsBefore = (await page.evaluate(`(() => (window).__game.store.state.leafCoin)()`)) as number;
@@ -376,11 +382,13 @@ const frontierOf = (page: Page): Promise<Record<string, unknown>> =>
   await page.waitForTimeout(1200);
   const xpAfter = (await page.evaluate(`(() => (window).__game.store.state.plants[0].growth.xp)()`)) as number;
   const coinsAfter = (await page.evaluate(`(() => (window).__game.store.state.leafCoin)()`)) as number;
+  const replayBtn = await page.evaluate(`(() => [...document.querySelectorAll("[data-stage-fight]")].some(b => (b.textContent ?? "").includes("lại")))()`);
 
   console.log(`  ${JSON.stringify(replayed)}`);
-  check("a cleared stage is still enterable", replayed.ok === true, String(replayed.reason));
-  check("replaying pays EXP", xpAfter >= xpBefore, `${xpBefore} -> ${xpAfter}`);
-  check("and pays coins", coinsAfter >= coinsBefore, `${coinsBefore} -> ${coinsAfter}`);
+  check("a cleared stage refuses to re-enter", replayed.ok === false, String(replayed.reason));
+  check("the refusal names the reason", String(replayed.reason).includes("đã vượt"), String(replayed.reason));
+  check("replaying pays nothing", xpAfter === xpBefore && coinsAfter === coinsBefore, `${xpBefore}->${xpAfter} / ${coinsBefore}->${coinsAfter}`);
+  check("and no replay button is rendered", replayBtn === false);
 
   /* --- a loss --- */
   console.log("\n6. a stage that is too hard:");
@@ -395,9 +403,10 @@ const frontierOf = (page: Page): Promise<Record<string, unknown>> =>
     const s = (window).__game.store;
     const p = s.state.plants[0];
     // Record progress so a deep stage is legitimately open, then under-level the plant so
-    // the stage that opened is genuinely out of reach.
+    // the stage that opened is genuinely out of reach — but still above the admission
+    // floor, which now refuses outright fights the plant cannot possibly win.
     s.state.ascent.highest = 40;
-    p.powerRating = 180;
+    p.powerRating = 380;
     const stage = 44;
     const out = s.runAscentStage(p.plantId, stage);
     return {

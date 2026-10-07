@@ -95,17 +95,35 @@ for (const s of SPECIES) byCurrency.set(s.currency, (byCurrency.get(s.currency) 
 check("all four currencies are actually used by the registry", CURRENCY_IDS.every((id) => (byCurrency.get(id) ?? 0) > 0),
   CURRENCY_IDS.map((id) => `${id}:${byCurrency.get(id) ?? 0}`).join(" "));
 
-/* The starters must stay on LeafCoin. A new player meets tier 0 first, and a price in a
-   currency they have never earned is a bad first minute rather than a progression. */
+/* A new player meets tier 0 first, so it only charges the two currencies a
+   garden earns from minute one — LeafCoin from winning and Nectar from every
+   care action. Ember or Pollen at the bottom of the shelf would be a wall in
+   the tutorial. */
 const starters = SPECIES.filter((s) => s.tier === 0);
-check("every tier-0 species costs LeafCoin", starters.length > 0 && starters.every((s) => s.currency === "leafCoin"),
-  starters.filter((s) => s.currency !== "leafCoin").slice(0, 3).map((s) => s.id).join(", "));
+check(
+  "every tier-0 species costs a starter currency",
+  starters.length > 0 && starters.every((s) => s.currency === "leafCoin" || s.currency === "nectar"),
+  starters.filter((s) => s.currency !== "leafCoin" && s.currency !== "nectar").slice(0, 3).map((s) => s.id).join(", "),
+);
 
-/* The top of the registry is Ember and only Ember, so the rare drop has exactly one use. */
+/* The top of the registry is where Ember lives — led by it, not monopolised by
+   it, because a tier of 2,400 cards priced in one currency was the shelf that
+   read "giống nhau hết". Ember stays scarce: it never appears below tier 3. */
 const top = SPECIES.filter((s) => s.tier === 4);
 check("the top tier exists", top.length > 0, `${top.length}`);
-check("and costs only Ember", top.every((s) => s.currency === "ember"));
-check("so Ember is not spent on anything cheaper", SPECIES.filter((s) => s.currency === "ember").every((s) => s.tier === 4));
+{
+  const emberShare = top.filter((s) => s.currency === "ember").length / top.length;
+  check("the top tier is led by Ember", emberShare > 0.25, `${Math.round(emberShare * 100)}%`);
+  check(
+    "but no single currency owns it",
+    new Set(top.map((s) => s.currency)).size >= 3,
+    [...new Set(top.map((s) => s.currency))].join(","),
+  );
+}
+check(
+  "so Ember is never spent on anything cheap",
+  SPECIES.filter((s) => s.currency === "ember").every((s) => s.tier >= 3),
+);
 
 check("tier 2 is not all one currency", new Set(SPECIES.filter((s) => s.tier === 2).map((s) => s.currency)).size > 1,
   "otherwise a tier is a single flat price");

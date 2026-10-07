@@ -24,6 +24,7 @@ import {
   describeStage,
   gateCheck,
   isBossStage,
+  minFighterPower,
   monsterFor,
   stageExtraDrop,
   stageGate,
@@ -219,6 +220,17 @@ export interface DiscoveryState {
   battles: number;
   breeds: number;
   claimed: string[];
+  /**
+   * Genome signatures of every plant ever owned, living or consumed.
+   *
+   * Breeding checks against this — not just the plants still in the garden — so
+   * a child can never come out identical to a parent that was spent, which is
+   * the duplicate a "không bao giờ trùng" rule actually has to catch. Capped
+   * rather than unbounded: the list is a Set's job done in an array so the save
+   * stays small, and 4,000 signatures is more garden history than a season
+   * produces.
+   */
+  genomes: string[];
 }
 
 export interface PlayerState {
@@ -868,7 +880,7 @@ export class GameStore {
     // (1) is retried by bumping `attempt`, which reseeds the whole generation.
     // (2) is fixed by re-deriving the name with a higher salt, which is free
     // because a name is a pure function of the genome.
-    const existingSigs = new Set<string>();
+    const existingSigs = new Set<string>(this.state.discovery.genomes);
     for (const p of this.state.plants) existingSigs.add(genomeSignature(p));
     existingSigs.add(genomeSignature(a));
     existingSigs.add(genomeSignature(b));
@@ -1221,8 +1233,16 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
       return { ok: false, reason: "Cây chưa trưởng thành" };
     }
     const ascent = this.ascentToday();
+    if (stage <= ascent.highest) {
+      /* Cleared stages never reopen — replaying them was the one way to grow
+         without planting or breeding, which is the shortcut this rule removes. */
+      return { ok: false, reason: `Ải ${stage} đã vượt rồi — thang chỉ đi lên.` };
+    }
     if (!stageIsOpen(stage, ascent.highest)) {
       return { ok: false, reason: `Ải ${stage} chưa mở. Hãy vượt ải ${ascent.highest + 1} trước.` };
+    }
+    if (me.powerRating < minFighterPower(stage, this.ascentDayIndex())) {
+      return { ok: false, reason: `Cây quá yếu cho ải ${stage} — hãy chăm, lên cấp hoặc lai giống mạnh hơn rồi quay lại.` };
     }
 
     /*
@@ -1516,6 +1536,13 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
 
   private recordPlantDiscovery(plant: Plant) {
     for (const species of plant.baseLineage) addUnique(this.state.discovery.species, species);
+    addUnique(this.state.discovery.genomes, genomeSignature(plant));
+    // The oldest signatures are the least likely to collide anyway — breeding
+    // drifts away from them with every generation — so the cap drops history
+    // rather than refusing to record new plants.
+    if (this.state.discovery.genomes.length > 4000) {
+      this.state.discovery.genomes.splice(0, this.state.discovery.genomes.length - 4000);
+    }
     for (const [element, value] of Object.entries(plant.dna.elementGenes as Record<string, number>)) {
       if ((value ?? 0) >= 0.18) addUnique(this.state.discovery.elements, element);
     }
@@ -1843,6 +1870,9 @@ function loadOrCreate(rawOverride?: string): PlayerState {
             if ((value ?? 0) >= 0.18) addUnique(parsed.discovery.elements, element);
           }
           for (const trait of plant.traits) addUnique(parsed.discovery.traits, trait);
+          // Living plants seed the genome history on old saves, so a bred child
+          // can never silently equal one already standing in the garden.
+          addUnique(parsed.discovery.genomes, genomeSignature(plant));
         }
         return parsed;
       }
@@ -1916,7 +1946,7 @@ function loadOrCreate(rawOverride?: string): PlayerState {
 }
 
 function emptyDiscovery(): DiscoveryState {
-  return { species: [], elements: [], traits: [], careActions: [], battles: 0, breeds: 0, claimed: [] };
+  return { species: [], elements: [], traits: [], careActions: [], battles: 0, breeds: 0, claimed: [], genomes: [] };
 }
 
 function repairDiscovery(input: DiscoveryState | undefined): DiscoveryState {
@@ -1930,6 +1960,7 @@ function repairDiscovery(input: DiscoveryState | undefined): DiscoveryState {
     battles: Number.isFinite(input.battles) ? input.battles : 0,
     breeds: Number.isFinite(input.breeds) ? input.breeds : 0,
     claimed: Array.isArray(input.claimed) ? input.claimed : [],
+    genomes: Array.isArray(input.genomes) ? input.genomes : [],
   };
 }
 

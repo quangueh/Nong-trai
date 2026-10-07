@@ -621,11 +621,29 @@ export function stageTargetPower(stage: number, _playerBestPower: number, dayInd
  * working towards, only the stage that just stopped being hard. Four stages of look-ahead
  * shows the next difficulty and still refuses the rest, which is the difference between a
  * goal and a surprise.
+ *
+ * Stages already cleared never reopen. The ladder only goes forward: an old stage is
+ * history, not a farm — replaying it for EXP was the one way to grow without ever
+ * breeding or planting, which is exactly the shortcut this rule removes.
  */
 export const LOOKAHEAD = 4;
 
 export function stageIsOpen(stage: number, highestCleared: number): boolean {
-  return stage >= 1 && stage <= highestCleared + LOOKAHEAD;
+  return stage > highestCleared && stage <= highestCleared + LOOKAHEAD;
+}
+
+/**
+ * The weakest fighter a stage will still admit — a quarter of the monster's
+ * target power.
+ *
+ * Below that line the fight is not a fight, and refusing it early is kinder
+ * than animating a loss: the honest answer is "grow it, or breed a stronger
+ * one", which is what the garden is for. At stage 1 the floor is ~40 — a brand
+ * new mature plant already clears it, so the gate only bites once the ladder
+ * has genuinely outrun the garden.
+ */
+export function minFighterPower(stage: number, dayIndex = 0): number {
+  return Math.round(stageTargetPower(stage, 0, dayIndex) * 0.25);
 }
 
 /* -------------------------------------------------------------------------- gates */

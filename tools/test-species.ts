@@ -28,6 +28,7 @@ import {
 import { ELEMENTS } from "../src/config/elements";
 import { plantName, nameKey } from "../src/genetics/names";
 import { genomeSignature, createSeedPlant, breedPlants, type BreedingContext } from "../src/genetics/genomeGenerator";
+import { buildSkillsFromGenes } from "../src/genetics/skillGenerator";
 import { TIER_UNLOCK, unlockedTier, featuredSpecies, queryCatalogue } from "../src/economy/shop";
 import type { Plant } from "../src/core/types";
 
@@ -69,7 +70,7 @@ check("registry holds starters plus the generated pool", SPECIES.length === SPEC
 // The exact count is not asserted by hand: this test has been the thing that
 // broke when the pool changed size before. What matters is that the pool is
 // large enough to hold unique names and blurbs, which the next checks verify.
-check("the generated pool is large", GENERATED_SPECIES_COUNT >= 6000, `${GENERATED_SPECIES_COUNT}`);
+check("the generated pool is at least ten thousand", GENERATED_SPECIES_COUNT >= 10000, `${GENERATED_SPECIES_COUNT}`);
 check("every id is unique", new Set(SPECIES.map((s) => s.id)).size === SPECIES.length);
 check(
   "every name is unique",
@@ -80,6 +81,21 @@ check(
   "every name is unique ignoring accents",
   new Set(SPECIES.map((s) => nameKey(s.name))).size === SPECIES.length,
 );
+/* Two cards priced the same in the same currency are indistinguishable on the
+   shelf — the one failure a shop cannot survive a screenshot of. The pair
+   (currency, price) is forced unique at build time; this is the check that
+   keeps it that way. */
+{
+  const pairs = new Set<string>();
+  let dups = 0;
+  for (const s of SPECIES) {
+    const k = `${s.currency}:${s.seedPrice}`;
+    if (pairs.has(k)) dups++;
+    pairs.add(k);
+  }
+  check("no two species share a price in the same currency", dups === 0, `${dups} duplicates`);
+  check("the shelf uses all four currencies", new Set(SPECIES.map((s) => s.currency)).size === 4);
+}
 check("the five starters come first", STARTER_IDS.every((id, i) => SPECIES[i].id === id));
 check("every starter id resolves", STARTER_IDS.every((id) => getSpecies(id).id === id));
 check("an unknown id falls back instead of throwing", getSpecies("sp9999-nope").id === STARTER_IDS[0]);
@@ -171,15 +187,22 @@ check(
   tierSizes.join("/"),
 );
 
+/* Prices are per-currency now — a median across currencies would compare Xu
+   with Mảnh lửa, which are different scales by design. So the ladder is checked
+   within a currency: for every currency that appears in two consecutive tiers,
+   the deeper tier's median is higher. */
+for (const cur of ["leafCoin", "nectar", "pollen", "ember"] as const) {
+  let prevMedian = 0;
+  for (const t of [0, 1, 2, 3, 4]) {
+    const prices = SPECIES.filter((s) => s.tier === t && s.currency === cur).map((s) => s.seedPrice);
+    if (prices.length < 30) continue;
+    const p50 = [...prices].sort((a, b) => a - b)[Math.floor(prices.length / 2)];
+    check(`${cur} tier ${t} median rises within the currency`, prevMedian === 0 || p50 >= prevMedian, `${prevMedian} -> ${p50}`);
+    prevMedian = p50;
+  }
+}
 for (const t of [0, 1, 2, 3, 4]) {
   const prices = SPECIES.filter((s) => s.tier === t).map((s) => s.seedPrice);
-  const p50 = [...prices].sort((a, b) => a - b)[Math.floor(prices.length / 2)];
-  const tPrev = t > 0
-    ? [...SPECIES.filter((s) => s.tier === t - 1).map((s) => s.seedPrice)].sort((a, b) => a - b)[
-        Math.floor(SPECIES.filter((s) => s.tier === t - 1).length / 2)
-      ]
-    : 0;
-  check(`tier ${t} median price rises`, t === 0 || p50 > tPrev, `${tPrev} -> ${p50}`);
   check(
     `tier ${t} has a real spread of prices`,
     new Set(prices).size >= 20,
@@ -189,7 +212,7 @@ for (const t of [0, 1, 2, 3, 4]) {
 
 check(
   "no species is priced below cost",
-  SPECIES.every((s) => s.seedPrice >= 80),
+  SPECIES.every((s) => s.seedPrice >= { leafCoin: 60, nectar: 40, pollen: 15, ember: 4 }[s.currency]),
   `min ${Math.min(...SPECIES.map((s) => s.seedPrice))}`,
 );
 check(
@@ -653,6 +676,11 @@ function satisfy(species: (typeof SPECIES)[number]): void {
 }
 
 satisfy(tier2Species);
+/* The specimen can charge any of the four currencies now — fund all of them so
+   "cannot afford" is never the reason a buy fails. */
+for (const c of ["nectar", "pollen", "ember"] as const) {
+  fresh.state[c] = Math.max(fresh.state[c], tier2Species.seedPrice);
+}
 const allowed = fresh.buySeed(tier2Species.id);
 check("meeting the requirement unlocks it", allowed.ok, allowed.reason ?? "");
 section("12. Catalogue query");
@@ -736,6 +764,29 @@ check(
 );
 check("a level-1 shelf only shows tier 0", f1.every((s) => s.tier === 0));
 check("different players get different shelves", featuredSpecies("player-2", day, 1, 10).map((s) => s.id).join() !== f1.map((s) => s.id).join());
+
+section("14. High-rarity signatures");
+
+/* S and above promise mechanics, not just stats: signature modifiers stamped on
+   the kit, and a fifth move for SSS. Checked on generated skills rather than on
+   the modifier list so the promise is verified where the player feels it. */
+{
+  const dna = createSeedPlant("thornroot", "p", "sig1", 0).dna;
+  const cKit = buildSkillsFromGenes(dna, [], "kit-c", "bloom", "micro", "C");
+  const sKit = buildSkillsFromGenes(dna, [], "kit-s", "bloom", "micro", "S");
+  const sssKit = buildSkillsFromGenes(dna, [], "kit-sss", "bloom", "micro", "SSS");
+  const signed = (k: typeof cKit) => k.filter((s) => s.name.startsWith("✦")).length;
+  check("a common plant has no signature skills", signed(cKit) === 0, `${signed(cKit)}`);
+  check("an S plant carries one signature", signed(sKit) === 1, `${signed(sKit)}`);
+  check("an SSS plant carries three", signed(sssKit) === 3, `${signed(sssKit)}`);
+  check("and a fifth move — the chiêu đặc biệt", sssKit.length === 5, `${sssKit.length}`);
+  const SSS_EPIC = ["overgrow", "last_stand"];
+  check(
+    "the signature move is an epic one",
+    sssKit[sssKit.length - 1].modifiers.some((m) => SSS_EPIC.includes(m)),
+    sssKit[sssKit.length - 1].modifiers.join(","),
+  );
+}
 
 console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m\n`);
 process.exit(failed === 0 ? 0 : 1);

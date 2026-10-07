@@ -144,7 +144,9 @@ for (let stage = 1; stage <= 400; stage += 7) {
 }
 console.log(`  skill count across 400 stages: ${minSkills} to ${maxSkills}`);
 check("every monster has at least the engine's minimum of two skills", minSkills >= 2, `min ${minSkills}`);
-check("no monster exceeds the action bar's four", maxSkills <= 4, `max ${maxSkills}`);
+/* SSS monsters carry a fifth signature skill — the action bar wraps rather
+   than capping them, because the extra slot is the rarity's promise. */
+check("no monster exceeds the action bar's five", maxSkills <= 5, `max ${maxSkills}`);
 
 /* --- no side bias ----------------------------------------------------------
    Every rate below would be measuring the engine's seating if this is wrong, and it would
@@ -297,7 +299,8 @@ check("stage 1 is open to a new account", stageIsOpen(1, 0));
 check("a new account cannot see past the look-ahead", !stageIsOpen(LOOKAHEAD + 1, 0), `stage ${LOOKAHEAD + 1} was reachable from zero`);
 check(`stage ${LOOKAHEAD + 1} opens up once something is cleared`, stageIsOpen(LOOKAHEAD + 1, 1));
 check("and it still stops there", !stageIsOpen(LOOKAHEAD + 2, 1));
-check("a cleared stage stays playable", stageIsOpen(1, 40));
+check("a cleared stage never reopens", !stageIsOpen(1, 40));
+check("but the frontier's look-ahead still is", stageIsOpen(41, 40) && stageIsOpen(44, 40) && !stageIsOpen(45, 40));
 check("stage 0 is never a stage", !stageIsOpen(0, 40));
 check("a negative stage is never a stage", !stageIsOpen(-3, 40));
 

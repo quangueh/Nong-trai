@@ -568,7 +568,7 @@ function performBasicAttack(
   const thorn = attacker.snap.traits.find((t) => t === "thorn_counter" || t === "sharp_leaves" || t === "prickly_retaliation");
   void thorn;
 
-  applyDamage(attacker, defender, side, foeSide, res.amount, res.isCrit, time, events, seq, log, "Đánh thường");
+  applyDamage(attacker, defender, side, foeSide, res.amount, res.isCrit, time, events, seq, log, "Đánh thường", res.elementReason);
 }
 
 function arenaEdge(s: BattleSideState, arena: ArenaKind): number {
@@ -670,6 +670,7 @@ function applyDamage(
   seq: { v: number },
   _log: string[],
   sourceLabel: string,
+  elementNote?: string,
 ) {
   // The morph reduces what lands. Here rather than at the call sites: skills,
   // reflected hits and lifesteal all funnel through this function, and a morph
@@ -706,7 +707,10 @@ function applyDamage(
        what the view reads for kill-weight impact. A survivor on 0.4 HP still
        reports 1, never 0. */
     hpAfter: defender.hp <= 0 ? 0 : Math.max(1, Math.round(defender.hp)),
-    text: `${sourceLabel} gây ${Math.round(amount)} sát thương${isCrit ? " (chí mạng)" : ""}`,
+    /* The element note rides on the damage line so the log answers "why was
+       that hit so big" without the player opening a chart: `Mộc khắc Đất`
+       right after the number is the explanation, in the place eyes already are. */
+    text: `${sourceLabel} gây ${Math.round(amount)} sát thương${isCrit ? " (chí mạng)" : ""}${elementNote ? ` · ${elementNote}` : ""}`,
   });
 
   // Reflect (thorn_counter).
@@ -819,7 +823,23 @@ function resolveSkill(
     return;
   }
 
-  applyDamage(self, foe, side, foeSide, res.amount, res.isCrit, time, events, seq, _log, skill.name);
+  applyDamage(self, foe, side, foeSide, res.amount, res.isCrit, time, events, seq, _log, skill.name, res.elementReason);
+
+  /* Hút Máu: a signature-grade modifier — 18% of the damage dealt comes back
+     as HP. Wired here rather than in `applyDamage` because it is the *skill's*
+     rider, not a property of all damage the plant deals. */
+  if (skill.core.modifiers.includes("lifesteal") && res.amount > 0 && !self.died) {
+    const heal = res.amount * 0.18;
+    self.hp = Math.min(self.snap.maxHp, self.hp + heal);
+    events.push({ seq: seq.v++, type: "LEECH", t: round2(time), side, amount: round2(heal), hpAfter: shownHp(self), text: `Hút Máu +${Math.round(heal)} HP` });
+  }
+
+  /* Hút Nhựa: the hit pays back energy, so the plant reaches its next cast
+     sooner. A small flat refund rather than a share of damage — damage scales,
+     and a scaling refund makes the modifier decide fights by itself. */
+  if (skill.core.modifiers.includes("drain") && res.amount > 0) {
+    self.energy = clamp(self.energy + 6, 0, self.maxEnergy);
+  }
 
   // Chain: hit twice.
   if (skill.core.effect === "chain" || skill.core.modifiers.includes("chain_lightning")) {

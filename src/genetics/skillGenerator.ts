@@ -58,10 +58,15 @@ export function buildSkillsFromGenes(
   // The floor used to be 1, so a common seedling came out with a single skill and
   // the battle action bar rendered as one lone button — the player had no choice
   // to make and the screen read as broken. Two is the minimum that makes the
-  // bar a decision; the ceiling of four keeps the action bar on one row.
+  // bar a decision. The ceiling is four — five for SSS, whose extra slot is the
+  // "chiêu đặc biệt" the rarity promises (see `applyRaritySignature`).
   const rarityIndex = ["C", "B", "A", "S", "SS", "SSS"].indexOf(targetRarity);
   const tierBonus = ["seedling", "sprout", "bloom", "ancient"].indexOf(tier);
-  const wantCount = clamp(2 + Math.floor((rarityIndex + tierBonus) / 2) + (mutationTier === "chaotic" ? 1 : 0), 2, 4);
+  const wantCount = clamp(
+    2 + Math.floor((rarityIndex + tierBonus) / 2) + (mutationTier === "chaotic" ? 1 : 0),
+    2,
+    targetRarity === "SSS" ? 5 : 4,
+  );
 
   // Candidate skill genes ranked by weight.
   const ranked = SKILL_GENES.map((g) => [g, dna.skillGenes[g] ?? 0] as const).sort((a, b) => b[1] - a[1]);
@@ -139,7 +144,56 @@ export function buildSkillsFromGenes(
     out.push(skill);
   }
 
+  applyRaritySignature(out, targetRarity, rng);
   return out;
+}
+
+/**
+ * High-rarity plants get a signature — mechanics beyond a bigger number.
+ *
+ * Rarity used to mean exactly one thing: more skills, so an SSS played like a C
+ * with better luck. Now S and above stamp *signature modifiers* onto their kit —
+ * pierce, lifesteal, drain, chain_lightning, and at SSS the epic modifiers
+ * (`overgrow`, `last_stand`) that nothing below it can ever roll. SSS also opens
+ * the fifth skill slot, so its signature is a whole extra move rather than a
+ * sticker on an existing one.
+ *
+ * The stamped skill is prefixed `✦` so the battle bar and the skill sheet show
+ * which moves are the rarity perk instead of hiding it inside a tooltip.
+ */
+const SIGNATURE_POOL: Record<string, ModifierId[]> = {
+  S: ["pierce", "crit_focus", "lifesteal"],
+  SS: ["pierce", "crit_focus", "lifesteal", "chain_lightning", "drain"],
+  SSS: ["pierce", "crit_focus", "lifesteal", "chain_lightning", "drain", "overgrow", "last_stand"],
+};
+
+function applyRaritySignature(skills: Skill[], rarity: Rarity, rng: Rng): void {
+  const marks = rarity === "S" ? 1 : rarity === "SS" ? 2 : rarity === "SSS" ? 2 : 0;
+  if (!marks) return;
+  const pool = [...SIGNATURE_POOL[rarity]];
+  const stamp = (sk: Skill) => {
+    if (!pool.length) return;
+    const pick = pool.splice(Math.floor(rng.next() * pool.length), 1)[0];
+    if (sk.core.modifiers.includes(pick)) return;
+    sk.core.modifiers.push(pick);
+    sk.modifiers.push(pick);
+    sk.budgetCost = round2(sk.budgetCost + modifierCost(pick));
+    if (!sk.name.startsWith("✦")) sk.name = `✦ ${sk.name}`;
+  };
+  for (let i = 0; i < Math.min(marks, skills.length); i++) stamp(skills[i]);
+  // SSS: the epic signature lands on the last skill — the extra fifth move when
+  // there is one — so the bonus skill is the special one rather than a freebie
+  // tagged onto the opener.
+  if (rarity === "SSS" && skills.length > 2) {
+    const epic = skills[skills.length - 1];
+    const pick = rng.bool(0.5) ? "overgrow" : "last_stand";
+    if (!epic.core.modifiers.includes(pick)) {
+      epic.core.modifiers.push(pick);
+      epic.modifiers.push(pick);
+      epic.budgetCost = round2(epic.budgetCost + modifierCost(pick));
+      if (!epic.name.startsWith("✦")) epic.name = `✦ ${epic.name}`;
+    }
+  }
 }
 
 function elementDeliveryFit(delivery: Delivery, affinity: Record<ElementId, number>): number {

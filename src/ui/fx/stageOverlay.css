@@ -382,6 +382,121 @@
 }
 
 /* ==========================================================================
+   The world map — zones of the ladder, not stages.
+
+   A row of zone cards: the five authored bands, then the numbered strata that
+   never end. The frontier's zone carries a marker and a progress fill; zones
+   behind it show how much of them is done; the last card is "∞" on purpose —
+   an endless ladder that printed a last zone would be lying.
+   ========================================================================== */
+
+.worldmap {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  overflow-x: auto;
+  padding: 2px 0 8px;
+  scrollbar-width: none;
+}
+
+.worldmap::-webkit-scrollbar {
+  display: none;
+}
+
+.wm-zone {
+  position: relative;
+  flex: 1 0 96px;
+  min-width: 88px;
+  padding: 8px 9px 9px;
+  border-radius: 12px;
+  border: 1px solid rgba(120, 168, 110, 0.3);
+  background: linear-gradient(180deg, #fffdf1, #f2f0da);
+}
+
+.wm-zone-name {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #35502f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wm-zone-range {
+  margin-top: 1px;
+}
+
+.wm-bar {
+  margin-top: 6px;
+  height: 5px;
+  border-radius: 4px;
+  background: rgba(120, 130, 110, 0.18);
+  overflow: hidden;
+}
+
+.wm-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #5dbb76, #2f9f62);
+}
+
+.wm-zone.is-done {
+  background: linear-gradient(180deg, #e4f6e7, #cdeed4);
+  border-color: rgba(47, 159, 98, 0.4);
+}
+
+.wm-zone.is-here {
+  border-color: #2f9f62;
+  box-shadow: 0 0 0 2px rgba(47, 159, 98, 0.3);
+}
+
+.wm-zone.is-ahead {
+  opacity: 0.62;
+}
+
+.wm-now {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #1f6b42;
+  background: #bff0cd;
+  border: 1px solid rgba(47, 159, 98, 0.45);
+  border-radius: 6px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
+
+.wm-zone.wm-endless {
+  flex: 0 0 auto;
+  min-width: 74px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  border-style: dashed;
+  background: transparent;
+  color: #6d7a68;
+}
+
+.wm-zone.wm-endless .wm-zone-name {
+  font-size: 20px;
+  line-height: 1;
+  color: #6d7a68;
+}
+
+.wm-more {
+  align-self: center;
+  flex: 0 0 auto;
+  color: #6d7a68;
+  font-weight: 800;
+}
+
+/* ==========================================================================
    Stage identity: name, band, difficulty, conditions.
 
    Added for `src/pve/stages.ts`. The name is the largest element on the brief and the
