@@ -115,6 +115,15 @@ export interface BattleEvent {
   hpPct?: number;
   winner?: "a" | "b" | "draw";
   energyAfter?: number;
+  /**
+   * Set on the HEAL_APPLIED that is a Second Wind revival, not a heal.
+   *
+   * The plant genuinely hit 0 — the DEATH event above it is honest — but the
+   * view renders this event as a stand-back-up flourish rather than a heal
+   * number, because "died, then did not stay dead" is a different story than
+   * "+34 HP".
+   */
+  revived?: boolean;
 }
 
 export interface BattleSideSnapshot {
@@ -487,10 +496,7 @@ function tickStatuses(
          * fight. `self.hp` is clamped here rather than left negative so the HP bar and
          * the "remaining HP%" tiebreak both read 0 instead of a nonsense value.
          */
-        if (self.hp <= 0) {
-          self.hp = 0;
-          self.died = true;
-        }
+        if (self.hp <= 0) fellOrRevive(self, side, time, events, seq, ` vì ${statusName(st.kind)} lan`);
         events.push({ seq: seq.v++, type: "STATUS_TICK", t: round2(time), side, other: foeSide, amount: round2(dmg), status: st.kind, hpAfter: Math.max(0, Math.round(self.hp)), text: `${statusName(st.kind)} gây ${Math.round(dmg)} sát thương` });
       }
     }
@@ -605,6 +611,43 @@ export function morphFormName(element: ElementId | undefined): string {
   }
 }
 
+/**
+ * The single way a fighter goes down.
+ *
+ * Four places can kill — a clean hit, a poison or burn tick, reflection, a
+ * double-edge backlash — and each used to write its own obituary, which is how
+ * a DoT kill printed no "gục ngã" at all and how `second_wind` only answered
+ * deaths by direct hit. Every fall runs through here: zero the HP, raise the
+ * flag, log the line — then let the one trait that answers death do its work.
+ */
+function fellOrRevive(
+  self: BattleSideState,
+  side: "a" | "b",
+  time: number,
+  events: BattleEvent[],
+  seq: { v: number },
+  cause: string,
+): void {
+  self.hp = 0;
+  self.died = true;
+  events.push({ seq: seq.v++, type: "DEATH", t: round2(time), side, text: `${self.snap.name} gục ngã${cause}` });
+  if (self.snap.traits.includes("second_wind") && !self.secondWindUsed) {
+    self.secondWindUsed = true;
+    self.hp = self.snap.maxHp * 0.3;
+    self.died = false;
+    events.push({
+      seq: seq.v++,
+      type: "HEAL_APPLIED",
+      t: round2(time),
+      side,
+      amount: round2(self.hp),
+      hpAfter: Math.round(self.hp),
+      revived: true,
+      text: `Hơi Thở Thứ Hai — ${self.snap.name} đứng dậy lại!`,
+    });
+  }
+}
+
 function applyDamage(
   attacker: BattleSideState,
   defender: BattleSideState,
@@ -668,14 +711,7 @@ function applyDamage(
      * actually recorded.
      */
     events.push({ seq: seq.v++, type: "REFLECT", t: round2(time), side: foeSide, amount: round2(reflect), hpAfter: Math.max(0, Math.round(attacker.hp)), text: `Vỏ Cứng phản lại ${Math.round(reflect)}` });
-    if (attacker.hp <= 0) {
-      attacker.hp = 0;
-      attacker.died = true;
-      /* A death without a death line: the REFLECT entry alone leaves a plant
-         greyed out with nothing in the log saying it fell — and the player
-         reading "chết trước" has no way to name why. */
-      events.push({ seq: seq.v++, type: "DEATH", t: round2(time), side, text: `${attacker.snap.name} gục ngã vì phản sát thương` });
-    }
+    if (attacker.hp <= 0) fellOrRevive(attacker, side, time, events, seq, " vì phản sát thương");
   }
 
   // Lifesteal.
@@ -693,19 +729,7 @@ function applyDamage(
     events.push({ seq: seq.v++, type: "HEAL_APPLIED", t: round2(time), side, amount: round2(heal), hpAfter: Math.round(attacker.hp), text: `Chí mạng hồi máu +${Math.round(heal)}` });
   }
 
-  if (defender.hp <= 0) {
-    defender.hp = 0;
-    defender.died = true;
-    events.push({ seq: seq.v++, type: "DEATH", t: round2(time), side: foeSide, text: `${defender.snap.name} gục ngã` });
-
-    // Second wind.
-    if (defender.snap.traits.includes("second_wind") && !defender.secondWindUsed) {
-      defender.secondWindUsed = true;
-      defender.hp = defender.snap.maxHp * 0.3;
-      defender.died = false;
-      events.push({ seq: seq.v++, type: "HEAL_APPLIED", t: round2(time), side: foeSide, amount: round2(defender.hp), hpAfter: Math.round(defender.hp), text: `Hơi Thở Thứ Hai! hồi lại` });
-    }
-  }
+  if (defender.hp <= 0) fellOrRevive(defender, foeSide, time, events, seq, "");
 
   if (attacker.hp <= 0) attacker.hp = 0;
 }
@@ -794,11 +818,7 @@ function resolveSkill(
     const selfDmg = self.snap.maxHp * 0.08;
     self.hp -= selfDmg;
     events.push({ seq: seq.v++, type: "DAMAGE_APPLIED", t: round2(time), side: foeSide, amount: round2(selfDmg), hpAfter: Math.max(0, Math.round(self.hp)), text: `Lưỡi Hai tự mất ${Math.round(selfDmg)} HP` });
-    if (self.hp <= 0) {
-      self.hp = 0;
-      self.died = true;
-      events.push({ seq: seq.v++, type: "DEATH", t: round2(time), side, text: `${self.snap.name} tự hủy do Lưỡi Hai` });
-    }
+    if (self.hp <= 0) fellOrRevive(self, side, time, events, seq, " — Lưỡi Hai tự hủy");
   }
 
   // Status application.

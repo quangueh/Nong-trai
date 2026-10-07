@@ -665,7 +665,15 @@ estartTimer. */
             this.fx.impact(side, "heal");
             this.fx.float(side, `+${Math.round(amount)}`, "heal");
           });
-          this.pushLog(ev.text ?? "", "");
+          /* A Second Wind revive is not "just another heal": the fighter was
+             down a beat ago, so the stand-up gets its own word and ring on top
+             of the motes — the difference between "+34" and "it got back up"
+             is the whole point of the trait. */
+          if (ev.revived) {
+            this.fx.impact(side, "shield");
+            this.fx.float(side, "ĐỨNG DẬY!", "hi", "kill");
+          }
+          this.pushLog(ev.text ?? "", ev.revived ? "hi" : "");
         }
         break;
       }
@@ -750,12 +758,22 @@ estartTimer. */
         break;
       case "DEATH": {
         const side = ev.side as FxSide | undefined;
-        if (side) this.juice.cue("death", side, () => this.fx.impact(side, "death"));
+        if (side) {
+          this.juice.cue("death", side, () => this.fx.impact(side, "death"));
+          /* The falling word: hp hitting 0 is the verdict everyone already
+             understands, so the fall is named on the body itself, not only in
+             the log. */
+          this.fx.float(side, "HẠ GỤC", "hi", "kill");
+        }
         this.pushLog(ev.text ?? "", "bad");
         break;
       }
       case "BATTLE_FINISHED": {
         this.pushLog(ev.text ?? "", "hi");
+        /* The winner gets its moment on the field itself — a verdict the
+           overlay can then confirm, rather than the only place the outcome
+           is ever stated. */
+        if (ev.winner === "a" || ev.winner === "b") this.sides[ev.winner].victor();
         // The outcome has its own two sounds, and nothing else in the game uses
         // them, so a win or a loss is audible before the result screen is read.
         const mine = ev.winner ? (ev.winner === this.opts.mySide ? "win" : "lose") : "win";
@@ -991,6 +1009,17 @@ class FighterView {
   /** The fighter acts: a short lunge toward its opponent. */
   attack(): void {
     this.replay("attack", 440);
+  }
+
+  /**
+   * The winner's beat once the fight is done.
+   *
+   * A class rather than an inline style because the juice layer owns inline
+   * transforms during the fight — a `victor` keyframe plays over whatever it
+   * left behind and hands the pose back when it ends.
+   */
+  victor(): void {
+    this.root.classList.add("victor");
   }
 }
 

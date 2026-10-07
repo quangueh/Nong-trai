@@ -1004,12 +1004,62 @@ h4 {
 .battler.attack .avatar {
   box-shadow: 0 0 0 1px rgba(255, 214, 102, 0.5), 0 12px 28px rgba(0, 0, 0, 0.5);
 }
-.battler.dead {
-  opacity: 0.4;
-  filter: grayscale(1);
+/*
+ * Death reads as a fall, not a fade.
+ *
+ * The old rule only dimmed the row, so a dead plant looked like a paused one —
+ * and a faded plant that kept fighting was exactly the confusion behind
+ * "chết trước mà vẫn thắng". Zero HP now means visibly down: the plant keels
+ * over, desaturates, and carries the stamp. The transform lives on `.plantart`
+ * rather than `.avatar` because the juice layer owns `avatar`'s inline
+ * transform for recoil and morph.
+ */
+.battler {
+  transition: opacity 0.4s, filter 0.4s;
 }
-.battler.dead .plantart {
+.battler.dead {
+  opacity: 0.55;
+  filter: grayscale(0.95) brightness(0.78);
+}
+.battler.dead .avatar .plantart {
   animation: none;
+  transform: rotate(16deg) translateY(14px) scale(0.94);
+  transition: transform 0.45s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+.battler.enemy.dead .avatar .plantart {
+  /* The enemy is mirrored, so the same fall needs the mirror composed in. */
+  transform: scaleX(-1) rotate(16deg) translateY(14px) scale(0.94);
+}
+.battler .avatar {
+  position: relative;
+}
+.battler.dead .avatar::after {
+  content: "K.O.";
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%) rotate(-9deg);
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #ffe08a;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85), 0 0 14px rgba(255, 150, 60, 0.5);
+  pointer-events: none;
+}
+/*
+ * And the win reads on the field, not only on the result card: one bounce and
+ * a gold ring on the fighter still standing. Written as a keyframe so it plays
+ * over whatever inline pose the juice layer left on the avatar.
+ */
+.battler.victor .avatar {
+  animation: victorPop 0.72s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  box-shadow: 0 0 0 2px rgba(255, 214, 102, 0.75), 0 14px 30px rgba(0, 0, 0, 0.5);
+}
+@keyframes victorPop {
+  0% { transform: translateY(0) scale(1); }
+  32% { transform: translateY(-12px) scale(1.07); }
+  64% { transform: translateY(2px) scale(0.98); }
+  100% { transform: translateY(0) scale(1); }
 }
 
 .hpblock {
@@ -3683,6 +3733,9 @@ body.planting {
 .fx-num.is-crit { color: #ffc233; font-size: 27px; }
 .fx-num.is-heal { color: #b6f0a0; }
 .fx-num.is-shield { color: #9ad6ff; }
+/* Words, not numbers: morph names, HẠ GỤC, ĐỨNG DẬY — warm so they read as
+   announcements rather than quantities. */
+.fx-num.is-hi { color: #ffe9b0; }
 
 @keyframes fxNum {
   0% { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
@@ -4184,6 +4237,13 @@ body.planting {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .battler,
+  .battler.dead .avatar .plantart {
+    transition: none;
+  }
+  .battler.victor .avatar {
+    animation: none;
+  }
   .battle-flash {
     display: none;
   }
