@@ -5,7 +5,7 @@ import { BattleSession, TICK_DT, STANCE_LABEL, battlePhase, type BattleEvent, ty
 import type { Plant } from "../core/types";
 import { renderPlantSvg } from "../render/plantRenderer";
 import { RARITY_META } from "../config/rarity";
-import type { ElementId } from "../config/elements";
+import { ELEMENT_INFO, type ElementId } from "../config/elements";
 import { FxLayer, deliveryGlyph, elementColour, type FxSide } from "./battleFx";
 import { CombatJuice, weightFor } from "./juice";
 import { sfx } from "../audio/audio";
@@ -182,6 +182,7 @@ estartTimer. */
   private sides: Record<"a" | "b", FighterView> = { a: null as never, b: null as never };
   private clock!: HTMLElement;
   private phaseLabel!: HTMLElement;
+  private lastPhase = "";
   private logBox!: HTMLElement;
   private skillRow!: HTMLElement;
   private stanceRow!: HTMLElement;
@@ -433,7 +434,18 @@ estartTimer. */
     const left = Math.max(0, this.maxSeconds - this.session.elapsed);
     this.clock.textContent = String(Math.ceil(left));
     this.clock.classList.toggle("critical", left <= 15);
-    this.phaseLabel.textContent = PHASE_LABEL[battlePhase(this.session.elapsed, this.maxSeconds)];
+    const phase = battlePhase(this.session.elapsed, this.maxSeconds);
+    this.phaseLabel.textContent = PHASE_LABEL[phase];
+    this.phaseLabel.dataset.phase = phase;
+    /* A phase change should feel like the fight raised its voice: the label
+       pops once when the fight tips into late/overtime, so the escalation is
+       seen rather than read after the fact. */
+    if (phase !== this.lastPhase) {
+      this.lastPhase = phase;
+      this.phaseLabel.classList.remove("phase-pop");
+      void this.phaseLabel.offsetWidth;
+      this.phaseLabel.classList.add("phase-pop");
+    }
 
     this.refreshSkillBar();
 
@@ -923,8 +935,15 @@ class FighterView {
     private readonly isEnemy: boolean,
     plant: Plant,
   ) {
-    this.root = el("div", { class: "battler" + (isEnemy ? " b-enemy enemy" : " b-side") });
+    this.root = el("div", { class: `battler rar-${state.snap.rarity}` + (isEnemy ? " b-enemy enemy" : " b-side") });
     this.avatar = el("div", { class: "avatar" });
+    /* The avatar wears the plant's dominant element as an underglow, the same
+       tint its own card shows in the garden — a fire plant should smoulder in
+       the arena the way it smoulders on the tile. Rarity carries a frame class
+       so an SSS does not stand in the same ring as a C. */
+    const dom = dominantElement(plant.dna.elementGenes).id;
+    this.avatar.style.setProperty("--elc", ELEMENT_INFO[dom].color);
+    this.avatar.style.setProperty("--elglow", ELEMENT_INFO[dom].glow);
     // Bigger than before: the plant is the fight, not a token beside it. The
     // growth animation is off — a battle must not have its fighters assembling
     // themselves mid-round.
@@ -960,6 +979,9 @@ class FighterView {
     this.ghostFill.style.transform = `scaleX(${hpPct / 100})`;
     this.hpFill.style.transform = `scaleX(${hpPct / 100})`;
     this.hpFill.classList.toggle("low", hpPct < 30);
+    // A fighter under 30% wears a danger rim: the fight should announce "about
+    // to fall" before the KO lands, otherwise the ending reads as a jump cut.
+    this.root.classList.toggle("lowhp", !this.state.died && hpPct < 30);
     // Shield is drawn over the HP portion, capped so it never reads past 100%.
     const shieldPct = clampPct(Math.min(hpPct, (this.state.shield / max) * 100));
     this.shieldFill.style.transform = `scaleX(${shieldPct / 100})`;

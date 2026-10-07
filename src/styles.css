@@ -986,9 +986,53 @@ h4 {
   place-items: center;
   border-radius: 22px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: radial-gradient(circle at 50% 74%, rgba(255, 255, 255, 0.07), transparent 70%);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 0 24px rgba(0, 0, 0, 0.35);
+  /* Element underglow under the plant's feet: a fire plant smoulders, a water
+     plant shimmers. `--elglow`/`--elc` are set per-fighter from the dominant
+     element in FighterView, matching the garden tile's own tint. */
+  background:
+    radial-gradient(circle at 50% 74%, rgba(255, 255, 255, 0.07), transparent 70%),
+    radial-gradient(64% 44% at 50% 84%, var(--elglow, transparent), transparent 78%);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.45),
+    inset 0 0 24px rgba(0, 0, 0, 0.35),
+    0 0 18px var(--elglow, transparent);
   transition: box-shadow 0.2s;
+}
+/* High rarities earn a rim light in their own colour — an SSS should not stand
+   in the same ring as a C even before the first hit lands. `--rarc` carries
+   RARITY_META's colour, brightened for the dark stage. */
+.battler.rar-S .avatar,
+.battler.rar-SS .avatar,
+.battler.rar-SSS .avatar {
+  box-shadow:
+    0 0 0 1.5px var(--rarc, transparent),
+    0 0 20px var(--rarc, transparent),
+    0 10px 24px rgba(0, 0, 0, 0.45),
+    inset 0 0 24px rgba(0, 0, 0, 0.35);
+}
+.battler.rar-S .avatar { --rarc: rgba(255, 209, 102, 0.6); }
+.battler.rar-SS .avatar { --rarc: rgba(255, 122, 169, 0.65); }
+.battler.rar-SSS .avatar { --rarc: rgba(205, 232, 255, 0.7); }
+/* Under 30% HP the fighter carries a danger rim: "about to fall" is announced
+   before the KO lands, so the ending is not a jump cut. */
+.battler.lowhp .avatar {
+  animation: dangerPulse 1.15s ease-in-out infinite;
+}
+@keyframes dangerPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1.5px rgba(255, 107, 107, 0.4),
+      0 10px 24px rgba(0, 0, 0, 0.45),
+      inset 0 0 24px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(255, 107, 107, 0.85),
+      0 0 24px rgba(255, 84, 64, 0.5),
+      0 10px 24px rgba(0, 0, 0, 0.45),
+      inset 0 0 24px rgba(0, 0, 0, 0.35);
+  }
 }
 .battler .avatar svg {
   width: 104px;
@@ -1169,6 +1213,29 @@ h4 {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
+  transition: color 0.3s;
+}
+/* The fight heats up visibly: late/overtime tint the label, and the moment a
+   phase flips it pops once so the escalation is seen rather than read. */
+.phase[data-phase="late"] {
+  color: #ffb35c;
+}
+.phase[data-phase="overtime"] {
+  color: #ff8a6a;
+}
+.phase.phase-pop {
+  animation: phasePop 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+@keyframes phasePop {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.4);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .battlefield.hit {
@@ -1770,6 +1837,62 @@ h4 {
   50% {
     transform: rotate(1.4deg);
   }
+}
+
+/* The plant stands in the light of its own element. `--elc`/`--elglow` come
+   from ELEMENT_INFO in plotCard.ts, so the garden tile, the collection shelf
+   and the arena avatar all speak the same colour for the same plant. */
+.plantcard .bed::before {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 2%;
+  height: 52%;
+  border-radius: 50%;
+  background: radial-gradient(50% 52% at 50% 62%, var(--elglow, transparent), transparent 74%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Rarity rim: an outline, because the island's box-shadow is already spoken
+   for by the ready/bred/floating states and an outline composes with all of
+   them instead of silently replacing one. C and B stay unmarked — a frame on
+   everything is a frame on nothing. */
+.plantcard.rar-A {
+  outline: 1.5px solid rgba(111, 37, 180, 0.3);
+}
+.plantcard.rar-S {
+  outline: 2px solid rgba(217, 143, 36, 0.5);
+}
+.plantcard.rar-SS {
+  outline: 2px solid rgba(220, 70, 110, 0.55);
+}
+.plantcard.rar-SSS {
+  outline: 2px solid rgba(110, 95, 170, 0.6);
+}
+/* A cut above: the rarest tiers get a faint aura over the soil itself, so the
+   card reads as special at thumbnail distance, not only on the border. */
+.plantcard.rar-SS .bed::before,
+.plantcard.rar-SSS .bed::before {
+  left: 6%;
+  right: 6%;
+  height: 66%;
+  opacity: 1.35;
+}
+
+/* The element dot in the stats row: a fingerprint, not a stat. A real disc
+   rather than a glyph — text at this size would fail the 9px floor, and a
+   disc reads as a jewel beside the rarity anyway. `auto` margin pins it
+   against the rarity so power keeps the right edge. */
+.plantcard .eldot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 4px currentColor;
+  margin-left: -2px;
+  margin-right: auto;
 }
 
 /* --- plant animation ---------------------------------------------------

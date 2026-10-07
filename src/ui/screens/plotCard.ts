@@ -11,6 +11,7 @@
 import { el } from "../components";
 import { renderPlantSvg } from "../../render/plantRenderer";
 import { RARITY_META } from "../../config/rarity";
+import { ELEMENT_INFO, dominantElement } from "../../config/elements";
 import { STAGE_LABEL, type Plant } from "../../core/types";
 import { canBattle, canBreed, stageProgress } from "../../growth/stages";
 import { CARE_ACTIONS } from "../../config/careActions";
@@ -60,6 +61,7 @@ export function plotCard(plant: Plant, onClick: (card: HTMLElement) => void, plo
       "plantcard" +
       (inSoil ? " plot" : "") +
       ` stage-${plant.growth.stage}` +
+      ` rar-${plant.rarity}` +
       (mature ? " ready" : "") +
       (canBreed(plant) ? " bred" : "") +
       (thirsty ? " needs-water" : ""),
@@ -105,8 +107,14 @@ export function plotCard(plant: Plant, onClick: (card: HTMLElement) => void, plo
     card.appendChild(el("div", { class: "need-water", title: "Có thể tưới cây" }, ["💧"]));
   }
 
-  // The plant itself.
+  // The plant itself, standing in the light of its own element. A seedling and
+  // a veteran of the same species should not look identical on the tile, so the
+  // bed picks up the dominant element's colour as an underglow — the same tint
+  // the battlefield uses, so the garden and the arena agree about what a plant is.
+  const dom = dominantElement(plant.dna.elementGenes);
   const bed = el("div", { class: "bed" });
+  bed.style.setProperty("--elc", ELEMENT_INFO[dom.id].color);
+  bed.style.setProperty("--elglow", ELEMENT_INFO[dom.id].glow);
   bed.innerHTML = renderPlantSvg(plant, 150);
   card.appendChild(bed);
 
@@ -121,14 +129,18 @@ export function plotCard(plant: Plant, onClick: (card: HTMLElement) => void, plo
   name.textContent = plant.name;
   card.appendChild(name);
 
-  // Rarity + power.
+  // Rarity + element + power. The element dot is small on purpose: it is a
+  // fingerprint, not a stat — enough to tell two same-species plants apart
+  // and to recognise "the fire one" at a glance.
   const row = el("div", { class: "prow" });
   const r = el("span", { class: "rarity" });
   r.textContent = plant.rarity;
   r.style.color = meta.colour;
+  const elDot = el("span", { class: "eldot", title: `Hệ ${ELEMENT_INFO[dom.id].name} ${Math.round(dom.share * 100)}%` });
+  elDot.style.color = ELEMENT_INFO[dom.id].color;
   const pw = el("span", { class: "mono muted" });
   pw.textContent = `⚔${Math.round(plant.powerRating)}`;
-  row.append(r, pw);
+  row.append(r, elDot, pw);
   card.appendChild(row);
 
   // The plant's own level and how far to the next one.
