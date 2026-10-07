@@ -182,6 +182,13 @@ export interface Notice {
    * instead of adding another copy.
    */
   key?: string;
+  /**
+   * Set when the notice announces an outcome a live ceremony is about to show
+   * better — a stage result pushed while its replay is still on screen spoils
+   * the ending mid-swing. The UI holds it until the fight card clears, so the
+   * banner lands after the result overlay as a receipt rather than a spoiler.
+   */
+  hold?: boolean;
 }
 
 export interface GardenDayState {
@@ -347,6 +354,17 @@ export class GameStore {
   private noticeListeners = new Set<(n: Notice) => void>();
   private noticeSeq = 0;
 
+  /**
+   * Nonzero while a stage settle is running.
+   *
+   * The settle is synchronous and the screen replays it afterwards, so every
+   * notice fired inside it — the result banner, quest ticks, level pings —
+   * describes an outcome the player has not watched yet. `pushNotice` marks
+   * them all `hold`, and the UI keeps those queued until the fight card clears
+   * rather than spoiling the ending at the opening bell.
+   */
+  private settling = 0;
+
   /** Listen for things worth telling the player about. Returns an unsubscribe. */
   onNotice(fn: (n: Notice) => void): () => void {
     this.noticeListeners.add(fn);
@@ -355,7 +373,7 @@ export class GameStore {
 
   private pushNotice(n: Omit<Notice, "id">): void {
     this.noticeSeq++;
-    const notice: Notice = { ...n, id: this.noticeSeq };
+    const notice: Notice = { ...n, id: this.noticeSeq, hold: n.hold || this.settling > 0 };
     // Copied first: a handler that unsubscribes during dispatch would otherwise
     // mutate the set being iterated.
     for (const fn of [...this.noticeListeners]) {
@@ -1191,86 +1209,99 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     });
     const won = result.winner === "a";
 
+    /* From here to the return is the settle: rewards paid, quests ticked, the
+       result banner pushed. The screen replays the fight after this returns,
+       so everything announced in this block is marked `hold` (see `settling`)
+       and the UI queues it until the replay is over.
+       The locals are hoisted so the receipt can return them once `settling`
+       has unwound. */
     const attempt = won ? 0 : ascent.attempts;
     // A stage at or below the record has already paid its full reward once. Replaying it is for
     // practice and for a better attempt, not for farming the same payout ahead of the next band.
     const alreadyCleared = stage <= ascent.highest;
     const reward = stageReward(stage, won, attempt, alreadyCleared);
-
-    this.credit(reward.leafCoin, won ? `Vượt ải ${stage}` : `Thử ải ${stage}`);
-    for (const id of ["nectar", "pollen"] as const) {
-      const amount = reward[id];
-      if (amount > 0) this.creditCurrency(id, amount, `Vượt ải ${stage}`);
-    }
-    if (reward.geneCrystal > 0) this.state.geneCrystal += reward.geneCrystal;
-    this.state.items += reward.items;
-
-    // The arena's own drop table, so the odds it prints and the odds it pays are one thing.
-    const drops = won ? this.awardDrops("win") : [];
-    // Ladder-only extra: Pollen and Nectar on top of the table, never Ember, because Ember
-    // already has a daily cap in `drops.ts` and a second source would quietly break it.
-    const extra = stageExtraDrop(stage, won);
-    if (extra) {
-      this.creditCurrency(extra.currency, extra.amount, `Vượt ải ${stage}`);
-    }
-
-    /*
-     * Sub-objectives, scored off the log this fight just produced.
-     *
-     * Read from `result.events` rather than from any live state, because the session is
-     * finished by now and the log is the only record of what happened. Paid on top of the
-     * stage's own experience, and to the breeder as well — a clean fast fight should move
-     * both progressions, or the ladder's bonus work would only ever advance one of them.
-     */
-    const objectives = won ? evaluateObjectives(stage, objectiveContext(true, result)) : null;
-    const bonusPlantXp = objectives?.bonusPlantXp ?? 0;
-    if (bonusPlantXp > 0) this.addPlantXp(me, bonusPlantXp);
-    const bonusBreederXp = objectives?.bonusBreederXp ?? 0;
-    if (bonusBreederXp > 0) this.addBreederXp(bonusBreederXp);
-
-    const levels = this.addPlantXp(me, reward.plantXp);
-    for (const s of me.skills) addSkillXp(s, won ? 12 : 4);
-
-    me.battleRecord.wins += won ? 1 : 0;
-    me.battleRecord.losses += won ? 0 : 1;
-    this.state.discovery.battles++;
-
+    let drops: DropRoll[] = [];
     let nextUnlocked: number | undefined;
-    if (won) {
-      ascent.cleared++;
-      if (stage >= ascent.highest) {
-        ascent.highest = stage;
-        ascent.attempts = 0;
-        ascent.bestPower = Math.max(ascent.bestPower, monster.power);
-        nextUnlocked = stage + 1;
-      } else {
-        ascent.attempts = 0;
-      }
-    } else {
-      ascent.attempts++;
-    }
+    let objectives: ObjectiveOutcome | null = null;
+    this.settling++;
+    try {
 
-    /*
-     * The ladder's quest events, emitted where the fight was actually settled.
-     *
-     * A win is three separate facts — a stage was cleared, an enemy was defeated, and a combo
-     * was run — and each is a different quest. The replay flag is carried so "luyện lại ải cũ"
-     * can tell a first clear from a repeat without the quest needing to know the ladder's rules.
-     */
-    if (won) {
-      this.questEvent({ name: "stage_completed", stage, boss: isBossStage(stage), replay: alreadyCleared });
-      this.questEvent({ name: "enemy_defeated", amount: 1 });
-      const combo = readCombo(result.events, "a").best;
-      if (combo >= 2) this.questEvent({ name: "combo_reached", value: combo });
-    } else {
-      this.questEvent({ name: "stage_failed", stage });
+      this.credit(reward.leafCoin, won ? `Vượt ải ${stage}` : `Thử ải ${stage}`);
+      for (const id of ["nectar", "pollen"] as const) {
+        const amount = reward[id];
+        if (amount > 0) this.creditCurrency(id, amount, `Vượt ải ${stage}`);
+      }
+      if (reward.geneCrystal > 0) this.state.geneCrystal += reward.geneCrystal;
+      this.state.items += reward.items;
+
+      // The arena's own drop table, so the odds it prints and the odds it pays are one thing.
+      drops = won ? this.awardDrops("win") : [];
+      // Ladder-only extra: Pollen and Nectar on top of the table, never Ember, because Ember
+      // already has a daily cap in `drops.ts` and a second source would quietly break it.
+      const extra = stageExtraDrop(stage, won);
+      if (extra) {
+        this.creditCurrency(extra.currency, extra.amount, `Vượt ải ${stage}`);
+      }
+
+      /*
+       * Sub-objectives, scored off the log this fight just produced.
+       *
+       * Read from `result.events` rather than from any live state, because the session is
+       * finished by now and the log is the only record of what happened. Paid on top of the
+       * stage's own experience, and to the breeder as well — a clean fast fight should move
+       * both progressions, or the ladder's bonus work would only ever advance one of them.
+       */
+      objectives = won ? evaluateObjectives(stage, objectiveContext(true, result)) : null;
+      const bonusPlantXp = objectives?.bonusPlantXp ?? 0;
+      if (bonusPlantXp > 0) this.addPlantXp(me, bonusPlantXp);
+      const bonusBreederXp = objectives?.bonusBreederXp ?? 0;
+      if (bonusBreederXp > 0) this.addBreederXp(bonusBreederXp);
+
+      const levels = this.addPlantXp(me, reward.plantXp);
+      for (const s of me.skills) addSkillXp(s, won ? 12 : 4);
+
+      me.battleRecord.wins += won ? 1 : 0;
+      me.battleRecord.losses += won ? 0 : 1;
+      this.state.discovery.battles++;
+
+      if (won) {
+        ascent.cleared++;
+        if (stage >= ascent.highest) {
+          ascent.highest = stage;
+          ascent.attempts = 0;
+          ascent.bestPower = Math.max(ascent.bestPower, monster.power);
+          nextUnlocked = stage + 1;
+        } else {
+          ascent.attempts = 0;
+        }
+      } else {
+        ascent.attempts++;
+      }
+
+      /*
+       * The ladder's quest events, emitted where the fight was actually settled.
+       *
+       * A win is three separate facts — a stage was cleared, an enemy was defeated, and a combo
+       * was run — and each is a different quest. The replay flag is carried so "luyện lại ải cũ"
+       * can tell a first clear from a repeat without the quest needing to know the ladder's rules.
+       */
+      if (won) {
+        this.questEvent({ name: "stage_completed", stage, boss: isBossStage(stage), replay: alreadyCleared });
+        this.questEvent({ name: "enemy_defeated", amount: 1 });
+        const combo = readCombo(result.events, "a").best;
+        if (combo >= 2) this.questEvent({ name: "combo_reached", value: combo });
+      } else {
+        this.questEvent({ name: "stage_failed", stage });
+      }
+      this.commit("ascent");
+      this.pushNotice({
+        kind: "level",
+        title: won ? `🏆 Vượt ải ${stage}: thắng` : `Ải ${stage}: thua`,
+        body: `${monster.name} · +${reward.leafCoin} 🪙` + (levels > 0 ? ` · ${me.name} lên ${levels} cấp` : ""),
+      });
+    } finally {
+      this.settling--;
     }
-    this.commit("ascent");
-    this.pushNotice({
-      kind: "level",
-      title: won ? `🏆 Vượt ải ${stage}: thắng` : `Ải ${stage}: thua`,
-      body: `${monster.name} · +${reward.leafCoin} 🪙` + (levels > 0 ? ` · ${me.name} lên ${levels} cấp` : ""),
-    });
 
     return { ok: true, result, won, monster, reward, drops, nextUnlocked, seed, objectives: objectives ?? undefined };
   }

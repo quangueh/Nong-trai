@@ -25,7 +25,7 @@ import type { Navigate } from "./types";
 
 type Tab = "seeds" | "items" | "land" | "orders";
 
-export function renderLab(nav: Navigate): HTMLElement {
+export function renderLab(_nav: Navigate): HTMLElement {
   const root = el("div", { class: "fadein" });
   const shell = document.querySelector(".shell")!;
 
@@ -53,17 +53,26 @@ export function renderLab(nav: Navigate): HTMLElement {
 
   const paint = () => {
     body.replaceChildren();
-    if (active === "seeds") paintSeeds(body, nav);
-    else if (active === "items") paintItems(body, nav);
-    else if (active === "land") paintLand(body, nav);
-    else paintOrders(body, nav);
+    /*
+     * Each tab gets `paint` itself as its refresh, not `nav("lab")`.
+     *
+     * Re-navigating used to be the post-purchase refresh, but it re-runs
+     * renderLab and throws away everything the screen remembers: the seeds tab
+     * loses every filter the player set, and the other tabs are thrown back to
+     * "seeds". The top bar already repaints itself through store.subscribe, so
+     * a purchase needs nothing from a navigation.
+     */
+    if (active === "seeds") paintSeeds(body);
+    else if (active === "items") paintItems(body, paint);
+    else if (active === "land") paintLand(body, paint);
+    else paintOrders(body, paint);
     void shell;
   };
   paint();
   return root;
 }
 
-function paintSeeds(body: HTMLElement, nav: Navigate) {
+function paintSeeds(body: HTMLElement) {
   const day = Math.floor(Date.now() / 86400000);
   // Filter state lives across repaints so typing in the search box or paging
   // through the catalogue does not reset the shelf.
@@ -307,7 +316,7 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
               if (chip) spendChip(chip, `-${fmt(sp.seedPrice)}🪙`);
               sfx.play("buy");
               toast(`Đã mua hạt ${sp.name}`);
-              nav("lab");
+              repaint();
             } else toast(r.reason ?? "Không mua được");
           },
         }),
@@ -362,7 +371,7 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
     const shown = res.entries;
     for (const entry of shown) {
       const owned = store.state.seeds[entry.species] ?? 0;
-      grid.appendChild(seedCard(getSpecies(entry.species), nav, owned));
+      grid.appendChild(seedCard(getSpecies(entry.species), repaint, owned));
     }
     box.appendChild(grid);
 
@@ -390,7 +399,7 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
 }
 
 /** One seed card, used by both the featured rail and the catalogue grid. */
-function seedCard(sp: SpeciesDef, nav: Navigate, ownedOverride?: number): HTMLElement {
+function seedCard(sp: SpeciesDef, refresh: () => void, ownedOverride?: number): HTMLElement {
   const owned = ownedOverride ?? store.state.seeds[sp.id] ?? 0;
   const card = el("div", { class: "card", style: "margin-bottom:10px" });
   const row = el("div", { class: "row" });
@@ -455,7 +464,7 @@ function seedCard(sp: SpeciesDef, nav: Navigate, ownedOverride?: number): HTMLEl
       spendChip(buy, `-${fmt(sp.seedPrice)}🪙`);
       sfx.play("buy");
       toast(`Đã mua hạt ${sp.name}`);
-      nav("lab");
+      refresh();
     } else {
       deny(card);
       toast(r.reason ?? "Không mua được");
@@ -476,7 +485,7 @@ function seedCard(sp: SpeciesDef, nav: Navigate, ownedOverride?: number): HTMLEl
       spendChip(pack, `-${fmt(packPrice)}🪙`);
       sfx.play("buy");
       toast(`Đã mua 10 hạt ${sp.name}`);
-      nav("lab");
+      refresh();
     } else {
       deny(card);
       toast(r.reason ?? "Không đủ tiền");
@@ -488,7 +497,7 @@ function seedCard(sp: SpeciesDef, nav: Navigate, ownedOverride?: number): HTMLEl
   return card;
 }
 
-function paintItems(body: HTMLElement, nav: Navigate) {
+function paintItems(body: HTMLElement, refresh: () => void) {
   const items = [
     { id: "water", name: "Bình nước tưới", emoji: "🪣", price: 15, desc: "Vật tư cho Tưới nước" },
     { id: "fertilizer", name: "Phân hữu cơ", emoji: "💩", price: 25, desc: "Dùng cho Bón phân" },
@@ -520,7 +529,7 @@ function paintItems(body: HTMLElement, nav: Navigate) {
       spendChip(buy, `-${it.price}🪙`);
       sfx.play("buy");
       toast(`+5 ${it.name === "Tinh chất gene" ? "💎" : "🧺"}`);
-      nav("lab");
+      refresh();
     });
     row.append(info, buy);
     card.appendChild(row);
@@ -545,7 +554,7 @@ function paintItems(body: HTMLElement, nav: Navigate) {
  * One ladder, one price table, one set of gates — reachable from two screens
  * without either being a second, cheaper way in.
  */
-function paintLand(body: HTMLElement, nav: Navigate) {
+function paintLand(body: HTMLElement, refresh: () => void) {
   const ctx = store.unlockContext();
   const rows = plotStatuses(ctx, store.state.nurseryCap);
 
@@ -613,7 +622,7 @@ function paintLand(body: HTMLElement, nav: Navigate) {
         }
         sfx.play("buy");
         toast(`Đã mở ô ${row.index}`);
-        nav("lab");
+        refresh();
       });
       card.appendChild(btn);
     }
@@ -622,7 +631,7 @@ function paintLand(body: HTMLElement, nav: Navigate) {
   }
 }
 
-function paintOrders(body: HTMLElement, nav: Navigate) {
+function paintOrders(body: HTMLElement, refresh: () => void) {
   const orders = generateOrders(store.state.playerId, Date.now());
   body.appendChild(el("div", { class: "callout", style: "margin-bottom:12px" }, ["Đơn hàng NPC trả thêm tới 1,5 lần giá bán thường. Mỗi ngày có 3-5 đơn, làm mới theo giờ máy chủ."]));
 
@@ -675,7 +684,7 @@ function paintOrders(body: HTMLElement, nav: Navigate) {
           store.state.leafCoin += payout - (sold.price ?? 0);
           store.save();
           toast(`Giao hàng thành công: +${payout - (sold.price ?? 0)}🪙 (thưởng đơn hàng)`);
-          nav("lab");
+          refresh();
         } else toast(sold.reason ?? "Không giao được");
       });
       card.append(sel, go);

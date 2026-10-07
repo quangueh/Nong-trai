@@ -4781,6 +4781,32 @@ body.planting {
   transform: translateY(0) scale(1);
 }
 
+/* While a fight is on screen the stack cannot stay top-centre: that is where the
+   arena is, and the fight screens have no right rail to borrow (the panels are
+   :empty and collapse). Bottom-right it is — over the log and the ladder below,
+   which are static text, rather than over the fighters or the skill row. */
+.shell:has(.battlefield) .notice-host {
+  top: auto;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
+  width: min(86vw, 330px);
+}
+
+/* A five-card stack is a wall even when it is not covering anything. During a
+   fight the three newest are plenty; the rest still exist in the DOM and
+   dismiss on their own timers. */
+.shell:has(.battlefield) .notice:not(:nth-last-child(-n + 3)) {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .shell:has(.battlefield) .notice-host {
+    left: auto;
+    right: calc((100vw - min(100vw - 40px, 1560px)) / 2 + 18px);
+    transform: none;
+    width: 300px;
+  }
+}
+
 /* Exit is animated too. A banner that vanishes instantly reads as a glitch, and
    dropping the node the moment the timer fires skips the last 300ms of the
    movement the player was already watching. */
@@ -4906,7 +4932,7 @@ body.planting {
 }
 
 .notice-species-more small {
-  font-size: 8.5px;
+  font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -7037,6 +7063,7 @@ body.planting {
   /* The wrapper is a column of floating pills: clicks between the pills fall
      through to the plots instead of dying on an invisible tray. */
   pointer-events: none;
+  animation: qaDockIn 0.34s var(--spring) both;
 }
 
 .qabar > * {
@@ -7048,7 +7075,21 @@ body.planting {
    shell inset in app-object mode: half of what the 1040px cap leaves behind. */
 @media (min-width: 900px) {
   .qabar {
+    /* Horizontal position and width come from the garden column's own rect
+       (gardenBar.ts `place`) — a viewport-centred bar spills over the side
+       panels, which is how the chips used to land on the quest rail. */
     bottom: calc((100dvh - min(100dvh - 48px, 1040px)) / 2 + 66px);
+  }
+}
+
+@keyframes qaDockIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
   }
 }
 
@@ -7071,12 +7112,16 @@ body.planting {
   display: flex;
   align-items: center;
   gap: 3px;
-  padding: 6px;
-  border-radius: 20px;
-  background: rgba(255, 248, 226, 0.94);
-  border: 1px solid var(--line);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 10px 30px rgba(80, 104, 53, 0.26);
+  padding: 7px;
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 253, 241, 0.96), rgba(255, 242, 198, 0.92)),
+    rgba(255, 248, 226, 0.94);
+  border: 1px solid rgba(71, 123, 55, 0.32);
+  backdrop-filter: blur(18px) saturate(1.25);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 14px 38px rgba(54, 88, 50, 0.28);
   /* Nine tools is more than a small phone is wide: the dock scrolls sideways
      rather than shrinking buttons below a tap target. */
   overflow-x: auto;
@@ -7100,8 +7145,8 @@ body.planting {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  min-width: 50px;
-  height: 54px;
+  min-width: 54px;
+  height: 56px;
   padding: 4px 6px;
   border-radius: 14px;
   font-family: inherit;
@@ -7111,6 +7156,19 @@ body.planting {
     color 0.15s ease,
     transform 0.1s ease,
     box-shadow 0.15s ease;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.qabtn::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.54), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.16s ease;
+  z-index: -1;
 }
 
 .qabtn .qaico {
@@ -7129,6 +7187,10 @@ body.planting {
   background: rgba(47, 159, 98, 0.1);
 }
 
+.qabtn:hover::before {
+  opacity: 1;
+}
+
 .qabtn:active {
   transform: scale(0.94);
 }
@@ -7141,9 +7203,26 @@ body.planting {
 /* The armed tool. Same green the active tab wears, so "this is selected" means
    the same thing everywhere in the game. */
 .qabtn.armed {
-  background: linear-gradient(150deg, #1e7a4a, #17653e);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.28), transparent 54%),
+    linear-gradient(150deg, #1e7a4a, #17653e);
   color: #f2fbf3;
-  box-shadow: 0 3px 10px rgba(23, 101, 62, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 5px 14px rgba(23, 101, 62, 0.36);
+  animation: qaArmedPop 0.28s var(--spring);
+}
+
+@keyframes qaArmedPop {
+  0% {
+    transform: scale(0.92);
+  }
+  70% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* Off, not disabled: the button still takes the tap and answers with the reason
@@ -7208,12 +7287,26 @@ body.planting {
   border-radius: 999px;
   border: 1px solid var(--line);
   background: rgba(255, 248, 226, 0.95);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 6px 18px rgba(80, 104, 53, 0.2);
+  backdrop-filter: blur(12px) saturate(1.15);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 8px 22px rgba(80, 104, 53, 0.22);
   font-size: 11.5px;
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
+  animation: qaChipIn 0.24s var(--spring) both;
+}
+
+@keyframes qaChipIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 button.qachip {
@@ -7246,6 +7339,24 @@ button.qachip:active {
   background: linear-gradient(160deg, #ffe9b8, #f7d88e);
 }
 
+.qachip.act.primary {
+  color: #0f4c5c;
+  border-color: rgba(38, 124, 171, 0.38);
+  background: linear-gradient(160deg, #dff5ff, #aee4ff);
+}
+
+.qachip.act.battle {
+  color: #6a2d08;
+  border-color: rgba(207, 97, 42, 0.38);
+  background: linear-gradient(160deg, #ffe0b9, #ffc36a);
+}
+
+.qachip.hint.plant {
+  color: var(--accent);
+  border-color: rgba(38, 121, 79, 0.35);
+  background: linear-gradient(160deg, #e3f5d6, #cde7d4);
+}
+
 /* The quiet suggestion ("4 cây có thể tưới") that teaches the dock exists. */
 .qachip.hint {
   color: var(--info);
@@ -7264,6 +7375,9 @@ button.qachip:active {
 .plots.armed-care .plantcard.can-tend {
   outline: 2px solid rgba(56, 171, 112, 0.6);
   outline-offset: 2px;
+  box-shadow:
+    0 0 0 4px rgba(56, 171, 112, 0.14),
+    0 34px 26px rgba(48, 78, 100, 0.32);
 }
 
 .plots.armed-care .plantcard.can-tend:hover {
@@ -7373,6 +7487,12 @@ button.qachip:active {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .qabar,
+  .qachip,
+  .qabtn.armed {
+    animation: none;
+  }
+
   .qabtn,
   .qabtn:active,
   button.qachip,

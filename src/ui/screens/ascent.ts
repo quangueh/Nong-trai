@@ -345,8 +345,28 @@ export function renderAscent(_nav: Navigate): HTMLElement {
     const me = store.get(plantId);
     if (!me) return;
 
+    /* The fight takes over the screen. `hidden` rather than removed, so the ladder is still
+       there when it ends and coming back does not re-render it from nothing. */
+    listHost.hidden = true;
+    /* `fight-live` marks a ceremony in progress for the celebration queue and the notice
+       router: the XP the settled fight pays lands the moment it starts, and its level-up
+       modal must not cover the replay it was earned in.
+       It mounts BEFORE `runAscentStage` settles, because the settle fires its result
+       notice synchronously and the UI only holds it while `.fight-live` exists — mount
+       after the settle and the banner reads the ending out loud at the opening bell. */
+    const sheet = el("div", { class: "card pop fight-live", style: "margin-bottom:12px" });
+    const stageTitle = el("div", { class: "small", style: "font-weight:700;margin-bottom:2px" }, [
+      `Ải ${stage} · ${monster.name}`,
+    ]);
+    const host = el("div");
+    sheet.append(stageTitle, host);
+    root.prepend(sheet);
+    root.scrollIntoView({ block: "start", behavior: "smooth" });
+
     const out = store.runAscentStage(plantId, stage);
     if (!out.ok) {
+      sheet.remove();
+      listHost.hidden = false;
       listHost.prepend(el("div", { class: "callout", style: "margin-bottom:10px" }, [out.reason ?? "Không thể đánh."]));
       return;
     }
@@ -370,8 +390,6 @@ export function renderAscent(_nav: Navigate): HTMLElement {
      * which is what let a defeated fight stay on screen without anything looking wrong.
      *
      * So the fight replaces the list for as long as it is on, and gets its own header. */
-    /* The fight takes over the screen. `hidden` rather than removed, so the ladder is still
-       there when it ends and coming back does not re-render it from nothing. */
     /* Non-interactive: the store already settled it, and letting the player cast into a battle
        that is over would be theatre.
 
@@ -380,18 +398,6 @@ export function renderAscent(_nav: Navigate): HTMLElement {
        skill list, all live, under the result. A player would reasonably read that as a fight
        they could still lose. So the view is told to hide them rather than having this screen
        reach into its DOM, which keeps the decision where the markup is. */
-    listHost.hidden = true;
-    /* `fight-live` marks a ceremony in progress for the celebration queue: the
-       XP the settled fight pays lands the moment it starts, and its level-up
-       modal must not cover the replay it was earned in. */
-    const sheet = el("div", { class: "card pop fight-live", style: "margin-bottom:12px" });
-    const stageTitle = el("div", { class: "small", style: "font-weight:700;margin-bottom:2px" }, [
-      `Ải ${stage} · ${monster.name}`,
-    ]);
-    const host = el("div");
-    sheet.append(stageTitle, host);
-    root.prepend(sheet);
-    root.scrollIntoView({ block: "start", behavior: "smooth" });
 
     /*
      * The verdict is a scene, not a line under the fight.

@@ -873,12 +873,28 @@ export function boot(root: HTMLElement) {
     });
   };
 
-  store.onNotice((notice) => {
-    if (!notice.levelUp) {
-      showNotice(notice);
-      return;
-    }
+  /*
+   * Held notices.
+   *
+   * A notice marked `hold` announces an outcome that an on-screen ceremony is
+   * already showing — the stage result pushed the moment `runAscentStage`
+   * settles, while the replay it describes is still swinging. Showing it then
+   * spoils the fight. These wait in a queue until no `.fight-live` card is up,
+   * then land as the receipt on the ladder — after the result overlay has had
+   * its say, not instead of it.
+   */
+  const heldNotices: Notice[] = [];
+  let holdTimer: number | undefined;
+  const fightShowing = (): boolean => Boolean(document.querySelector(".fight-live"));
+  const flushHeld = (): void => {
+    if (fightShowing()) return;
+    window.clearInterval(holdTimer);
+    holdTimer = undefined;
+    for (const n of heldNotices.splice(0)) routeNotice(n);
+  };
+  const routeNotice = (notice: Notice): void => {
     showNotice(notice);
+    if (!notice.levelUp) return;
 
     const info = notice.levelUp;
     const plant = info.subjectId ? store.get(info.subjectId) : undefined;
@@ -925,6 +941,15 @@ export function boot(root: HTMLElement) {
       });
     });
     pumpLevelUps();
+  };
+
+  store.onNotice((notice) => {
+    if (notice.hold && fightShowing()) {
+      heldNotices.push(notice);
+      if (holdTimer == null) holdTimer = window.setInterval(flushHeld, 400);
+      return;
+    }
+    routeNotice(notice);
   });
   // Drawn once at boot: the subscription only fires on a change, so without this
   // the badge would be blank until the player happened to gain a coin.

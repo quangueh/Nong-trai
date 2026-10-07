@@ -125,12 +125,20 @@ for (const vp of VIEWPORTS) {
     await shoot(page, `${vp.name}-${screen}`);
   }
 
-  // The battle, at three moments. This is the one thing screenshots are for: a fight has to
+  // The battle, at four moments. This is the one thing screenshots are for: a fight has to
   // read at a glance or none of the rest matters.
   await page.evaluate(`(() => { (window).__game.store.state.ascent.highest = 21; (window).__game.navigate("ascent"); })()`);
   await page.waitForTimeout(1100);
+  // The stable hook, not the label: the button's prose changes ("Vượt ải 22" vs
+  // "Đánh lại ải 20") and a regex on the wording is how the old run silently shot
+  // the staging brief instead of the fight.
+  await page.evaluate(`(() => { document.querySelector("[data-stage-fight]")?.click(); })()`);
+  await page.waitForTimeout(700);
+  // The staging brief stands between the map and the fight: confirm it once so
+  // the shots below are of combat, not of a modal.
+  await shoot(page, `${vp.name}-fight-brief`, "staging brief");
   await page.evaluate(`(() => {
-    const b = [...document.querySelectorAll(".screen button")].find((x) => /Vượt ải này|Đánh lại/.test(x.textContent || ""));
+    const b = [...document.querySelectorAll(".overlay button, .stagebrief button")].find((x) => /^Bắt đầu/.test((x.textContent || "").trim()));
     if (b) b.click();
   })()`);
   await page.waitForTimeout(1400);

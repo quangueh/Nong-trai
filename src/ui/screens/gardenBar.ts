@@ -158,6 +158,23 @@ function claimableQuests(): { id: string; title: string }[] {
     .map((v) => ({ id: v.def.id, title: v.def.title }));
 }
 
+function openPlotCount(): number {
+  return plotStatuses(store.unlockContext(), store.state.nurseryCap).filter((s) => s.open).length;
+}
+
+function emptyPlotCount(): number {
+  return Math.max(0, openPlotCount() - store.state.plants.length);
+}
+
+function strongestReadyPlant(): Plant | null {
+  return (
+    store.state.plants
+      .filter(canBattle)
+      .slice()
+      .sort((a, b) => b.powerRating - a.powerRating)[0] ?? null
+  );
+}
+
 export interface GardenBarDeps {
   /** Every planted card, keyed by plantId - for in-place badges and flashes. */
   cards: Map<string, HTMLElement>;
@@ -190,6 +207,38 @@ export function gardenBar(deps: GardenBarDeps): GardenBarHandle {
     paintDock();
     paintCards();
   };
+
+  /*
+   * Anchor the dock to the column it serves.
+   *
+   * `position: fixed; left: 50%` centres the bar on the *viewport*, which is
+   * only correct while the screen is the full width of the window. On the
+   * desktop frame the garden is the middle column of three, and a chips row
+   * centred on the window spills over both side panels: 570px of chips across
+   * a 530px column. The fix is not a wider max-width but the right origin -
+   * centre on the screen's own rect and cap the bar at its width, so the dock
+   * can never straddle a panel that is not its own.
+   *
+   * `transform: translateX(-50%)` stays in the stylesheet (the entrance
+   * keyframes keep it), so this only moves the anchor point and the cap.
+   */
+  const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(place) : null;
+  let observing = false;
+  function place(): void {
+    // Called at construction, before the bar is attached: closest() finds no
+    // screen yet, so the work is deferred to the first tick after mount.
+    const screen = root.closest<HTMLElement>(".screen");
+    if (!screen) return;
+    const r = screen.getBoundingClientRect();
+    root.style.left = `${r.left + r.width / 2}px`;
+    root.style.maxWidth = `${Math.max(0, r.width - 10)}px`;
+    if (!observing) {
+      observing = true;
+      if (ro) ro.observe(screen);
+      else window.addEventListener("resize", place);
+    }
+  }
+  requestAnimationFrame(place);
 
   /* --- the dock ------------------------------------------------------------ */
 
@@ -236,8 +285,7 @@ export function gardenBar(deps: GardenBarDeps): GardenBarHandle {
       }
       if (a.id === "plant") {
         // Open plots waiting for a seed. A garden with empty beds should say so.
-        const open = plotStatuses(store.unlockContext(), store.state.nurseryCap).filter((s) => s.open).length;
-        const empty = Math.max(0, open - store.state.plants.length);
+        const empty = emptyPlotCount();
         if (empty > 0) b.appendChild(el("span", { class: "qabadge quiet" }, [String(empty)]));
       }
       b.addEventListener("click", () => {
@@ -287,7 +335,8 @@ export function gardenBar(deps: GardenBarDeps): GardenBarHandle {
       return;
     }
 
-    // Unarmed: offer the three things a player most likely came to do next.
+    // Unarmed: offer the things a player most likely came to do next, with the
+    // most repeated chores as one-tap chips instead of hidden behind a mode.
     const claimable = claimableQuests();
     if (claimable.length > 0) {
       chips.appendChild(chip(`🎁 Nhận ${claimable.length} thưởng`, "act", () => {
@@ -298,13 +347,27 @@ export function gardenBar(deps: GardenBarDeps): GardenBarHandle {
         refresh();
       }));
     }
-    const ready = plants.filter(canBattle).length;
-    if (ready > 0) {
-      chips.appendChild(chip(`⚔ ${ready} cây sẵn sàng đấu`, "act", () => deps.nav("arena")));
-    }
+
     const waterable = tendableCount("water");
     if (plants.length > 0 && waterable > 0) {
-      chips.appendChild(chip(`💧 ${waterable} cây có thể tưới`, "hint", () => {
+      chips.appendChild(chip(`💧 Tưới tất cả · ${waterable}`, "act primary", () => applyAll("water")));
+    }
+
+    const readyPlant = strongestReadyPlant();
+    const ready = plants.filter(canBattle).length;
+    if (readyPlant) {
+      chips.appendChild(
+        chip(`⚔ Đấu cây mạnh nhất · ${ready}`, "act battle", () => deps.nav("arena", { plantId: readyPlant.plantId })),
+      );
+    }
+
+    const empty = emptyPlotCount();
+    if (empty > 0) {
+      chips.appendChild(chip(`🌱 Gieo vào ${empty} ô trống`, "hint plant", () => deps.pickSeed()));
+    }
+
+    if (plants.length > 0 && waterable === 0) {
+      chips.appendChild(chip("💧 Chọn công cụ tưới", "hint", () => {
         armed = "water";
         refresh();
       }));
@@ -486,9 +549,14 @@ export function gardenBar(deps: GardenBarDeps): GardenBarHandle {
     if (!root.isConnected) {
       window.clearInterval(tick);
       document.removeEventListener("keydown", onKey);
+      ro?.disconnect();
+      window.removeEventListener("resize", place);
       return;
     }
     paintCards();
+    // Re-anchor once a second as a backstop: cheap, and covers the cases a
+    // ResizeObserver misses (orientation, panel collapse, zoom).
+    place();
     // A tendable count inside the status chip should tick too, but rebuilding
     // the chip row every second steals a tap mid-press. Only the armed state
     // gets live text; everything else waits for the next real refresh.
