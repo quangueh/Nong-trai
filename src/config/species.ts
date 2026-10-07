@@ -808,9 +808,18 @@ export let blurbFallbackCount = 0;
  */
 function speciesUnlock(i: number): UnlockReq | undefined {
   const r = new Rng(`unlock:${i}`);
-  const f = i / GENERATED_SPECIES_COUNT;
 
-  if (f < 0.04) return undefined;
+  /*
+   * A handful open from the start — not 4% of six thousand.
+   *
+   * The old threshold left 240 generated species ungated on top of the five starters, so a
+   * player at breeder level 1 opened the shop onto a pile of seeds with nothing to earn and no
+   * level requirement to read. Eight keeps the first shelf full enough to choose from and small
+   * enough that the rest is visibly a ladder.
+   */
+  const OPEN_AT_START = 8;
+  if (i < OPEN_AT_START) return undefined;
+  const f = (i - OPEN_AT_START) / (GENERATED_SPECIES_COUNT - OPEN_AT_START);
 
   if (f < 0.14) {
     const level = 2 + Math.floor(f * 50);

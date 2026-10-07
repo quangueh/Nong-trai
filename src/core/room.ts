@@ -77,6 +77,25 @@ export interface SideResult {
   energyPeak: number;
 }
 
+/**
+ * Re-express a result for one of the two players.
+ *
+ * The host settles the fight with its own plant as side `a`, and broadcasts the raw
+ * `{ winner, mine, theirs }` from that orientation. A guest that reads it directly sees the
+ * host's summary as its own and the host's winner token as its own — so a guest whose plant was
+ * killed is told it won, and a guest that killed the host is told it lost. That is the whole
+ * bug this function exists to make impossible: orientation is applied once, in one place, and
+ * both peers call the same function.
+ */
+export function resultForPlayer(
+  m: { winner: string; mine: SideResult; theirs: SideResult },
+  mySide: "a" | "b",
+): { won: boolean; draw: boolean; mine: SideResult; theirs: SideResult } {
+  const draw = m.winner === "draw";
+  const won = !draw && m.winner === mySide;
+  return { won, draw, mine: mySide === "a" ? m.mine : m.theirs, theirs: mySide === "a" ? m.theirs : m.mine };
+}
+
 export type RoomMessage =
   | { kind: "create"; code: string; hostId: string; hostName: string }
   | { kind: "join"; code: string; playerId: string; name: string }

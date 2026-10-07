@@ -123,6 +123,8 @@ export class BattleView {
   private speed = 1;
   /** Whether the fight is stopped on purpose, as opposed to finished. */
   private paused = false;
+  /** Whether this fight has announced itself. See estartTimer. */
+  private started = false;
   private pauseBtn: HTMLButtonElement | null = null;
   /** Detached in `destroy`, or every fight ever opened would leave a keydown behind. */
   private onKey: ((e: KeyboardEvent) => void) | null = null;
@@ -238,15 +240,25 @@ export class BattleView {
     field.style.setProperty("--a-el", elementColour(dom));
     field.style.setProperty("--b-el", elementColour(foeDom));
 
-    this.sides.b = new FighterView(this.session.b, true, this.opts.plantB);
-    this.sides.a = new FighterView(this.session.a, false, this.opts.plantA);
+    /*
+     * Which side is "mine" is a UI question, not an engine one.
+     *
+     * Both peers settle the same fight with the same seed and the same plant order, so the
+     * engine's `a` is the host on both screens. The player's own fighter still has to read as
+     * *theirs*: styled as the ally and placed on the right, with the opponent on the left. Hard
+     * coding `a` as the player put the guest's own plant on the enemy side and labelled it so.
+     */
+    const mine = this.opts.mySide;
+    const other: "a" | "b" = mine === "a" ? "b" : "a";
+    this.sides[mine] = new FighterView(this.session[mine], false, this.opts[mine === "a" ? "plantA" : "plantB"]);
+    this.sides[other] = new FighterView(this.session[other], true, this.opts[other === "a" ? "plantA" : "plantB"]);
 
     const center = el("div", { class: "battle-arena" });
     this.phaseLabel = el("div", { class: "phase" }, ["Mở màn"]);
     this.clock = el("div", { class: "clock" }, [`${this.maxSeconds}`]);
     center.append(this.phaseLabel, this.clock);
 
-    field.append(this.sides.b.root, center, this.sides.a.root);
+    field.append(this.sides[other].root, center, this.sides[mine].root);
 
     // The contact wash. Owned by the arena so the juice layer has something to
     // drive without reaching into the effects markup.
@@ -367,6 +379,18 @@ export class BattleView {
   private restartTimer(): void {
     this.stop();
     if (this.finished) return;
+    /*
+     * Announce a *fresh* fight, once.
+     *
+     * `restartTimer` is also what un-pausing and changing speed call, so an unconditional
+     * sound here would announce a new fight every time a player changes the speed — training
+     * them to hear a start sound in the middle of one. `started` is the difference between
+     * beginning and resuming.
+     */
+    if (!this.started) {
+      this.started = true;
+      sfx.play("start");
+    }
     const tickMs = Math.max(16, (TICK_DT * 1000) / this.speed);
     this.timer = window.setInterval(() => this.advance(), tickMs);
   }
@@ -464,6 +488,15 @@ export class BattleView {
       meter.className = "combometer is-broke";
     } else {
       const band = n >= 12 ? 3 : n >= 6 ? 2 : 1;
+      /*
+       * The pitch is the run length.
+       *
+       * Capped at a nineteenth. A chain can reach thirty in a long fight, and thirty semitones
+       * is three octaves of shrillness — the run would get *louder to the ear* exactly when it
+       * should be getting more tense but not more painful. Half a semitone per hit also means
+       * early gains are audible as steps rather than as one indistinct rise.
+       */
+      sfx.play("combo", { pitch: Math.min(19, n - 1) });
       meter.textContent = `${n}×`;
       meter.className = "combometer is-live band" + band;
     }
@@ -566,9 +599,21 @@ export class BattleView {
             this.comboRun++;
             if (this.comboRun > this.comboBest) this.comboBest = this.comboRun;
             this.paintCombo(false);
-          } else if (victim === mine && ev.side !== mine && this.comboRun > 0) {
-            this.comboRun = 0;
-            this.paintCombo(true);
+          } else if (victim === mine && ev.side !== mine) {
+            /*
+             * Being hit gets its own cue, and is not the same sound as hitting something.
+             *
+             * `enemy` is filtered down an octave and has no bright top, so it reads as the
+             * room changing rather than as another attack — which is the information the player
+             * needs, because it is the difference between their plan working and their plan
+             * being interrupted. The combo break below it is part of the same event, and having
+             * one sound for both would mean hearing them as one thing.
+             */
+            sfx.play("enemy", { gain: 0.9 });
+            if (this.comboRun > 0) {
+              this.comboRun = 0;
+              this.paintCombo(true);
+            }
           }
         }
 
@@ -829,9 +874,13 @@ export class BattleView {
 
   /** Host-driven mode: apply an intent that arrived from the other client. */
   applyRemoteIntent(intent: BattleIntent): void {
-    if (intent.kind === "cast" && intent.value) this.session.castSkill(this.opts.mySide, intent.value);
-    if (intent.kind === "stance" && intent.stance) this.session.changeStance(this.opts.mySide, intent.stance);
-    if (intent.kind === "focus") this.session.useFocus(this.opts.mySide);
+    // A remote intent is for the *other* side. Both peers build their local view with their own
+    // plant as `mySide`; applying the guest's cast to the host's side sets one player acting as
+    // themselves and as the opponent at the same time.
+    const other = this.opts.mySide === "a" ? "b" : "a";
+    if (intent.kind === "cast" && intent.value) this.session.castSkill(other, intent.value);
+    if (intent.kind === "stance" && intent.stance) this.session.changeStance(other, intent.stance);
+    if (intent.kind === "focus") this.session.useFocus(other);
     this.refreshSkillBar();
     this.renderStances();
   }

@@ -296,7 +296,7 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
       el("div", { class: "small", style: "font-weight:700;margin-bottom:8px" }, ["🌟 Nổi bật hôm nay"]),
     );
     const rail = el("div", { class: "seed-rail" });
-    const picks = featuredSpecies(store.state.playerId, day, store.state.breederLevel, 10);
+    const picks = featuredSpecies(store.state.playerId, day, store.state.breederLevel, 10, store.unlockContext());
     for (const sp of picks) {
       rail.appendChild(
         seedChip(sp, store.state.seeds[sp.id] ?? 0, {
@@ -326,6 +326,7 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
       perPage: 24,
       sort,
       affordableOnly,
+      locked: lockFilter,
       currency,
       // What the player holds in each currency, so "can I afford this" can be answered
       // per species - the shelf is priced in four of them.
@@ -354,14 +355,8 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
 
     // A grid, not a stack: 24 full cards in one column is a very long scroll.
     const grid = el("div", { class: "seed-grid", style: "margin-bottom:10px" });
-    // Filtered in the view, not the query: it is a presentation choice about this
-    // screen, and putting it in the query would mean every caller had to think
-    // about a filter that only the shelf uses.
-    //
-    // Applied here rather than in the query for a second reason: "already unlocked" is
-    // about what the *player* has done, and the query has no idea what that is.
-    const shown =
-      lockFilter === "locked" ? res.entries.filter((e) => e.locked) : lockFilter === "open" ? res.entries.filter((e) => !e.locked) : res.entries;
+    // The lock filter is applied inside the query now, so pagination counts what is shown.
+    const shown = res.entries;
     for (const entry of shown) {
       const owned = store.state.seeds[entry.species] ?? 0;
       grid.appendChild(seedCard(getSpecies(entry.species), nav, owned));

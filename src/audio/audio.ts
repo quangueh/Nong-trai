@@ -43,7 +43,23 @@ export type SfxName =
   | "cast"
   | "death"
   | "win"
-  | "lose";
+  | "lose"
+  // --- added for a full pass over the game's feedback ---
+  // Interface states that were previously silent.
+  | "hover"
+  | "start"
+  | "pause"
+  | "resume"
+  // Progression. \`levelUp\` already existed; these are the moments around it.
+  | "expGain"
+  | "unlock"
+  | "reward"
+  | "powerUp"
+  // Combat, distinguished from \`hit\`/\`crit\` which describe an attack landing.
+  | "combo"
+  | "enemy"
+  // Something taken.
+  | "collect";
 
 export interface PlayOpts {
   /** Scales the whole effect. */
@@ -52,7 +68,13 @@ export interface PlayOpts {
   pitch?: number;
 }
 
-import { clampVolume, setVolume as setPrefVolume, volume as prefsVolume } from "../core/prefs";
+import {
+  clampVolume,
+  musicVolume as musicPrefVolume,
+  setMusicVolume as setMusicPref,
+  setVolume as setPrefVolume,
+  volume as prefsVolume,
+} from "../core/prefs";
 
 const STORAGE_KEY = "nongtrai.muted";
 
@@ -70,7 +92,23 @@ class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private sfxBus: GainNode | null = null;
+  private musicOut: GainNode | null = null;
   private built = false;
+
+  /**
+   * The live context and the music bus, for \`audio/music\` to schedule into.
+   *
+   * Read-only on purpose. The music bed needs to reach the audio clock and somewhere to send
+   * notes; it does not need to be able to rebuild the graph, and an engine whose internals are
+   * writable from another module is an engine that can be broken from another module.
+   */
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+
+  get musicBus(): GainNode | null {
+    return this.musicOut;
+  }
 
   muted = false;
   /**
@@ -135,8 +173,33 @@ class AudioEngine {
         const bus = ctx.createGain();
         bus.connect(tone);
 
+        /*
+         * Music, on its own bus.
+         *
+         * Two reasons it does not join the effects bus. A player who finds the fight effects
+         * loud needs to turn those down without losing the bed; and the high-shelf cut above
+         * exists because effects are all transients, which a pad has none of — routed through
+         * it the music loses its top and sounds like it is playing through a wall.
+         *
+         * Both buses still meet at the same limiter, so a loud moment cannot clip whether it
+         * came from a note or a hit.
+         */
+        const musicTone = ctx.createBiquadFilter();
+        musicTone.type = "lowpass";
+        musicTone.frequency.value = 5200;
+        musicTone.Q.value = 0.4;
+        musicTone.connect(master);
+
+        const musicOut = ctx.createGain();
+        // A GainNode is born at 1.0. Without this the bed plays at full level until somebody
+        // happens to move the slider — and "the music is too loud until you open settings" is
+        // not a default anyone should have to discover.
+        musicOut.gain.value = this.muted ? 0 : this.musicVolume;
+        musicOut.connect(musicTone);
+
         this.master = master;
         this.sfxBus = bus;
+        this.musicOut = musicOut;
         this.built = true;
       }
       // Read through a local: `built` and `ctx` are separate fields, so the
@@ -180,6 +243,26 @@ class AudioEngine {
    * Ramps like `setMuted` does, because a gain that jumps is a click, and a click every time
    * someone drags the slider is the fastest way to make them stop dragging it.
    */
+  /**
+   * Music volume, kept separate from effects.
+   *
+   * Its own persisted key, so turning the effects down does not silently take the music with
+   * them. Defaults lower than effects: a bed is continuous and an effect is a moment, and at
+   * equal volume the continuous thing is always the tiring one.
+   */
+  musicVolume = musicPrefVolume();
+
+  setMusicVolume(v: number): void {
+    this.musicVolume = clampVolume(v);
+    setMusicPref(this.musicVolume);
+    if (this.musicOut && this.ctx) {
+      const ctx = this.ctx;
+      const g = this.musicOut.gain;
+      g.cancelScheduledValues(ctx.currentTime);
+      g.setTargetAtTime(this.muted ? 0 : this.musicVolume, ctx.currentTime, 0.05);
+    }
+  }
+
   setVolume(v: number): void {
     this.volume = clampVolume(v);
     setPrefVolume(this.volume);
@@ -466,6 +549,148 @@ function build(ctx: AudioContext, out: AudioNode, t: number, name: SfxName, p: n
       });
       break;
     }
+    // --- interface states, previously silent -------------------------------------
+    case "hover": {
+      /*
+       * Quieter than \`tap\`, and shorter.
+       *
+       * This one fires every time a pointer crosses a button, which is dozens of times a
+       * minute and more on a screen of plot cards. At \`tap\`'s level it becomes a hiss.
+       * It is also nearly pure top end so it reads as "you are over something" rather than as
+       * a click you can mistake for a press.
+       */
+      tone(ctx, out, t, { type: "sine", from: 1750 * p, peak: 0.022, attack: 0.001, decay: 0.035 });
+      break;
+    }
+    case "start": {
+      // A three-note rise: the sound of something beginning rather than something arriving.
+      [0, 4, 7].forEach((semi, i) => {
+        tone(ctx, out, t, {
+          type: "triangle",
+          from: 330 * p * Math.pow(2, semi / 12),
+          peak: 0.1 - i * 0.012,
+          attack: 0.006,
+          decay: 0.34,
+          at: i * 0.085,
+        });
+      });
+      // A breath of air under it, so it has a body on headphones.
+      noiseHit(ctx, out, t, noiseOf(ctx), { peak: 0.05, attack: 0.02, decay: 0.3, filter: { type: "bandpass", from: 900, q: 0.7 } });
+      break;
+    }
+    case "pause": {
+      // Down and settling. Mirrored by \`resume\` so the pair is legible as a pair.
+      tone(ctx, out, t, { type: "triangle", from: 520 * p, to: 340 * p, peak: 0.075, attack: 0.006, decay: 0.2 });
+      tone(ctx, out, t, { type: "sine", from: 260 * p, to: 170 * p, peak: 0.06, attack: 0.008, decay: 0.26, at: 0.06 });
+      break;
+    }
+    case "resume": {
+      tone(ctx, out, t, { type: "triangle", from: 340 * p, to: 520 * p, peak: 0.075, attack: 0.006, decay: 0.2 });
+      tone(ctx, out, t, { type: "sine", from: 170 * p, to: 260 * p, peak: 0.06, attack: 0.008, decay: 0.26, at: 0.05 });
+      break;
+    }
+
+    // --- progression, and the loudest moments in the game -------------------------
+    case "expGain": {
+      /*
+       * Deliberately tiny.
+       *
+       * This plays once per flying number, so a large stage payout fires it a dozen times
+       * inside a second. It is a soft high blip with no low end at all: high frequencies mask
+       * against everything else, which is what lets something this often stay out of the way
+       * of the sound you are actually listening to.
+       */
+      tone(ctx, out, t, { type: "sine", from: 2100 * p, peak: 0.028, attack: 0.001, decay: 0.06 });
+      break;
+    }
+    case "unlock": {
+      /*
+       * Something opening.
+       *
+       * A rising sparkle plus a soft mechanical click underneath — a lock has two halves to it
+       * and a pure chime only has one, which reads as "here is a prize" rather than "here is a
+       * gate that has opened".
+       */
+      [0, 7, 12, 16].forEach((semi, i) => {
+        tone(ctx, out, t, {
+          type: "triangle",
+          from: 660 * p * Math.pow(2, semi / 12),
+          peak: 0.085 - i * 0.012,
+          attack: 0.004,
+          decay: 0.42,
+          at: 0.05 + i * 0.062,
+        });
+      });
+      noiseHit(ctx, out, t, noiseOf(ctx), { peak: 0.06, attack: 0.001, decay: 0.05, filter: { type: "highpass", from: 2600 } });
+      break;
+    }
+    case "reward": {
+      /*
+       * A warm major triad, held.
+       *
+       * The one cue with a long decay and no noise under it. Rewards are announced by the
+       * animation, so this only has to make the moment feel given rather than earned — and a
+       * percussive edge would turn a payout into an impact.
+       */
+      [0, 4, 7, 12].forEach((semi, i) => {
+        tone(ctx, out, t, {
+          type: "sine",
+          from: 523.25 * p * Math.pow(2, semi / 12),
+          peak: 0.1 - i * 0.014,
+          attack: 0.014,
+          decay: 1.05,
+          at: i * 0.075,
+        });
+      });
+      break;
+    }
+    case "powerUp": {
+      /*
+       * A sweep, where \`levelUp\` is a statement.
+       *
+       * Distinct on purpose: \`levelUp\` marks the thing that happened, this one marks the
+       * power going into the plant. A rising pitch bend over a shimmering fifth reads as growth
+       * in a way a chord does not.
+       */
+      tone(ctx, out, t, { type: "sawtooth", from: 200 * p, to: 640 * p, peak: 0.075, attack: 0.02, decay: 0.5, filter: { type: "lowpass", from: 700, to: 3200, q: 2 } });
+      tone(ctx, out, t, { type: "triangle", from: 400 * p, to: 1200 * p, peak: 0.06, attack: 0.03, decay: 0.55, at: 0.03 });
+      tone(ctx, out, t, { type: "sine", from: 800 * p, to: 2400 * p, peak: 0.04, attack: 0.05, decay: 0.6, at: 0.08 });
+      break;
+    }
+
+    // --- combat ------------------------------------------------------------------
+    case "combo": {
+      /*
+       * A bright ping that climbs with the run.
+       *
+       * The caller passes \`pitch\` in semitones as the combo grows, so the pitch *is* the
+       * number — the ear learns the scale of the run without reading the digits. Square wave
+       * for definition at low volume, so it punches through a fight without being loud.
+       */
+      tone(ctx, out, t, { type: "square", from: 880 * p, peak: 0.05, attack: 0.002, decay: 0.12, filter: { type: "lowpass", from: 4200 } });
+      tone(ctx, out, t, { type: "sine", from: 1760 * p, peak: 0.035, attack: 0.002, decay: 0.2, at: 0.015 });
+      break;
+    }
+    case "enemy": {
+      /*
+       * Darker and heavier than \`hit\`.
+       *
+       * \`hit\` describes something landing on the enemy. This one is for the enemy's own
+       * turn, and it is filtered down an octave because being hit should feel like the room
+       * changing rather than like another attack.
+       */
+      noiseHit(ctx, out, t, noiseOf(ctx), { peak: 0.13, attack: 0.004, decay: 0.22, filter: { type: "lowpass", from: 620, to: 180, q: 1.1 } });
+      tone(ctx, out, t, { type: "sine", from: 120 * p, to: 58 * p, peak: 0.13, attack: 0.004, decay: 0.24 });
+      tone(ctx, out, t, { type: "triangle", from: 196 * p, to: 150 * p, peak: 0.05, attack: 0.006, decay: 0.18, at: 0.02 });
+      break;
+    }
+    case "collect": {
+      // Taken, not earned. A short bright blip that a caller can pitch per item.
+      tone(ctx, out, t, { type: "triangle", from: 1320 * p, peak: 0.07, attack: 0.002, decay: 0.09 });
+      tone(ctx, out, t, { type: "sine", from: 2640 * p, peak: 0.03, attack: 0.002, decay: 0.12, at: 0.022 });
+      break;
+    }
+
     default:
       break;
   }

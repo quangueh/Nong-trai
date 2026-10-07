@@ -7,7 +7,7 @@ import { canBattle } from "../../growth/stages";
 import { BattleView, type BattleIntent, type BattleSummary } from "../../battle/battleView";
 import { createSeedPlant, breedPlants, estimatePower, validateGenome } from "../../genetics/genomeGenerator";
 import { Rng, seedToken, clamp } from "../../core/rng";
-import { RoomClient, HostRoom, type RoomSnapshot, type RoomMessage } from "../../core/room";
+import { RoomClient, HostRoom, resultForPlayer, type RoomSnapshot, type RoomMessage } from "../../core/room";
 import { addSkillXp } from "../../genetics/skillGenerator";
 import type { Stance } from "../../battle/engine";
 import { advanceStreak, battleStreakBonus, streakCoinPreview, STREAK_CAP } from "../../core/streak";
@@ -604,6 +604,9 @@ function renderRoomHost(nav: Navigate, myPlant: Plant): HTMLElement {
       plantB: guestPlant,
       mySide: "a",
       interactive: true,
+      // Without this the two clients run different fights from tick one, and the host's result
+      // can land on a screen that played a different battle.
+      seed: host.snapshot.battleSeed ?? undefined,
       onIntent: (intent) => client.sendIntent(intent),
       onFinish: ({ winner, a, b }) => {
         const won = winner === "a";
@@ -761,7 +764,8 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
 
   let opponent: Plant | null = null;
   let mirrored = false;
-  let pendingResult: { winner: string; mine: BattleSummary; theirs: BattleSummary } | null = null;
+  let pendingSeed: string | null = null;
+  let pendingResult: { won: boolean; draw: boolean; mine: BattleSummary; theirs: BattleSummary } | null = null;
 
   // Announce ourselves and hand our full plant snapshot to the host, which is
   // the only side allowed to build the authoritative match.
@@ -775,10 +779,12 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
     if (m.code !== code) return;
     if (m.kind === "plant_data" && m.playerId !== store.state.playerId) {
       opponent = m.plant;
-      if (mirrored && !activeView && opponent) startMirror();
+      if (mirrored && !activeView && opponent) startMirror(pendingSeed);
     }
     if (m.kind === "result" && m.playerId !== store.state.playerId) {
-      pendingResult = { winner: m.winner, mine: m.mine, theirs: m.theirs };
+      // Orientation applied once, by the shared helper: the host's `a` is this client's
+      // opponent, and its `mine`/`theirs` are the wrong way round for this side.
+      pendingResult = resultForPlayer(m, "b");
       activeView?.stop();
       renderResult();
     }
@@ -803,19 +809,24 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
 
     if (snap.state === "in_battle" && !mirrored) {
       mirrored = true;
-      if (opponent) startMirror();
+      pendingSeed = snap.battleSeed;
+      if (opponent) startMirror(pendingSeed);
       else note.textContent = "Đang chờ dữ liệu cây đối thủ từ máy chủ...";
     }
   });
 
-  function startMirror() {
+  function startMirror(battleSeed?: string | null) {
     if (!opponent || activeView) return;
     activeView = new BattleView({
       container: battleHost,
-      plantA: myPlant,
-      plantB: opponent,
-      mySide: "a",
+      // Mirror the host's camera: in host terms the host is `a` and this client is `b`. Using the
+      // same order means the same seed settles the same fight for both sides, and this client
+      // reads the host's winner token correctly.
+      plantA: opponent,
+      plantB: myPlant,
+      mySide: "b",
       interactive: true,
+      seed: battleSeed ?? undefined,
       onIntent: (intent: BattleIntent) => client.sendIntent(intent),
       onFinish: () => {
         note.textContent = "Đang chờ máy chủ chốt kết quả...";
@@ -827,8 +838,8 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
   function renderResult() {
     if (!pendingResult) return;
     const r = pendingResult;
-    const won = r.winner === "a";
-    const draw = r.winner === "draw";
+    const won = r.won;
+    const draw = r.draw;
     const coins = draw ? 30 : won ? 80 : 20;
     const items = draw ? 3 : won ? 6 : 2;
     store.state.leafCoin += coins;

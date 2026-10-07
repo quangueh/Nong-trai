@@ -233,6 +233,9 @@ function discoveryBook(nav: Navigate): HTMLElement {
       for (const m of claimable) {
         if (store.claimDiscovery(m.id).ok) got++;
       }
+      // Pitched by how much was taken, so a single reward and a sweep of five are not the
+      // same sound — and a big claim is the one moment the garden should feel generous.
+      if (got > 0) sfx.play("collect", { pitch: Math.min(12, (got - 1) * 3) });
       toast(got > 0 ? `Đã nhận ${got} phần thưởng khám phá` : "Chưa nhận được phần thưởng nào");
       nav("garden");
       return;
@@ -310,7 +313,7 @@ function seedBelt(nav: Navigate): HTMLElement {
   // registry holds 1005 species — a rail of all of them is not a rail, it is a
   // scrollbar — and the player only ever plants what they actually holds.
   const held = SPECIES.filter((sp) => (store.state.seeds[sp.id] ?? 0) > 0);
-  const today = featuredSpecies(store.state.playerId, Math.floor(Date.now() / 86400000), store.state.breederLevel, 10);
+  const today = featuredSpecies(store.state.playerId, Math.floor(Date.now() / 86400000), store.state.breederLevel, 10, store.unlockContext());
   const listed: SpeciesDef[] = [...held];
   for (const sp of today) {
     if (!listed.includes(sp) && listed.length < 24) listed.push(sp);
@@ -506,7 +509,7 @@ function openSeedPicker(nav: Navigate, anchorEl?: HTMLElement): void {
 
   if (held.length === 0) {
     body.appendChild(el("p", { class: "picker-empty" }, ["Túi hạt đang trống — mua một hạt để gieo cây đầu tiên."]));
-    const today = featuredSpecies(store.state.playerId, Math.floor(Date.now() / 86400000), store.state.breederLevel, 8);
+    const today = featuredSpecies(store.state.playerId, Math.floor(Date.now() / 86400000), store.state.breederLevel, 8, store.unlockContext());
     for (const sp of today) grid.appendChild(makeCard(sp, 0, sp.seedPrice));
     const openShop = el("button", { class: "btn ghost wide", style: "margin-top:12px" }, ["🛒 Xem thêm ở Cửa hàng"]);
     openShop.addEventListener("click", () => {

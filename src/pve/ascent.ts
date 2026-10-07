@@ -571,6 +571,18 @@ function affixPowerBonus(_stage: number, _dayIndex: number): number {
   return 0;
 }
 
+/**
+ * Which stages are bosses.
+ *
+ * Every tenth stage is a boss, and a boss is not just a bigger number: it has a different
+ * reward profile, its own line in the map, and it pays a milestone when beaten. The maths of
+ * that reward is in `stageReward`; the label is here so exactly one module decides what a
+ * boss *is*, and a condition change here moves every surface that asks.
+ */
+export function isBossStage(stage: number): boolean {
+  return stage >= 10 && stage % 10 === 0;
+}
+
 export function stageTargetPower(stage: number, _playerBestPower: number, dayIndex: number): number {
   const n = Math.max(1, stage);
   // Clamped, not extrapolated. Past the stat ladder the body holds at the level the last
@@ -579,7 +591,10 @@ export function stageTargetPower(stage: number, _playerBestPower: number, dayInd
   const steps = Math.min(n, STAT_LADDER_END) - 1;
   const body = FIRST_STAGE_POWER * Math.pow(STAGE_GROWTH, Math.max(0, steps));
   const daily = 1 + Math.min(DAILY_CAP, dayIndex * DAILY_STEP);
-  return Math.max(60, Math.round(body * (1 + affixPowerBonus(stage, dayIndex)) * daily));
+  // A boss is a wall with more room behind it. ×1,115 lifts the bar enough to feel different
+  // without pushing past the player's own ceiling, which would turn "boss" into "impossible".
+  const boss = isBossStage(n) ? 1.115 : 1;
+  return Math.max(60, Math.round(body * (1 + affixPowerBonus(stage, dayIndex)) * daily * boss));
 }
 
 /**
@@ -626,7 +641,7 @@ export const CONSOLATION: StageConsolation = { leafCoin: 6, items: 1, plantXp: 3
  * 1) on purpose: linear coin income against exponential difficulty is a race to a wall
  * where nothing is affordable and nothing matters.
  */
-export function stageReward(stage: number, won: boolean, attempt: number): StageReward {
+export function stageReward(stage: number, won: boolean, attempt: number, replay = false): StageReward {
   if (!won) {
     // Diminishing consolation, floored at the base. A player stuck on one stage should
     // stop being able to farm it for a living, without ever being punished into leaving.
@@ -642,17 +657,24 @@ export function stageReward(stage: number, won: boolean, attempt: number): Stage
   }
   const n = Math.max(1, stage);
   const scale = Math.pow(n, 1.15);
+  const boss = isBossStage(n);
+  // Past the first clear the reward falls to a third. A player who has already taken the
+  // ladder's full reward should get practice and a shot at a better star, not a way to farm it
+  // ahead of the next band.
+  const replayFactor = replay ? 0.35 : 1;
   return {
-    leafCoin: Math.round(28 * scale),
-    nectar: n >= 6 ? Math.round(3 * Math.pow(n, 0.9)) : 0,
-    pollen: n >= 14 ? Math.round(2 * Math.pow(n, 0.85)) : 0,
-    geneCrystal: n >= 10 ? Math.round(1 + n / 6) : 0,
-    items: Math.round(2 + n / 3),
+    leafCoin: Math.round(28 * scale * (boss ? 1.25 : 1) * replayFactor),
+    nectar: n >= 6 ? Math.round(3 * Math.pow(n, 0.9) * replayFactor) : 0,
+    pollen: n >= 14 ? Math.round(2 * Math.pow(n, 0.85) * replayFactor) : 0,
+    // Bosses are the ladder's main crystal source, so a long session is built around clearing
+    // them; shrinking that would make the crystals feel ornamental instead of sought.
+    geneCrystal: n >= 10 ? Math.round((1 + n / 6) * (boss ? 2.2 : 1) * replayFactor) : 0,
+    items: Math.round((2 + n / 3) * (boss ? 1.35 : 1) * replayFactor),
     // Enough that clearing the ladder moves a plant through its tiers. Measured: a plant
     // needs roughly 5k XP for level 15 (bloom) and the ancient tier starts at 30, so this
     // is scaled to put "ải 30 reached bloom" within reach of a player who also tends and
     // breeds - the stage ladder is a road to power, not a substitute for it.
-    plantXp: Math.round(24 + 26 * Math.pow(n, 0.72)),
+    plantXp: Math.round((24 + 26 * Math.pow(n, 0.72)) * replayFactor),
   };
 }
 

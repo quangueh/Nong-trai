@@ -161,7 +161,7 @@ export function initAccount(theBridge: SaveBridge): void {
     return;
   }
   emit({ email, state: "idle", message: "Đã đăng nhập." });
-  void pull(true);
+  void pull();
 }
 
 function stopAuto(): void {
@@ -217,7 +217,7 @@ export async function signIn(email: string, password: string): Promise<void> {
   adoptSession(session.token, email, session.playerId);
   // Bounded for the same reason as the Google path: a slow Worker must not be able to
   // keep a player out of the game they have just signed in to.
-  await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull(true));
+  await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull());
 }
 
 /**
@@ -307,7 +307,7 @@ async function settleWithin(ms: number, work: Promise<unknown>): Promise<boolean
 export async function signInWithGoogle(idToken: string): Promise<{ created: boolean; email: string }> {
   const session = await apiGoogleSignIn(idToken);
   adoptSession(session.token, session.email ?? session.name ?? "Google", session.playerId, "google");
-  await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull(true));
+  await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull());
   return { created: session.created, email: session.email ?? "" };
 }
 
@@ -412,12 +412,24 @@ export function currentToken(): string | null {
 /**
  * Bring the cloud save down.
  *
- * `force` is what happens on login: the cloud is newer by definition then, because
- * this device has not seen it. Without it, a routine sync on a second device would
- * refuse to pull and the player would be stuck playing whichever copy that device
- * happened to have.
+ * ## Why this is never forced
+ *
+ * It used to take a `force` flag, and boot, password sign-in and Google sign-in all passed
+ * `true`. Forced meant "write the cloud over the local slot regardless of timestamps", on the
+ * theory that the cloud is newer by definition on login because this device has not seen it.
+ *
+ * That theory is wrong for the one case that matters most: a player who is *already* signed in
+ * and reloads the page. Their local slot holds everything they have done, and the cloud may be
+ * behind — a push throttled by the daily budget, a push that failed on a bad connection, or
+ * simply the seconds of play since the last auto-sync. Forcing on boot threw all of it away and
+ * replaced the garden with the cloud's older copy. From the player's side the game "kept
+ * resetting to the beginning on refresh" while their plants sat on disk the whole time.
+ *
+ * The timestamps already say which copy is newer, and they are the server's own stamp for a
+ * pulled save and this device's for a local one. So they decide, in both directions: an older
+ * local slot is replaced by the cloud, and a newer one is kept and pushed up.
  */
-export async function pull(force = false): Promise<void> {
+export async function pull(): Promise<void> {
   if (!token || !bridge) return;
   emit({ state: "syncing", message: "Đang tải vườn từ tài khoản…" });
 
@@ -437,19 +449,23 @@ export async function pull(force = false): Promise<void> {
     const local = bridge.read();
     const localAt = Number(local.savedAt) || 0;
 
-    if (!force && remote.savedAt <= localAt) {
+    /*
+     * Local is newer or the same age: keep it, and send it up.
+     *
+     * The push is the part that was missing. Returning early without one left the cloud
+     * behind for as long as the auto-sync interval, which is exactly the window in which a
+     * reload would have looked like a reset.
+     */
+    if (remote.savedAt <= localAt) {
       emit({ state: "synced", message: "Vườn trên máy này là bản mới nhất.", lastSyncedAt: Date.now(), serverWasNewer: false });
-      return;
-    }
-    if (!force && remote.savedAt < localAt) {
-      emit({ state: "conflict", message: "Máy này có bản mới hơn — chưa tải xuống để khỏi mất.", serverWasNewer: false });
+      await push();
       return;
     }
 
     bridge.write(remote.state, remote.savedAt);
     emit({
       state: "synced",
-      message: force ? "Đã nạp vườn từ tài khoản." : "Đã cập nhật vườn từ tài khoản.",
+      message: "Đã nạp vườn từ tài khoản.",
       lastSyncedAt: Date.now(),
       serverWasNewer: false,
     });

@@ -98,6 +98,18 @@ export function celebrateExpGain(opts: ExpGainOptions): void {
     document.body.appendChild(chip);
 
     /*
+     * A tick as the numbers go — but only the first few speak.
+     *
+     * A large grant sends a dozen chips, and this is the most repeated sound in the game, so
+     * it is the quietest cue there is and the count is bounded. Without the bound, a big payout
+     * is a dozen blips inside a second on top of the sound that already marked the grant: two
+     * voices for one event, which is the opposite of a reward.
+     *
+     * The pitch climbs along the flight, so the run gathers rather than repeats.
+     */
+    if (i < CHIP_TICKS) sfx.play("expGain", { pitch: i * 2, gain: 0.8 - i * 0.14 });
+
+    /*
      * The trail.
      *
      * Spawned along the flight rather than at the start, so the dots are actually behind the
@@ -164,10 +176,19 @@ export function markExpBar(node: Element | null): Element | null {
   return node;
 }
 
-/** Play the small confirmation a plain gain deserves. */
+/** How many chips in a run get their own tick. See the note at the spawn site. */
+const CHIP_TICKS = 4;
+
+/**
+ * Play the small confirmation a plain gain deserves.
+ *
+ * `expGain`, not `buy`. This used to borrow the coin sound, which is metallic and meant for
+ * currency — experience landing played as coins clinking, and with the per-chip ticks now
+ * underneath it, one grant was making two unrelated noises at once. `levelUp` is still the
+ * wrong choice for the same reason it was avoided: a gain that did not level anything must not
+ * sound as though it did, or the rare celebration stops meaning anything.
+ */
 export function expGainSound(): void {
   if (reducedMotion()) return;
-  // "buy" rather than "levelUp": a gain that did not level anything should not sound like it
-  // did, or the rare celebration stops meaning anything.
-  sfx.play("buy");
+  sfx.play("expGain");
 }

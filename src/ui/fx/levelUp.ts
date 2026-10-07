@@ -182,6 +182,17 @@ export function celebrateLevelUp(options: LevelUpOptions): Promise<void> {
    * read as though the calm path had a quieter sound. It did not; it read as though it might.
    */
   sfx.play("levelUp");
+
+  /*
+   * A second voice under it, half a beat later.
+   *
+   * `levelUp` states the fact — it is the same sound for every level and carries the weight.
+   * `powerUp` is the sweep *into* the plant, and it is delayed rather than simultaneous
+   * because two cues at once sum into one louder cue and the player hears neither: you feel
+   * the volume go up rather than hearing two things happen.
+   */
+  window.setTimeout(() => sfx.play("powerUp"), 260);
+
   if (!calm) burst(panel);
 
   go.focus();

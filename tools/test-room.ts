@@ -7,7 +7,7 @@
  */
 
 import { GameStore } from "../src/core/store";
-import { RoomClient, HostRoom } from "../src/core/room";
+import { RoomClient, HostRoom, resultForPlayer } from "../src/core/room";
 import { simulateBattle } from "../src/battle/engine";
 import type { Plant } from "../src/core/types";
 
@@ -138,6 +138,31 @@ const result = simulateBattle(hostPlant, guestPlant, {
   arena: "sunny",
 });
 check("authoritative battle resolves", !!result.winner, `winner=${result.winner} in ${result.durationSeconds}s`);
+
+/*
+ * Orientation, checked in both directions.
+ *
+ * The host settles with its own plant as side `a` and broadcasts the raw result. A guest that
+ * reads it directly is told it won the fight it lost — the exact report that came back from
+ * play: "my plant's health is gone but I won, and when the opponent died first it still says I
+ * lost". `resultForPlayer` is the one place that re-expresses it, so this asserts the contract
+ * rather than the UI that happens to call it.
+ */
+{
+  const mineA = { ...result.a, hpPct: 0 };
+  const mineB = { ...result.b, hpPct: 42 };
+  const hostView = { winner: "a", mine: mineA, theirs: mineB };
+  const asHost = resultForPlayer(hostView, "a");
+  const asGuest = resultForPlayer(hostView, "b");
+  check("the host reads its own win as a win", asHost.won === true);
+  check("and the guest reads the same result as a loss", asGuest.won === false);
+  check("the guest's own numbers are the guest's, not the host's", asGuest.mine === mineB && asGuest.theirs === mineA);
+
+  const guestWon = { winner: "b", mine: mineA, theirs: mineB };
+  check("the guest reads its own win as a win", resultForPlayer(guestWon, "b").won === true);
+  check("and the host reads that as a loss", resultForPlayer(guestWon, "a").won === false);
+  check("a draw is a draw for both", resultForPlayer({ winner: "draw", mine: mineA, theirs: mineB }, "a").draw === true && resultForPlayer({ winner: "draw", mine: mineA, theirs: mineB }, "b").won === false);
+}
 
 // Both clients replay the SAME seed with the SAME side order, which is what
 // the host broadcasts. That is the guarantee that prevents desync: identical

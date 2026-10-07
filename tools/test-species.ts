@@ -513,7 +513,40 @@ check(
 // proves every rule in the pool is satisfiable from real save state.
 const gated = SPECIES.filter((s) => s.unlock !== undefined);
 check("most of the registry is gated", gated.length > SPECIES.length * 0.9, `${gated.length}/${SPECIES.length}`);
-check("but the early slice is open from the start", SPECIES.filter((s) => s.unlock === undefined).length > 100, `${SPECIES.filter((s) => s.unlock === undefined).length}`);
+
+/*
+ * The opening shelf has to be a shelf, not the registry.
+ *
+ * This used to assert `> 100` ungated species, on the theory that a new player should never see
+ * an empty shop. 100 was met by 240, and 240 species open at breeder level 1 is the opposite
+ * failure: nothing to unlock, no level requirement to read, and a pile to scroll. The check is
+ * now two-sided — enough to choose from, few enough that the rest is visibly a ladder — and the
+ * catalogue is asked the same question the player's screen asks it.
+ */
+const ungated = SPECIES.filter((s) => s.unlock === undefined).length;
+check("the opening shelf is not empty", ungated >= 5, `${ungated}`);
+check("and is not a pile of seeds", ungated <= 40, `${ungated} species open before any levelling`);
+
+const l1Ctx = {
+  breederLevel: 1,
+  plantCount: 1,
+  speciesCount: 1,
+  topGrowthLevel: 1,
+  awakenedCount: 0,
+  topGeneration: 1,
+  leafCoin: 500,
+};
+const l1Open = queryCatalogue({ playerId: "p", breederLevel: 1, progress: l1Ctx, locked: "open", perPage: 24 });
+check(
+  "a level-1 player sees only the opening shelf, and it fits on a page",
+  l1Open.total > 0 && l1Open.total <= 24,
+  `${l1Open.total} species`,
+);
+check(
+  "and the level-1 featured rotation draws only from what is open",
+  featuredSpecies("p", 0, 1, 10, l1Ctx).every((s) => !s.unlock || s.tier === 0),
+  featuredSpecies("p", 0, 1, 10, l1Ctx).map((s) => s.name).join(", "),
+);
 
 const tier2Species = gated[Math.floor(gated.length * 0.5)];
 const blocked = fresh.buySeed(tier2Species.id);

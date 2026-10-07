@@ -62,6 +62,7 @@ const WORKER_STUB = `
     failSave: 0,
     slowMs: 0,
     setCloud(rec) { cloud.set(ACCOUNT, rec); },
+    getCloud() { return cloud.get(ACCOUNT); },
     failNextSave(n) { this.failSave = n; },
     slowSave(ms) { this.slowMs = ms; },
   };
@@ -308,6 +309,67 @@ const browser = await chromium.launch();
     return { note: (window).__game ? document.body.textContent.slice(0, 0) : "" };
   })()`)) as Record<string, unknown>;
   void guarded;
+
+  /*
+   * --- 6. a signed-in player who has played since the last push ---------------
+   *
+   * This is the bug reported from play: "every refresh it goes back to the beginning even
+   * though that account had grown". The boot pull used to be *forced*, which wrote the cloud
+   * over the local slot regardless of timestamps — so any play since the last successful push
+   * was discarded the moment the page reloaded, and the plants sat on disk the whole time.
+   *
+   * The cloud here is deliberately left at its old stamp, exactly as it would be if the push
+   * had been throttled by the daily budget or lost to a bad connection.
+   */
+  console.log("\n6. play after the last push, then reload — is the local progress kept?");
+  const localBefore = await page.evaluate(`(() => {
+    const s = (window).__game.store;
+    s.state.leafCoin = 9999;
+    s.state.plants[0].name = "Cay Sau Lan Day";
+    s.commit("test");
+    return { coins: s.state.leafCoin, name: s.state.plants[0].name, savedAt: s.savedAt };
+  })()`) as Record<string, unknown>;
+  console.log(`  played to ${JSON.stringify(localBefore)}`);
+  const cloudBefore = await page.evaluate(`(() => { const c = (window).__worker.getCloud(); return c ? { coins: c.state.leafCoin, savedAt: c.savedAt } : null; })()`);
+  console.log(`  cloud before reload: ${JSON.stringify(cloudBefore)}`);
+
+  /*
+   * Seed the cloud on *every* navigation from here on.
+   *
+   * The Worker stub lives in an init script, so a reload rebuilds it with an empty cloud — which
+   * means a test that only seeds the cloud through `page.evaluate` is testing the "no cloud save
+   * yet" path after a reload, not the one that matters. The record has to be put back by an init
+   * script, before the app boots and pulls.
+   */
+  const staleCloud = (await page.evaluate(`(() => {
+    const s = (window).__game.store;
+    const c = JSON.parse(JSON.stringify(s.exportState()));
+    c.leafCoin = 4242;
+    c.plants[0].name = "Cay Tren May";
+    return c;
+  })()`)) as unknown;
+  await ctx.addInitScript(
+    `(() => { if (window.__worker) window.__worker.setCloud(${JSON.stringify({ state: staleCloud, savedAt: 1700000000000 })}); })()`,
+  );
+
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
+  await page.waitForTimeout(2500);
+
+  const afterLocal = (await page.evaluate(`(() => {
+    const s = (window).__game.store;
+    const key = Object.keys(localStorage).find((k) => k.indexOf("mutant-sprout-save-v1:") === 0);
+    const disk = key ? JSON.parse(localStorage.getItem(key)).leafCoin : null;
+    return { coins: s.state.leafCoin, name: s.state.plants[0]?.name, savedAt: s.savedAt, disk, key };
+  })()`) as Record<string, unknown>);
+  console.log(`  after reload: ${JSON.stringify(afterLocal)}`);
+  check("progress made since the last push survives a reload", afterLocal.coins === 9999, `coins=${afterLocal.coins} (the cloud still held 4242)`);
+  check("and so does the plant that was renamed", afterLocal.name === "Cay Sau Lan Day", String(afterLocal.name));
+  check(
+    "and the newer local stamp is what the next sync will compare against",
+    Number(afterLocal.savedAt) === Number(localBefore.savedAt),
+    `${afterLocal.savedAt} vs ${localBefore.savedAt}`,
+  );
 
   if (errs.length) console.log(`\npage errors:\n  ${errs.join("\n  ")}`);
   check("no page errors", errs.length === 0, errs.join(" | "));

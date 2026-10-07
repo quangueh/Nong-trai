@@ -7,6 +7,7 @@ import "./ui/fx/levelStrip.css";
 import "./ui/fx/stageOverlay.css";
 import { boot } from "./ui/app";
 import { sfx } from "./audio/audio";
+import { music } from "./audio/music";
 
 boot(document.getElementById("app")!);
 
@@ -25,6 +26,18 @@ boot(document.getElementById("app")!);
  */
 const unlock = (): void => {
   sfx.unlock();
+  /*
+   * The bed starts here, and not one line earlier.
+   *
+   * Browsers refuse to run an AudioContext before a gesture, and scheduling notes into a
+   * suspended context means every one of them is queued and delivered at once the moment it
+   * resumes — which is not music, it is a chord. So the bed waits for exactly the same gesture
+   * that unlocks the context, and the two are started together.
+   *
+   * A no-op if audio is unavailable or the context is still suspended; the bed checks for
+   * itself and does nothing rather than queueing.
+   */
+  music.start();
   document.removeEventListener("pointerdown", unlock, true);
   document.removeEventListener("keydown", unlock, true);
 };
@@ -34,6 +47,19 @@ document.addEventListener("keydown", unlock, true);
 // Browsers suspend audio when a tab is hidden. Without this, returning to the tab
 // leaves every later sound silent until something happens to resume the context.
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) sfx.suspend();
-  else sfx.resume();
+  if (document.hidden) {
+    /*
+     * Stop scheduling, and not just suspend.
+     *
+     * Suspending the context pauses the audio clock, so a scheduler that kept running would
+     * fill its lookahead with notes that all land at once when the player comes back. Stopping
+     * is what makes the return sound like the game picked up where it was.
+     */
+    music.stop();
+    sfx.suspend();
+  } else {
+    sfx.resume();
+    // Only if a gesture ever unlocked audio in the first place; `start` is a no-op otherwise.
+    if (sfx.available) music.start();
+  }
 });

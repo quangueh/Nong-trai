@@ -77,6 +77,27 @@ const b = await chromium.launch();
     return { level: p.growth.level, xp: p.growth.xp };
   })()`)) as { level: number; xp: number };
 
+  /*
+   * The peak is *observed*, not polled.
+   *
+   * This suite has failed this check four ways, and every one was the same mistake: reading a
+   * transient animation at a guessed instant. A poll started after a `waitForTimeout`, a
+   * screenshot or a round trip can begin after the burst is already over, and then reports zero
+   * for an animation that plainly happened.
+   *
+   * A MutationObserver installed *before* the level-up sees every spark that is ever added,
+   * whatever the timing, and keeps the high-water mark. There is no window to miss.
+   */
+  await page.evaluate(`(() => {
+    const w = window;
+    w.__sparkPeak = 0;
+    const obs = new MutationObserver(() => {
+      const n = document.querySelectorAll(".lvlup-spark").length;
+      if (n > w.__sparkPeak) w.__sparkPeak = n;
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+  })()`);
+
   // Tended rather than fought, so this exercises the care path rather than the arena one.
   await page.evaluate(`(() => {
     const s = (window).__game.store;
@@ -99,11 +120,14 @@ const b = await chromium.launch();
    * the page, from the moment the panel appears and keeping the maximum, measures the thing
    * that exists — the peak — instead of guessing when to look at it.
    */
-  await page.waitForTimeout(120);
-  await page.screenshot({ path: "shots/levelup/one-level.png" });
+  await page.waitForTimeout(60);
 
   const panel = (await page.evaluate(`(async () => {
-    // Watch for the burst's whole life, starting now, and keep the highest count seen.
+    // Wait for the celebration to exist at all, then watch its whole life for the peak.
+    const panelDeadline = performance.now() + 2000;
+    while (performance.now() < panelDeadline && !document.querySelector(".lvlup-panel")) {
+      await new Promise((r) => requestAnimationFrame(r));
+    }
     let peak = 0;
     const until = performance.now() + 2500;
     while (performance.now() < until) {
@@ -119,13 +143,22 @@ const b = await chromium.launch();
       level: p.querySelector(".lvlup-level")?.textContent ?? "",
       exp: p.querySelector(".lvlup-exp")?.textContent ?? "",
       rewards: [...document.querySelectorAll(".lvlup-reward b")].map((n) => n.textContent),
-      sparks: peak,
+      sparks: Math.max(peak, Number(window.__sparkPeak) || 0),
       barWidth: Math.round(parseFloat(getComputedStyle(document.querySelector(".lvlup-bar i")).width || "0")),
       hasButton: Boolean(p.querySelector(".btn.primary")),
     };
   })()`)) as Record<string, unknown> | null;
 
   console.log(`  ${JSON.stringify(panel)}`);
+  /*
+   * Screenshot *after* the peak has been read, not before.
+   *
+   * A screenshot takes a few hundred milliseconds, and it used to run before the particle
+   * poll — so under load the burst could start and finish inside that window and the poll then
+   * watched an empty panel. The panel stays up until it is dismissed, so capturing it a moment
+   * later loses nothing.
+   */
+  await page.screenshot({ path: "shots/levelup/one-level.png" });
   check("the celebration appears", panel !== null);
   check("it says LÊN CẤP!", String(panel?.title).includes("LÊN CẤP"), String(panel?.title));
   check("and names the level reached", String(panel?.level).includes("Cấp"), String(panel?.level));
@@ -191,7 +224,8 @@ const b = await chromium.launch();
     const s = (window).__game.store;
     s.addPlantXp(s.state.plants[0], 40000);
   })()`);
-  await page.waitForTimeout(260);
+  await page.waitForSelector(".lvlup-panel", { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(150);
   await page.screenshot({ path: "shots/levelup/multi-level.png" });
 
   const multi = (await page.evaluate(`(() => {
@@ -230,7 +264,15 @@ const b = await chromium.launch();
     const s = (window).__game.store;
     s.addPlantXp(s.state.plants[0], 5000);
   })()`);
-  await page.waitForTimeout(900);
+  /*
+   * Waited for, not slept through — the same fix as the first block.
+   *
+   * 900ms is enough on an idle machine and not enough when `npm test` is loading the dev server
+   * with everything else, at which point the panel simply had not been built yet and the block
+   * reported "the celebration does not appear under reduced motion".
+   */
+  await page.waitForSelector(".lvlup-panel", { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(150);
   await page.screenshot({ path: "shots/levelup/reduced.png" });
 
   const calm = (await page.evaluate(`(() => ({

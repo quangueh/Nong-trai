@@ -10,6 +10,7 @@ import { renderArena, currentBattleView } from "./screens/arena";
 import { renderAscent } from "./screens/ascent";
 import { renderLab } from "./screens/lab";
 import { sfx } from "../audio/audio";
+import { music, type MusicMood } from "../audio/music";
 import {
   accountStatus,
   initAccount,
@@ -106,9 +107,37 @@ let coinPill: HTMLElement;
 let crystalPill: HTMLElement;
 let itemPill: HTMLElement;
 
+/**
+ * How present the bed is on each screen.
+ *
+ * Only `arena` and `ascent` are `battle`, and both are true fights. Everything else is
+ * `calm`, and the two places a player goes to adjust sound are `silent` — the bed changing
+ * while someone is changing it is the wrong moment for it to do anything.
+ */
+const SCREEN_MOOD: Record<string, MusicMood> = {
+  arena: "battle",
+  ascent: "battle",
+  account: "silent",
+  settings: "silent",
+};
+
 export function navigate(screen: Screen, params?: unknown) {
   closeOverlays();
   current = screen;
+
+  /*
+   * The music follows the screen.
+   *
+   * One continuous bed that changes character, rather than a track per screen: switching
+   * tracks means a gap or a fade at every tab change, and a player who moves between two tabs
+   * hears the transition more than the music. Changing intensity has neither problem, and it
+   * means a fight can raise the stakes without the bed ever stopping.
+   *
+   * A screen not in the table gets `calm`, deliberately: a new screen should have music, and
+   * the failure mode of forgetting an entry is silence rather than the wrong mood.
+   */
+  music.setMood(SCREEN_MOOD[screen] ?? "calm");
+
   paint(params);
   for (const b of navHost.querySelectorAll(".navitem")) {
     b.classList.toggle("active", (b as HTMLElement).dataset.screen === screen);
@@ -185,9 +214,10 @@ function openSettings(): void {
     if (!sfx.muted) sfx.play("tap");
     toast(sfx.muted ? "Đã tắt âm thanh." : "Đã bật âm thanh.");
     paintSound();
-    // The slider's caption says "Đang tắt" while muted, so it has to be told about the mute
-    // or the two controls disagree about the state of the same thing.
+    // Both sliders caption themselves as "Đang tắt" while muted, so both have to be told about the
+    // mute or the three controls disagree about the state of the same thing.
     paintVolume();
+    paintMusic();
   });
 
   const wipe = el("button", { class: "btn ghost wide", style: "margin-top:14px;color:#8a3a2a" }, [
@@ -223,7 +253,7 @@ function openSettings(): void {
     max: "100",
     step: "5",
     class: "volumeslider",
-    "aria-label": "Âm lượng",
+    "aria-label": "Âm lượng hiệu ứng",
   }) as HTMLInputElement;
   const paintVolume = (): void => {
     volumeInput.value = String(Math.round(sfx.volume * 100));
@@ -240,10 +270,44 @@ function openSettings(): void {
     sfx.play("tap");
   });
   volumeWrap.append(
-    el("div", { class: "row between" }, [el("b", {}, ["Âm lượng"]), volumeLabel]),
+    el("div", { class: "row between" }, [el("b", {}, ["Âm lượng hiệu ứng"]), volumeLabel]),
     volumeInput,
   );
   paintVolume();
+
+  /**
+   * Music volume, on its own slider.
+   *
+   * Effects and music are mixed by ear, not by one knob — a player who finds the fight effects
+   * loud needs those down without losing the bed, and a player who finds the bed busy needs it
+   * down without going silent. One slider forces one of them to give something up.
+   *
+   * Defaulted below the effects level, because a bed is continuous and an effect is a moment,
+   * and at equal level the continuous thing is always the tiring one.
+   */
+  const musicWrap = el("div", { class: "account-volume" });
+  const musicLabel = el("span", { class: "tiny muted" }, []);
+  const musicInput = el("input", {
+    type: "range",
+    min: "0",
+    max: "100",
+    step: "5",
+    class: "volumeslider",
+    "aria-label": "Âm lượng nhạc nền",
+  }) as HTMLInputElement;
+  const paintMusic = (): void => {
+    musicInput.value = String(Math.round(sfx.musicVolume * 100));
+    musicLabel.textContent = sfx.muted ? "Đang tắt" : `${Math.round(sfx.musicVolume * 100)}%`;
+  };
+  musicInput.addEventListener("input", () => {
+    sfx.setMusicVolume(Number(musicInput.value) / 100);
+    paintMusic();
+  });
+  musicWrap.append(
+    el("div", { class: "row between" }, [el("b", {}, ["Âm lượng nhạc nền"]), musicLabel]),
+    musicInput,
+  );
+  paintMusic();
 
   /**
    * Motion.
@@ -281,7 +345,7 @@ function openSettings(): void {
   });
   paintMotion();
 
-  body.append(accountRow, soundRow, volumeWrap, motionRow, wipe);
+  body.append(accountRow, soundRow, volumeWrap, musicWrap, motionRow, wipe);
 
   const close = (): void => {
     offAccount();
@@ -508,6 +572,42 @@ function showNotice(notice: Notice): void {
 export function boot(root: HTMLElement) {
   const shell = el("div", { class: "shell" });
 
+  /*
+   * Hover, in one listener rather than one per button.
+   *
+   * There are hundreds of buttons in a session and they are created and destroyed constantly, so
+   * a listener on each is the same mistake as rebuilding the skill bar ten times a second.
+   *
+   * `relatedTarget` is what makes this correct rather than merely quiet: when the pointer moves
+   * from a button onto a label *inside* that button, the browser fires another `pointerover`
+   * whose `relatedTarget` is inside the same control. That is not the player arriving at a
+   * new control and does not get a sound — without this check, hovering any button with text
+   * fires two ticks instead of one.
+   *
+   * Delegated to `root` and gated on the pointer actually having moved, so a scroll-driven
+   * reflow under a stationary pointer does not tick either.
+   */
+  let lastHover: Element | null = null;
+  root.addEventListener("pointerover", (ev) => {
+    const e = ev as PointerEvent;
+    if (e.pointerType && e.pointerType !== "mouse") return;
+    const t = e.target as Element | null;
+    const control = t?.closest("button, .tab, .navitem, .wideaction, .plot, .chip");
+    if (!control) return;
+    if (control === lastHover) return;
+    const from = e.relatedTarget as Node | null;
+    if (from && control.contains(from)) return;
+    lastHover = control;
+    sfx.play("hover");
+  });
+  // `pointerout` to the void clears it, so coming back to a control is a fresh arrival.
+  root.addEventListener("pointerout", (ev) => {
+    const e = ev as PointerEvent;
+    const from = e.target as Element | null;
+    if (!from?.closest("button, .tab, .navitem, .wideaction, .plot, .chip")) return;
+    if (lastHover && !lastHover.contains(e.relatedTarget as Node | null)) lastHover = null;
+  });
+
   // --- top bar ---
   const topbar = el("div", { class: "topbar" });
   const brand = el("div", { class: "brand" });
@@ -694,6 +794,19 @@ export function boot(root: HTMLElement) {
     (window as unknown as Record<string, unknown>).__game = {
       store,
       navigate,
+      /**
+       * The audio engine and the music bed, for tests.
+       *
+       * Both are reachable through the module graph but not from a page script, and without
+       * them the only way to find out whether a sound played is to listen to it — which an
+       * automated run cannot do. Exposing them lets a test wrap `play` and record what was
+       * asked for, which is the difference between checking the game *requested* a level-up
+       * sound and inferring it from a screenshot.
+       *
+       * Read these; do not rewire them.
+       */
+      sfx,
+      music,
       /**
        * The live battle view, when one is running.
        *

@@ -96,14 +96,24 @@ export function availableSpecies(breederLevel: number): SpeciesDef[] {
  * changes at midnight — the shelf feels alive without any server state.
  * Weighted towards low tiers so the featured row is always affordable.
  */
-export function featuredSpecies(playerId: string, dayIndex: number, breederLevel: number, count = 10): SpeciesDef[] {
+export function featuredSpecies(
+  playerId: string,
+  dayIndex: number,
+  breederLevel: number,
+  count = 10,
+  ctx?: UnlockContext,
+): SpeciesDef[] {
   const pool = availableSpecies(breederLevel);
+  // Do not surface a seed the player cannot actually buy: its unlock rule has already failed.
+  const unlockedPool = ctx
+    ? pool.filter((s) => !s.unlock || checkUnlock(ctx, s.unlock).met)
+    : pool.filter((s) => !s.unlock || (s.unlock && unlockReqAlreadyMet(breederLevel, s.unlock)));
   const rng = new Rng(`featured:${playerId}:${dayIndex}`);
 
   // The starters lead every rotation: the tutorial needs them, and they are the
   // cheapest seeds, so a fresh save sees a shelf it can actually buy from.
   const out = SPECIES.filter((s) => STARTER_IDS.includes(s.id)).slice(0, 5);
-  const rest = pool.filter((s) => !out.includes(s));
+  const rest = unlockedPool.filter((s) => !out.includes(s));
 
   // `** 1.6` biases the draw towards the front of the pool, and the pool is
   // ordered by tier, so the rotation favours species the player can afford.
@@ -113,6 +123,20 @@ export function featuredSpecies(playerId: string, dayIndex: number, breederLevel
     rest.splice(idx, 1);
   }
   return out.slice(0, count);
+}
+
+/**
+ * Whether a level-only unlock is already open at this breeder level.
+ *
+ * Used as the fallback when no full unlock context is available. Rules that look at plants,
+ * species or currency, rather than level, are treated as not yet satisfied so the featured
+ * shelf never claims it can be bought when it cannot.
+ */
+function unlockReqAlreadyMet(breederLevel: number, req: UnlockReq): boolean {
+  const { all, any } = req && "k" in req ? { all: [req], any: [] } : { all: req.all ?? [], any: req.any ?? [] };
+  const allMet = all.every((r) => r.k === "level" && breederLevel >= r.n);
+  const anyMet = any.length === 0 || any.some((r) => r.k === "level" && breederLevel >= r.n);
+  return allMet && anyMet && all.every((r) => r.k === "level");
 }
 
 export interface CatalogueQuery {
@@ -162,6 +186,14 @@ export interface CatalogueQuery {
    * without the multi-currency shop.
    */
   affordableOnly?: boolean;
+  /**
+   * Which species to show by lock state.
+   *
+   * In the query rather than the view, because the shelf is paginated: filtering a page after
+   * it has been sliced can leave a page with nothing on it while the pager still claims there
+   * are more, and the totals stop matching the list.
+   */
+  locked?: "all" | "open" | "locked";
   /**
    * Show only the species sold in one currency.
    *
@@ -238,12 +270,21 @@ export function queryCatalogue(q: CatalogueQuery): CataloguePage {
   // meaningful against a balance. A species costs its own currency, so this compares each
   // price against the balance for *that* currency rather than against one purse - which is
   // the whole point of having more than one.
+  // Lock state, applied before slicing so a page is never empty while the pager claims more.
+  const lockFiltered =
+    q.locked && q.locked !== "all"
+      ? matched.filter((s) => {
+          const met = checkUnlock(ctx, s.unlock).met;
+          return q.locked === "open" ? met : !met;
+        })
+      : matched;
+
   const affordable = q.affordableOnly
-    ? matched.filter((s) => {
+    ? lockFiltered.filter((s) => {
         const held = q.balances?.[s.currency] ?? 0;
         return held >= s.seedPrice;
       })
-    : matched;
+    : lockFiltered;
 
   /*
    * Ordered here, before the slice, because the shelf is paginated. Ordering after the

@@ -1200,7 +1200,10 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     const won = result.winner === "a";
 
     const attempt = won ? 0 : ascent.attempts;
-    const reward = stageReward(stage, won, attempt);
+    // A stage at or below the record has already paid its full reward once. Replaying it is for
+    // practice and for a better attempt, not for farming the same payout ahead of the next band.
+    const alreadyCleared = stage <= ascent.highest;
+    const reward = stageReward(stage, won, attempt, alreadyCleared);
 
     this.credit(reward.leafCoin, won ? `Vượt ải ${stage}` : `Thử ải ${stage}`);
     for (const id of ["nectar", "pollen"] as const) {
@@ -1665,7 +1668,22 @@ function loadOrCreate(rawOverride?: string): PlayerState {
   }
   fresh.seeds.thornroot = (fresh.seeds.thornroot ?? 1) - 1;
   try {
-    if (rawOverride === undefined) localStorage.setItem(saveSlotKey(getActiveAccountId()), JSON.stringify(fresh));
+    if (rawOverride === undefined) {
+      /*
+       * Never destroy a slot we could not read.
+       *
+       * The fallback below is reachable when the stored value is not valid JSON, or is JSON
+       * that is not a save — a partial write, a value written by some other tool, a format from
+       * a much older build. Writing a fresh garden straight over it is the one irreversible
+       * thing this function can do, and it is not worth doing silently: the previous value is
+       * moved to a `:backup` key first, so a garden that was merely unreadable can still be
+       * recovered by hand.
+       */
+      const key = saveSlotKey(getActiveAccountId());
+      const existing = localStorage.getItem(key);
+      if (existing !== null) localStorage.setItem(`${key}:backup`, existing);
+      localStorage.setItem(key, JSON.stringify(fresh));
+    }
   } catch {
     // ignore
   }

@@ -224,7 +224,21 @@ export function showStageResult(out: StageOutcome, onContinue: () => void): Prom
   const snap = plantSnapshot(out.fighter);
 
   (async () => {
-    sfx.play(out.won ? "levelUp" : "lose");
+    /*
+     * Two distinct moments, previously one.
+     *
+     * `reward` announces that there is something being given — warm, held, and with no
+     * percussive edge, because a payout is not an impact. `unlock` is reserved for the stage
+     * that has genuinely opened behind it, because "here is a new gate" is different
+     * information from "here is a bigger number" and deserves its own sound rather than being
+     * folded into the fanfare. A loss keeps its own fall, unchanged.
+     */
+    if (out.won) sfx.play("reward");
+    else sfx.play("lose");
+    if (out.won && out.nextUnlocked) {
+      // Half a beat later, so it lands as a consequence rather than as part of the same sound.
+      window.setTimeout(() => sfx.play("unlock"), 520);
+    }
     for (const r of rows) await countUp(r.value, r.amount, COUNT_MS);
 
     xpLine.append(

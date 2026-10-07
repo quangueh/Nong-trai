@@ -32,6 +32,7 @@ export type MotionPref = "system" | "full" | "reduce";
 
 const MOTION_KEY = "nongtrai.motion";
 const VOLUME_KEY = "nongtrai.volume";
+const MUSIC_VOLUME_KEY = "nongtrai.musicVolume";
 
 /**
  * Read a key without throwing.
@@ -133,12 +134,26 @@ export function clampVolume(v: number): number {
 
 let vol = 0.75;
 
+/*
+ * Read back in the units it was written in.
+ *
+ * `setVolume` stores a percentage ("50"), and this used to read the raw string as a fraction —
+ * so `Number("50")` was 50, `clampVolume` capped it to 1, and **every stored volume came back as
+ * either silent or full**. Music, being newer, had the same bug copied over with it.
+ *
+ * Both sides are pinned to whole-percent from here on, because a slider speaks in percent and
+ * dividing by 100 in exactly one direction is how a preference quietly stops existing.
+ */
+function readPercent(key: string): number | null {
+  const raw = read(key);
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n / 100 : null;
+}
+
 (function loadVolume() {
-  const raw = read(VOLUME_KEY);
-  if (raw !== null) {
-    const n = Number(raw);
-    if (Number.isFinite(n)) vol = clampVolume(n);
-  }
+  const pct = readPercent(VOLUME_KEY);
+  if (pct !== null) vol = clampVolume(pct);
 })();
 
 export function volume(): number {
@@ -148,6 +163,24 @@ export function volume(): number {
 export function setVolume(v: number): void {
   vol = clampVolume(v);
   write(VOLUME_KEY, String(Math.round(vol * 100)));
+}
+
+/* ------------------------------------------------------------------ music volume */
+
+let musicVol = 0.4;
+
+(function loadMusicVolume() {
+  const pct = readPercent(MUSIC_VOLUME_KEY);
+  if (pct !== null) musicVol = clampVolume(pct);
+})();
+
+export function musicVolume(): number {
+  return musicVol;
+}
+
+export function setMusicVolume(v: number): void {
+  musicVol = clampVolume(v);
+  write(MUSIC_VOLUME_KEY, String(Math.round(musicVol * 100)));
 }
 
 /** The volume to start a fresh player at, lower if they asked for less motion. */
