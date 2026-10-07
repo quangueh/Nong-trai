@@ -129,6 +129,7 @@ estartTimer. */
   private pauseBtn: HTMLButtonElement | null = null;
   /** Detached in `destroy`, or every fight ever opened would leave a keydown behind. */
   private onKey: ((e: KeyboardEvent) => void) | null = null;
+  private onVis: (() => void) | null = null;
   private pauseVeil: HTMLElement | null = null;
 
   /**
@@ -212,6 +213,17 @@ estartTimer. */
     });
     this.build();
     this.opts.container.appendChild(this.comboMeter);
+    /*
+     * A hidden tab throttles setInterval to about once a second — it does not
+     * stop it. Without this a live fight kept crawling forward in the
+     * background and could finish while the player was away, resolved unwatched.
+     * Hiding the tab pauses the fight with the veil up; returning resumes by
+     * the same deliberate press as any other pause.
+     */
+    this.onVis = () => {
+      if (document.hidden && this.timer != null && !this.paused && !this.finished) this.togglePause();
+    };
+    document.addEventListener("visibilitychange", this.onVis);
   }
 
   // --- construction ---
@@ -413,6 +425,10 @@ estartTimer. */
     if (this.onKey) {
       window.removeEventListener("keydown", this.onKey);
       this.onKey = null;
+    }
+    if (this.onVis) {
+      document.removeEventListener("visibilitychange", this.onVis);
+      this.onVis = null;
     }
     this.juice.destroy();
     this.fx.destroy();
