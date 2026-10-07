@@ -18,7 +18,9 @@
  * PvE sound and no PvE rules. It is the arena, pointed at something the garden did not breed.
  */
 
-import { el } from "../components";
+import { el, fmt, battleBlock } from "../components";
+import { canBattle } from "../../growth/stages";
+import { plantDisplayName } from "../../core/plantNames";
 import { sfx } from "../../audio/audio";
 import { renderPlantSvg } from "../../render/plantRenderer";
 import { BattleView } from "../../battle/battleView";
@@ -187,18 +189,41 @@ export function renderAscent(_nav: Navigate): HTMLElement {
   function rebuildRoster(): void {
     roster.replaceChildren();
     if (chosen && !mature.some((p) => p.plantId === chosen)) chosen = best?.plantId ?? null;
-    for (const p of mature) {
-      const chip = el("button", { class: "btn xs" + (chosen === p.plantId ? " primary" : "") }, [
-        `${p.name} · ${p.powerRating}`,
-      ]);
-      chip.addEventListener("click", () => {
-        chosen = p.plantId;
-        sfx.play("tap");
-        // Rebuilt rather than re-rendered, so the ladder does not scroll back to the top and
-        // the player loses the stage they were reading.
-        rebuildRoster();
-        buildList();
+    /* The whole garden marches here, not just the grown ones: a plant absent from the
+       strip reads as lost, while a plant shown dimmed reads as not ready yet — with the
+       stage it is at printed where the level would be. */
+    const sorted = [...store.state.plants].sort((a, b) => {
+      const aOk = canBattle(a), bOk = canBattle(b);
+      if (aOk !== bOk) return aOk ? -1 : 1;
+      return b.powerRating - a.powerRating;
+    });
+    for (const p of sorted) {
+      const why = battleBlock(p);
+      const chip = el("button", {
+        class: "btn xs" + (chosen === p.plantId ? " primary" : ""),
+        style: "display:inline-flex;align-items:center;gap:6px;padding:4px 8px 4px 4px" + (why ? ";opacity:.5" : ""),
+        ...(why ? { title: why } : {}),
       });
+      const thumb = el("span", { style: "display:inline-block;width:34px;height:34px;flex:none" });
+      thumb.innerHTML = renderPlantSvg(p, 34);
+      chip.append(
+        thumb,
+        el("span", { style: "display:inline-flex;flex-direction:column;line-height:1.25;text-align:left" }, [
+          el("span", { style: "font-weight:700" }, [plantDisplayName(p, store.state.plants)]),
+          el("span", { class: "tiny muted mono" }, [why ?? `Lv${p.growth.level} · ⚔${fmt(p.powerRating)}`]),
+        ]),
+      );
+      chip.disabled = why !== null;
+      if (!why) {
+        chip.addEventListener("click", () => {
+          chosen = p.plantId;
+          sfx.play("tap");
+          // Rebuilt rather than re-rendered, so the ladder does not scroll back to the top and
+          // the player loses the stage they were reading.
+          rebuildRoster();
+          buildList();
+        });
+      }
       roster.appendChild(chip);
     }
   }

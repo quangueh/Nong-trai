@@ -71,7 +71,7 @@ for (let fight = 1; fight <= 3; fight++) {
   // `.sheet`, not `.overlay`: the backdrop is an empty sibling, not the sheet's parent,
   // so the obvious descendant selector matches nothing.
   const sheet = await page.evaluate(`(() => {
-    const cards = [...document.querySelectorAll(".sheet .plantcard")];
+    const cards = [...document.querySelectorAll(".sheet .pickrow")];
     if (!cards.length) return 0;
     cards[0].click();
     return cards.length;

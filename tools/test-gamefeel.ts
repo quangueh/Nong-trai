@@ -79,7 +79,7 @@ console.log("a fight, measured:");
     if (!sheet) return "no sheet";
     // The picker renders \`.plantcard\` elements, not buttons — a selector written for
     // buttons finds nothing and reports a fight that never started as five failures.
-    const card = sheet.querySelector(".plantcard");
+    const card = sheet.querySelector(".pickrow");
     if (!card) return "no fighter card";
     card.click();
     return (card.textContent || "").replace(/\\s+/g, " ").slice(0, 30);

@@ -23,7 +23,7 @@
  * to explain that a plant has to be ready.
  */
 
-import { el, toast, fmt, plantThumb, dismissOnEscape } from "../components";
+import { el, toast, fmt, pickPlantSheet, battleBlock } from "../components";
 import { store } from "../app";
 import { canBattle } from "../../growth/stages";
 import type { Plant } from "../../core/types";
@@ -319,7 +319,7 @@ async function startChallenge(friend: Friend, repaint: () => void): Promise<void
     toast("Chưa có cây trưởng thành để kêu gọi.");
     return;
   }
-  pickFighter(ready, async (plant) => {
+  pickFighter(async (plant) => {
     const r = await sendChallenge(friend.handle, plant.plantId);
     if (r.ok) {
       toast(`Đã gửi lời mời cho ${friend.name}.`);
@@ -338,7 +338,7 @@ async function doAccept(
     toast("Chưa có cây trưởng thành để nhận lời mời.");
     return;
   }
-  pickFighter(ready, async (plant) => {
+  pickFighter(async (plant) => {
     const r = await acceptChallenge(invite.id, plant.plantId);
     if (!r.ok) {
       toast(REFUSAL_TEXT[r.why]);
@@ -370,43 +370,17 @@ async function doAdd(query: string, repaint: () => void): Promise<void> {
  * to pick a plant in the game is one fewer thing to get wrong, and this screen's job is
  * social, not another plant-picking tutorial.
  */
-function pickFighter(ready: Plant[], onPick: (plant: Plant) => void | Promise<void>): void {
-  const shell = document.querySelector(".shell");
-  const overlay = el("div", { class: "overlay" });
-  const sheet = el("div", { class: "sheet" });
-  const content = el("div");
-
-  content.appendChild(el("h3", { style: "font-size:16px;margin-bottom:10px" }, ["Chọn cây chiến đấu"]));
-  const list = el("div", { class: "scrollx" });
-  for (const p of ready) {
-    const card = el("button", { class: "plantcard", style: "flex:none;width:118px" });
-    // The same renderer the garden uses, so a plant looks like itself everywhere. Set as
-    // innerHTML rather than built by hand because that renderer *is* the art.
-    const thumb = plantThumb(p, 68);
-    card.append(
-      thumb,
-      el("div", { class: "name", style: "font-size:11px" }, [p.name]),
-      el("div", { class: "tiny muted mono" }, [`Lực ${fmt(p.powerRating)}`]),
-    );
-    card.addEventListener("click", () => {
-      overlay.remove();
-      sheet.remove();
-      void onPick(p);
-    });
-    list.appendChild(card);
-  }
-  content.appendChild(list);
-
-  // `append`, not `appendChild`: the handle and the body are two children, and
-  // `appendChild` takes one. The arena's own sheet does the same thing.
-  sheet.append(el("div", { class: "handle" }), content);
-  const dismiss = (): void => {
-    overlay.remove();
-    sheet.remove();
-  };
-  overlay.addEventListener("click", dismiss);
-  dismissOnEscape(sheet, dismiss);
-  (shell ?? document.body).append(overlay, sheet);
+function pickFighter(onPick: (plant: Plant) => void | Promise<void>): void {
+  // The shared garden sheet, same as the arena's: every plant listed, the unready
+  // ones dimmed with their reason. Callers still check `canBattle` first so an
+  // empty garden is a toast rather than a sheet of greyed rows.
+  pickPlantSheet({
+    title: "Chọn cây chiến đấu",
+    plants: store.state.plants,
+    blocked: battleBlock,
+    emptyText: "Chưa có cây nào trong vườn.",
+    onPick: (p) => void onPick(p),
+  });
 }
 
 /* --- the duel replay ------------------------------------------------------ */

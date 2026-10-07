@@ -233,13 +233,13 @@ await render("breeding renders", () => navigate("breeding"));
   check("shows two parent slots", $$(".screen .slot").length === 2);
   check("breed button starts disabled", (byText(".screen .btn", "🧬 Lai tạo") as HTMLButtonElement)?.disabled === true);
   await render("select parent A", () => click($$(".screen .slot")[0]));
-  check("parent picker opens", !!$(".sheet .plantcard"));
+  check("parent picker opens", !!$(".sheet .pickrow"));
   // Pick the first plant for A and a DIFFERENT one for B — breeding a plant
   // with itself is rejected by design.
-  await render("choose parent A", () => click($$(".sheet .plantcard")[0]));
+  await render("choose parent A", () => click($$(".sheet .pickrow:not(.is-blocked)")[0]));
   check("slot A is filled", $$(".screen .slot.filled").length === 1, `${$$(".screen .slot.filled").length}`);
   await render("select parent B", () => click($$(".screen .slot")[1]));
-  await render("choose parent B", () => click($$(".sheet .plantcard")[1]));
+  await render("choose parent B", () => click($$(".sheet .pickrow:not(.is-blocked)")[1]));
   check("both slots are filled", $$(".screen .slot.filled").length === 2, `${$$(".screen .slot.filled").length}`);
 
   const screenText = $(".screen")?.textContent ?? "";
@@ -302,8 +302,8 @@ await render("arena menu renders", () => navigate("arena"));
 
 await render("pick plant for battle", () => click(byText(".screen .btn", "Đấu với AI")));
 {
-  check("plant picker opens", !!$(".sheet .plantcard"));
-  await render("choose plant", () => click($(".sheet .plantcard")));
+  check("plant picker opens", !!$(".sheet .pickrow"));
+  await render("choose plant", () => click($(".sheet .pickrow:not(.is-blocked)")));
   check("opponent preview renders", ($(".screen")?.textContent ?? "").includes("Đối thủ"));
   check("compares power ratings", ($(".screen")?.textContent ?? "").includes("Lực chiến của bạn"));
   check("shows opponent traits", ($(".screen")?.textContent ?? "").includes("Đặc tính công khai"));
@@ -348,8 +348,8 @@ await render("create a room", () => {
 });
 await render("open room creation", () => click(byText(".screen .btn", "Tạo phòng")));
 {
-  check("plant picker opens for rooms", !!$(".sheet .plantcard"));
-  await render("pick room plant", () => click($(".sheet .plantcard")));
+  check("plant picker opens for rooms", !!$(".sheet .pickrow"));
+  await render("pick room plant", () => click($(".sheet .pickrow:not(.is-blocked)")));
   const t = $(".screen")?.textContent ?? "";
   check("room code is displayed", !!$(".codebox"));
   const code = $(".codebox")?.textContent?.trim() ?? "";

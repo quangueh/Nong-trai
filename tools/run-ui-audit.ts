@@ -57,7 +57,7 @@ await page.waitForTimeout(700);
 for (const [slot, card] of [[0, 0], [1, 1]] as const) {
   await page.locator(".slot").nth(slot).click();
   await page.waitForTimeout(350);
-  await page.locator(".sheet .plantcard").nth(card).click();
+  await page.locator(".sheet .pickrow").nth(card).click();
   await page.waitForTimeout(350);
 }
 await page.waitForTimeout(400);

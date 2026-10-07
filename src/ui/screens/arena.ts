@@ -1,6 +1,6 @@
 /** Arena screen: PvE, room create/join, lobby, result (docs/05 §7-§10). */
 
-import { el, toast, elementTags, traitChips, fmt, plantThumb, dismissOnEscape } from "../components";
+import { el, toast, elementTags, traitChips, fmt, plantThumb, pickPlantSheet, battleBlock } from "../components";
 import { store } from "../app";
 import type { Plant } from "../../core/types";
 import { canBattle } from "../../growth/stages";
@@ -118,11 +118,11 @@ function renderMenu(nav: Navigate): HTMLElement {
 
   const pve = wideAction("🎯", "Đấu với AI", "Hệ thống tìm đối thủ cùng cấp độ lực chiến", true);
   pve.disabled = !ready.length;
-  pve.addEventListener("click", () => pickPlant(nav, (plant) => nav("arena", { plantId: plant.plantId })));
+  pve.addEventListener("click", () => pickPlant((plant) => nav("arena", { plantId: plant.plantId })));
   root.appendChild(pve);
 
   const create = wideAction("🏠", "Tạo phòng", "Sinh mã 6 ký tự để mời đối thủ", false);
-  create.addEventListener("click", () => pickPlant(nav, (plant) => renderRoomHost(nav, plant)));
+  create.addEventListener("click", () => pickPlant((plant) => renderRoomHost(nav, plant)));
   root.appendChild(create);
 
   const joinBox = el("div", { class: "card" });
@@ -144,7 +144,7 @@ function renderMenu(nav: Navigate): HTMLElement {
       toast("Mã phòng cần đúng 6 ký tự");
       return;
     }
-    pickPlant(nav, (plant) => renderRoomGuest(nav, code, plant));
+    pickPlant((plant) => renderRoomGuest(nav, code, plant));
   });
   joinBox.append(input, joinBtn, el("div", { class: "callout", style: "margin-top:8px" }, [roomRelayAvailable
     ? "Nhập mã của đối thủ để vào phòng — đấu qua mạng, không cần cùng thiết bị. Chủ phòng quyết định toàn bộ kết quả trận."
@@ -279,50 +279,28 @@ function renderMenu(nav: Navigate): HTMLElement {
 }
 
 /**
- * Opens a sheet listing battle-ready plants. `onPick` receives the chosen
- * plant and may return a view, which is mounted in place of the current screen.
+ * Opens the shared garden sheet. `onPick` receives the chosen plant and may
+ * return a view, which is mounted in place of the current screen.
  * Returning nothing leaves the screen as-is; without this, creating a room
  * would silently do nothing because the callback's result was discarded.
  */
-function pickPlant(nav: Navigate, onPick: (plant: Plant) => HTMLElement | void) {
-  const shell = document.querySelector(".shell")!;
+function pickPlant(onPick: (plant: Plant) => HTMLElement | void) {
   const screenHost = document.querySelector(".screen") as HTMLElement | null;
-  const content = el("div");
-  content.appendChild(el("h3", { style: "font-size:16px;margin-bottom:10px" }, ["Chọn cây chiến đấu"]));
-  const list = el("div", { class: "scrollx" });
-  const ready = store.state.plants.filter((p) => canBattle(p));
-  if (!ready.length) content.appendChild(el("div", { class: "empty" }, ["Chưa có cây trưởng thành."]));
-  for (const p of ready) {
-    const card = el("div", { class: "plantcard", style: "flex:none;width:118px" });
-    card.appendChild(plantThumb(p, 68));
-    const n = el("div", { class: "name", style: "font-size:11px" });
-    // An unresolvable "Rễ Gai hạt" here is a choice made blind, so the name is resolved
-    // against the whole garden - the same name the arena roster showed a moment ago.
-    n.textContent = plantDisplayName(p, store.state.plants);
-    card.append(n, el("div", { class: "tiny muted mono" }, [`Lực ${fmt(p.powerRating)}`]));
-    card.addEventListener("click", () => {
-      overlay.remove();
-      s.remove();
+  pickPlantSheet({
+    title: "Chọn cây chiến đấu",
+    // The whole garden is listed — a plant absent here reads as lost, while a plant
+    // dimmed with its reason reads as not ready yet.
+    plants: store.state.plants,
+    blocked: battleBlock,
+    emptyText: "Chưa có cây nào trong vườn.",
+    onPick: (p) => {
       const view = onPick(p);
       if (view && screenHost) {
         screenHost.replaceChildren(view);
         screenHost.scrollTop = 0;
       }
-    });
-    list.appendChild(card);
-  }
-  content.appendChild(list);
-  const overlay = el("div", { class: "overlay" });
-  const s = el("div", { class: "sheet" });
-  s.append(el("div", { class: "handle" }), content);
-  const dismiss = (): void => {
-    overlay.remove();
-    s.remove();
-  };
-  overlay.addEventListener("click", dismiss);
-  dismissOnEscape(s, dismiss);
-  shell.append(overlay, s);
-  void nav;
+    },
+  });
 }
 // --- PvE ---
 

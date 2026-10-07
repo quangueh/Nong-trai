@@ -73,12 +73,12 @@ export async function uiSmokeTest(): Promise<string[]> {
   await step("breeding: pick parent A", () => {
     g.navigate("breeding");
     (document.querySelectorAll(".screen .slot")[0] as HTMLElement)?.click();
-    const card = document.querySelector(".sheet .plantcard") as HTMLElement;
+    const card = document.querySelector(".sheet .pickrow") as HTMLElement;
     card?.click();
   });
   await step("breeding: pick parent B", () => {
     (document.querySelectorAll(".screen .slot")[1] as HTMLElement)?.click();
-    (document.querySelector(".sheet .plantcard") as HTMLElement)?.click();
+    (document.querySelector(".sheet .pickrow") as HTMLElement)?.click();
   });
   await step("breeding: run", () => {
     const b = [...document.querySelectorAll(".screen .btn")].find(
@@ -110,7 +110,7 @@ export async function uiSmokeTest(): Promise<string[]> {
     g.navigate("arena");
     const b = [...document.querySelectorAll(".screen .btn")].find((x) => x.textContent?.includes("Tạo phòng")) as HTMLButtonElement | undefined;
     b?.click();
-    (document.querySelector(".sheet .plantcard") as HTMLElement)?.click();
+    (document.querySelector(".sheet .pickrow") as HTMLElement)?.click();
   });
 
   return [...log.map((l) => `  ${l}`), ...errors.map((e) => `  \x1b[31mFAIL\x1b[0m ${e}`)];

@@ -360,7 +360,7 @@ console.log("\nthe moments that carry the game:");
     if (b) b.click();
   })()`);
   await page.waitForTimeout(900);
-  await page.evaluate(`(() => { const c = document.querySelector(".sheet .plantcard"); if (c) c.click(); })()`);
+  await page.evaluate(`(() => { const c = document.querySelector(".sheet .pickrow"); if (c) c.click(); })()`);
   await page.waitForTimeout(900);
   await page.evaluate(`(() => {
     (window).__game.__recorded.length = 0;

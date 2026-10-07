@@ -5,6 +5,9 @@ import { createSeedPlant } from "../genetics/genomeGenerator";
 import { renderPlantSvg } from "../render/plantRenderer";
 
 import type { Plant } from "../core/types";
+import { STAGE_LABEL } from "../core/types";
+import { canBattle, stageProgress } from "../growth/stages";
+import { plantDisplayName } from "../core/plantNames";
 import { RARITY_META, RARITY_ORDER, type Rarity } from "../config/rarity";
 import { dominantElement, ELEMENT_INFO, ELEMENTS, type ElementId } from "../config/elements";
 import { TRAITS_BY_ID } from "../config/traits";
@@ -141,6 +144,115 @@ export function plantCard(plant: Plant, onClick: () => void): HTMLElement {
 
   card.addEventListener("click", onClick);
   return card;
+}
+
+/**
+ * "Why this plant cannot be picked", in one phrase, for the picker's dimmed rows.
+ *
+ * An immature plant's reason is its growth, because that is what will lift the block:
+ * "Đang lớn — Mầm 62%" says both that it is out and roughly for how long. Anything
+ * battle-ready answers null, and callers then layer their own locks on top.
+ */
+export function plantGrowingBlock(p: Plant): string | null {
+  if (canBattle(p)) return null;
+  const pct = Math.round(stageProgress(p, Date.now()) * 100);
+  return `Đang lớn — ${STAGE_LABEL[p.growth.stage]} ${pct}%`;
+}
+
+/** Battle pickers (arena, rooms, friend duels): grown, and not mid-fight. */
+export function battleBlock(p: Plant): string | null {
+  return plantGrowingBlock(p) ?? (p.locks.battle ? "Đang trong trận đấu" : null);
+}
+
+/** The breeding picker: battle rules plus the fusion lock. */
+export function breedBlock(p: Plant): string | null {
+  return battleBlock(p) ?? (p.locks.breeding ? "Đang lai tạo" : null);
+}
+
+/**
+ * The plant-choosing sheet, shared by every "pick one of mine" flow — arena fights,
+ * room battles, friend duels, breeding.
+ *
+ * It lists the *whole* garden, not only the eligible subset: a plant that is missing
+ * from the list entirely reads as a bug ("vườn có mà chỗ này không có"), while a plant
+ * that is present but dimmed with its reason reads as a rule. `blocked` answers
+ * "why can't I take this one" in a phrase; a null answer makes the row a button.
+ *
+ * Rows are vertical rather than the old horizontal card strip, because picking carries
+ * real consequences — a fight or a fusion — and the choice deserves the plant's level,
+ * generation, elements and traits in view, not a name and a power number alone.
+ */
+export function pickPlantSheet(opts: {
+  title: string;
+  plants: Plant[];
+  /** A Vietnamese reason the plant cannot be picked, or null if it can. */
+  blocked: (plant: Plant) => string | null;
+  emptyText: string;
+  onPick: (plant: Plant) => void;
+}): void {
+  const shell = document.querySelector(".shell") ?? document.body;
+  const overlay = el("div", { class: "overlay" });
+  const sheet = el("div", { class: "sheet" });
+  const dismiss = () => {
+    overlay.remove();
+    sheet.remove();
+  };
+
+  const content = el("div");
+  content.appendChild(el("h3", { style: "font-size:16px;margin-bottom:10px" }, [opts.title]));
+
+  // Eligible first, strongest first; the rest follow so the garden is all accounted
+  // for and each carries the reason it is out.
+  const rows = [...opts.plants].sort((a, b) => {
+    const aOk = !opts.blocked(a);
+    const bOk = !opts.blocked(b);
+    if (aOk !== bOk) return aOk ? -1 : 1;
+    return b.powerRating - a.powerRating;
+  });
+
+  if (!rows.length) content.appendChild(el("div", { class: "empty" }, [opts.emptyText]));
+
+  const list = el("div");
+  for (const p of rows) {
+    const why = opts.blocked(p);
+    const row = el("div", {
+      class: "friend-row pickrow" + (why ? " is-blocked" : ""),
+      style: why ? "opacity:.55;cursor:default" : "cursor:pointer",
+    });
+    const thumb = plantThumb(p, 56);
+    thumb.style.flex = "none";
+    const body = el("div", { class: "grow", style: "min-width:0" });
+    body.append(
+      el("div", { class: "small", style: "font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, [
+        plantDisplayName(p, opts.plants),
+      ]),
+      el("div", { class: "tiny muted mono" }, [
+        `Lv${p.growth.level} · Đời ${p.generation} · ⚔${fmt(p.powerRating)} · `,
+      ]),
+    );
+    // Rarity is part of the line it measures, not a separate row: "Lv12 · Đời 3 ·
+    // ⚔420 · A" is read as one fact.
+    body.lastElementChild?.appendChild(rarityTag(p.rarity));
+
+    const chips = el("div", { class: "row wrap", style: "gap:4px;margin-top:4px" });
+    for (const t of elementTags(p).slice(0, 3)) chips.appendChild(t);
+    for (const t of traitChips(p).slice(0, 3)) chips.appendChild(t);
+    if (chips.children.length) body.appendChild(chips);
+
+    if (why) body.appendChild(el("div", { class: "tiny", style: "color:var(--danger);margin-top:3px" }, [why]));
+    else row.addEventListener("click", () => {
+      dismiss();
+      opts.onPick(p);
+    });
+    row.append(thumb, body);
+    list.appendChild(row);
+  }
+  content.appendChild(list);
+
+  sheet.append(el("div", { class: "handle" }), content);
+  overlay.addEventListener("click", dismiss);
+  dismissOnEscape(sheet, dismiss);
+  shell.append(overlay, sheet);
 }
 
 /** Six-axis archetype radar (docs/15 §18). */

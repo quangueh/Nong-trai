@@ -9,7 +9,7 @@ import {
   protocolUnlocked,
   type ProtocolId,
 } from "../../genetics/protocols";
-import { el, toast, oddsBar, probabilityRows, rarityTag, traitChips, plantThumb, archetypeRadar, fmt, dismissOnEscape } from "../components";
+import { el, toast, oddsBar, probabilityRows, rarityTag, traitChips, plantThumb, archetypeRadar, fmt, dismissOnEscape, pickPlantSheet, breedBlock } from "../components";
 import { store } from "../app";
 import type { Plant } from "../../core/types";
 
@@ -67,7 +67,7 @@ export function renderBreeding(nav: Navigate): HTMLElement {
     paintSlot(
       slotElA,
       slotA ? store.get(slotA) : undefined,
-      () => openPicker((id) => {
+      () => openPicker("cây A", slotB, (id) => {
         slotA = id;
         paintSlots();
         paintCost();
@@ -77,7 +77,7 @@ export function renderBreeding(nav: Navigate): HTMLElement {
     paintSlot(
       slotElB,
       slotB ? store.get(slotB) : undefined,
-      () => openPicker((id) => {
+      () => openPicker("cây B", slotA, (id) => {
         slotB = id;
         paintSlots();
         paintCost();
@@ -302,45 +302,19 @@ function paintSlot(slot: HTMLElement, plant: Plant | undefined, onClick: () => v
   slot.onclick = onClick;
 }
 
-function openPicker(onPick: (id: string) => void) {
-  const shell = document.querySelector(".shell")!;
-  const content = el("div");
-  content.appendChild(el("h3", { style: "font-size:16px;margin-bottom:10px" }, ["Chọn cây trưởng thành"]));
-  const list = el("div", { class: "scrollx", style: "padding-bottom:8px" });
-  const mature = store.state.plants.filter((p) => p.growth.stage === "mature" || p.growth.stage === "awakened");
-  if (!mature.length) {
-    content.appendChild(el("div", { class: "empty" }, ["Chưa có cây trưởng thành."]));
-  }
-  for (const p of mature) {
-    const card = el("div", { class: "plantcard", style: "flex:none;width:120px" });
-    card.appendChild(plantThumb(p, 70));
-    const n = el("div", { class: "name", style: "font-size:11px" });
-    // Two plants of one species are indistinguishable here without this, and picking the
-    // wrong one is irreversible. Resolved against the whole garden, so the name matches
-    // the one the same plant carries on every other screen.
-    n.textContent = plantDisplayName(p, store.state.plants);
-    card.appendChild(n);
-    card.appendChild(el("div", { class: "tiny muted mono" }, [`Lv${p.growth.level} · D${p.generation}`]));
-    card.addEventListener("click", () => {
-      onPick(p.plantId);
-      overlay.remove();
-      s.remove();
-    });
-    list.appendChild(card);
-  }
-  content.appendChild(list);
-
-  const overlay = el("div", { class: "overlay" });
-  const s = el("div", { class: "sheet" });
-  s.appendChild(el("div", { class: "handle" }));
-  s.appendChild(content);
-  const dismiss = (): void => {
-    overlay.remove();
-    s.remove();
-  };
-  overlay.addEventListener("click", dismiss);
-  dismissOnEscape(s, dismiss);
-  shell.append(overlay, s);
+function openPicker(label: string, otherSlot: string | null, onPick: (id: string) => void) {
+  // The shared sheet lists the whole garden with the reason each plant is out —
+  // fusion spends both parents, so the choice deserves every detail on the row.
+  // `otherSlot` keeps the plant already in the other parent slot visible but
+  // unpickable: breeding a plant with itself is rejected at the store anyway,
+  // so the row should say why before the tap rather than toast it after.
+  pickPlantSheet({
+    title: `Chọn ${label}`,
+    plants: store.state.plants,
+    blocked: (p) => (p.plantId === otherSlot ? "Đã chọn ở ô kia" : breedBlock(p)),
+    emptyText: "Chưa có cây nào trong vườn.",
+    onPick: (p) => onPick(p.plantId),
+  });
 }
 
 // --- mutation reveal ---
