@@ -293,7 +293,48 @@ function paintQuests(body: HTMLElement, nav: Navigate): void {
     tabs.appendChild(b);
   }
 
-  body.append(tabs, list);
+  /* One tap collects every finished reward, whichever tab it sits on. The count in
+     the label is the reason the button exists — a shelf with four claimable rows is
+     four taps without it. */
+  const claimable = views.filter((v) => v.status === "completed");
+  if (claimable.length) {
+    const all = el("button", { class: "btn primary block", style: "margin:8px 0" }, [
+      `🎁 Nhận tất cả (${claimable.length})`,
+    ]);
+    all.addEventListener("click", () => {
+      const totals = { coins: 0, exp: 0, breederXp: 0, items: 0, geneCrystal: 0 };
+      let got = 0;
+      for (const v of claimable) {
+        const res = store.claimQuest(v.def.id);
+        if (!res.ok || !res.rewards) continue;
+        got++;
+        totals.coins += res.rewards.coins ?? 0;
+        totals.exp += res.rewards.exp ?? 0;
+        totals.breederXp += res.rewards.breederXp ?? 0;
+        totals.items += res.rewards.items ?? 0;
+        totals.geneCrystal += res.rewards.geneCrystal ?? 0;
+      }
+      if (got > 0) {
+        rewardFly(all, totals);
+        const parts = [
+          totals.coins ? `🪙 ${totals.coins.toLocaleString("vi-VN")}` : "",
+          totals.exp ? `✨ ${totals.exp} EXP cây` : "",
+          totals.breederXp ? `🎖️ ${totals.breederXp} EXP nhà lai` : "",
+          totals.items ? `🧺 ${totals.items}` : "",
+          totals.geneCrystal ? `💎 ${totals.geneCrystal}` : "",
+        ]
+          .filter(Boolean)
+          .join("  ");
+        toast(`Đã nhận ${got} nhiệm vụ${parts ? `: ${parts}` : ""}`, 3000);
+      } else {
+        toast("Chưa nhận được thưởng nào");
+      }
+      nav("garden");
+    });
+    body.append(tabs, all, list);
+  } else {
+    body.append(tabs, list);
+  }
   paintList();
 }
 

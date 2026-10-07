@@ -153,6 +153,28 @@ check("the plots are on the garden tab", $$(".screen .plots .plot").length > 0, 
 // now, not above the soil.
 await render("open the quests tab", () => click(byText(".screen .tabs .tab", "Nhiệm vụ")));
 check("the quests tab shows quest progress", /\d+\/\d+/.test($(".screen")?.textContent ?? ""), ($(".screen")?.textContent ?? "").slice(0, 60));
+
+// Claim-all: one button sweeps every finished quest, whichever tab it sits on.
+{
+  for (const id of ["main_01_plant", "main_02_care"]) {
+    // Entries are created lazily at sync, so one that never fired an event is absent.
+    const e = (store.state.quests.entries[id] ??= { progress: 0, status: "active" });
+    e.progress = 999;
+    e.status = "completed";
+  }
+  await render("quests repainted", () => navigate("garden"));
+  const all = byText(".screen .btn", "Nhận tất cả");
+  check("claim-all button appears", !!all);
+  const coinsBefore = store.state.leafCoin;
+  await render("claim all", () => click(all));
+  check(
+    "claim-all collected both quests",
+    store.state.quests.entries.main_01_plant.status === "claimed" &&
+      store.state.quests.entries.main_02_care.status === "claimed",
+  );
+  check("claim-all paid out", store.state.leafCoin > coinsBefore, `+${store.state.leafCoin - coinsBefore}`);
+  check("claim-all button is gone once nothing is claimable", !byText(".screen .btn", "Nhận tất cả"));
+}
 await render("return to the plots tab", () => click(byText(".screen .tabs .tab", "Vườn")));
 // Layout: plots are 2-up on mobile so the generated plant is actually legible.
 // jsdom has no layout engine, so size is asserted from the SVG attributes.
