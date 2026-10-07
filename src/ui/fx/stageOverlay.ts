@@ -22,7 +22,7 @@
  * and either reads the wrong number or learns that the number is not worth waiting for.
  */
 
-import { el } from "../components";
+import { el, dismissOnEscape } from "../components";
 import { sfx } from "../../audio/audio";
 import { reducedMotion } from "../../audio/audio";
 import { compactNumber } from "../../core/currency";
@@ -306,22 +306,15 @@ export function showStageResult(out: StageOutcome, onContinue: () => void): Prom
   }
 
   return new Promise<void>((resolve) => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        finish();
-      }
-    };
     const finish = (): void => {
       cancelled = true;
-      document.removeEventListener("keydown", onKey);
       sfx.play("tap");
       overlay.remove();
       onContinue();
       resolve();
     };
     go.addEventListener("click", finish);
-    document.addEventListener("keydown", onKey);
+    dismissOnEscape(overlay, finish);
   });
 }
 
@@ -469,14 +462,7 @@ export function showStageBrief(brief: StageBrief, monster: MonsterSpec, fighter:
   overlay.appendChild(panel);
   (document.querySelector(".shell") ?? document.body).appendChild(overlay);
 
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      close();
-    }
-  };
   const close = (): void => {
-    document.removeEventListener("keydown", onKey);
     overlay.remove();
   };
   go.addEventListener("click", () => {
@@ -485,9 +471,12 @@ export function showStageBrief(brief: StageBrief, monster: MonsterSpec, fighter:
   });
   cancel.addEventListener("click", close);
   overlay.addEventListener("click", (e: Event) => {
-    if (e.target === overlay) close();
+    /* detail > 1 is the trailing click of the double-gesture that opened this
+       brief — it lands on the backdrop only because the brief mounted between
+       the two clicks. That was never a dismiss. */
+    if (e.target === overlay && (e as MouseEvent).detail <= 1) close();
   });
-  document.addEventListener("keydown", onKey);
+  dismissOnEscape(overlay, close);
   go.focus();
 }
 

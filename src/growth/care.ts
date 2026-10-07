@@ -374,8 +374,10 @@ export function gainXp(plant: Plant, xp: number): number {
   // Floored, because this counter is printed and every grant in the game is a whole
   // number. Nothing produces a fraction today - verified over ninety care actions - but a
   // fractional bar would show something like "55.257805070693934" if any future source
-  // ever did, and the floor makes that impossible rather than merely unlikely.
-  plant.growth.xp = Math.floor(plant.growth.xp + xp);
+  // ever did, and the floor makes that impossible rather than merely unlikely. A
+  // non-finite or negative grant would leave the bar at NaN or "-50" forever, and
+  // neither is a gain - refuse it before the counter moves.
+  plant.growth.xp = Math.floor(plant.growth.xp + (Number.isFinite(xp) ? Math.max(0, xp) : 0));
   // The requirement is recomputed on every step, not hoisted out of the loop.
   //
   // It used to be read once before the loop and subtracted unchanged each time, which

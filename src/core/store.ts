@@ -6,6 +6,7 @@
 
 import { Rng, clamp, round2, seedToken } from "./rng";
 import type { Plant } from "./types";
+import { STAGE_ORDER, STAGE_SECONDS } from "./types";
 import { createSeedPlant, breedPlants, genomeSignature, validateGenome, estimatePower, type BreedingContext, type BreedingResult } from "../genetics/genomeGenerator";
 import { applyCatalyst, getProtocol, protocolDiversity, protocolUnlocked, type ProtocolId } from "../genetics/protocols";
 import { plantName, nameKey } from "../genetics/names";
@@ -551,16 +552,11 @@ export class GameStore {
   // --- economy ---------------------------------------------------------
 
   private credit(delta: number, reason: string) {
-    this.state.leafCoin += delta;
-    this.state.ledger.push({ at: Date.now(), delta, reason });
-    if (this.state.ledger.length > 200) this.state.ledger.splice(0, this.state.ledger.length - 200);
+    this.creditCurrency("leafCoin", delta, reason);
   }
 
   private debit(delta: number, reason: string): boolean {
-    if (this.state.leafCoin < delta) return false;
-    this.state.leafCoin -= delta;
-    this.state.ledger.push({ at: Date.now(), delta: -delta, reason });
-    return true;
+    return this.debitCurrency("leafCoin", delta, reason);
   }
 
   // --- seeding ---------------------------------------------------------
@@ -608,6 +604,9 @@ export class GameStore {
    * is the first question a player asks when a currency will not move.
    */
   creditCurrency(id: CurrencyId, delta: number, reason: string) {
+    /* A NaN would poison the balance into "NaN xu" forever; a negative credit is
+       a debit that skipped the affordability check. Neither is a payment. */
+    if (!Number.isFinite(delta) || delta <= 0) return;
     this.state[id] += delta;
     this.state.ledger.push({ at: Date.now(), delta, reason });
     if (this.state.ledger.length > 200) this.state.ledger.splice(0, this.state.ledger.length - 200);
@@ -623,6 +622,9 @@ export class GameStore {
 
   /** Spend a currency. Refuses rather than going negative, and says which one was short. */
   private debitCurrency(id: CurrencyId, delta: number, reason: string): boolean {
+    /* A non-positive or non-finite "price" must not debit at all — `0 < -5` is
+       false, so a negative delta would otherwise add money instead of taking it. */
+    if (!Number.isFinite(delta) || delta < 0) return false;
     if (this.state[id] < delta) return false;
     this.state[id] -= delta;
     this.state.ledger.push({ at: Date.now(), delta: -delta, reason });
@@ -671,6 +673,11 @@ export class GameStore {
 
   buySeed(species: SpeciesId, count = 1): { ok: boolean; reason?: string } {
     const def = SPECIES_BY_ID[species];
+    if (!def) return { ok: false, reason: "Hạt không tồn tại" };
+    /* A negative or fractional count prices itself negative, which makes
+       debitCurrency pay *in* — the shop would hand out coins and take seeds
+       below zero. Only whole, positive purchases exist. */
+    if (!Number.isInteger(count) || count < 1) return { ok: false, reason: "Số lượng không hợp lệ" };
     // Unlock gate. Without it all 6000 generated species are purchasable on day
     // one and progression means nothing - the shop would simply be the most
     // expensive entry in the registry.
@@ -798,12 +805,14 @@ export class GameStore {
     if (a.plantId === b.plantId) return { ok: false, reason: "Không thể tự lai" };
     if (a.growth.stage !== "mature" && a.growth.stage !== "awakened") return { ok: false, reason: "Cây A chưa trưởng thành" };
     if (b.growth.stage !== "mature" && b.growth.stage !== "awakened") return { ok: false, reason: "Cây B chưa trưởng thành" };
-    // Breeding now spends the parents, so the cap has to leave room for the child.
-    // `>= nurseryCap` was right when the parents survived: the child took a plot the
-    // parents' plots were freed by, so the count did not grow. With both parents gone
-    // the garden grows by one every time, and checking `>= cap` let a breed push the
-    // garden one plant past the cap it was validated against.
-    if (this.state.plants.length + 1 > this.state.nurseryCap) return { ok: false, reason: "Vườn đã đầy" };
+    /* A live fight holds `locks.battle`. Breeding spends the parent, and spending a
+       fighter mid-fight would leave the running battle writing rewards to a plant
+       the garden no longer owns. */
+    if (a.locks.battle || b.locks.battle) return { ok: false, reason: "Cây đang trong trận đấu" };
+    // Breeding spends both parents: the garden goes in at N and comes out at
+    // N-1, so a full garden can still breed — fusion frees a plot, it does not
+    // need one. Refusing here would force a pointless sell first.
+    if (this.state.plants.length - 1 > this.state.nurseryCap) return { ok: false, reason: "Vườn đã đầy" };
     if (protocol && !protocolUnlocked(protocol, this.state.breederLevel)) {
       return {
         ok: false,
@@ -932,16 +941,20 @@ export class GameStore {
  * on the one screen where a player is most likely to be watching the level.
  */
 addPlantXp(plant: Plant, xp: number) {
-  const levels = gainXp(plant, xp);
+  // A non-finite grant would floor to NaN inside gainXp and poison growth.xp and
+  // lifetimeExp in one shot — and a negative one would print "-50 EXP" on a
+  // level-up receipt. Neither is a gain; refuse both before anything moves.
+  const granted = Number.isFinite(xp) ? Math.max(0, Math.round(xp)) : 0;
+  const levels = gainXp(plant, granted);
   // The lifetime total, so a quest or an achievement that measures everything earned is not
   // restricted to what happens to be sitting in the current bar.
-  this.state.lifetimeExp += Math.max(0, Math.round(xp));
-  this.questEvent({ name: "exp_gained", amount: Math.max(0, Math.round(xp)) });
+  this.state.lifetimeExp += granted;
+  this.questEvent({ name: "exp_gained", amount: granted });
   // The grant is passed on because this is the only place that knows it. `gainXp` reports
   // how many levels were crossed and says nothing about experience, and the celebration
   // prints "+N EXP" — so with nothing to print it fell back to "đã lên cấp", which is the
   // receipt with the number the player just earned removed from it.
-  if (levels > 0) this.announcePlantLevelUp(plant, levels, xp);
+  if (levels > 0) this.announcePlantLevelUp(plant, levels, granted);
   return levels;
 }
 
@@ -1656,6 +1669,69 @@ function loadOrCreate(rawOverride?: string): PlayerState {
     if (raw) {
       const parsed = JSON.parse(raw) as PlayerState;
       if (parsed && Array.isArray(parsed.plants)) {
+        /*
+         * Structural triage before any repair below touches a field.
+         *
+         * A plant without dna/stats/growth cannot be grown, cared for, battled or
+         * drawn — one truncated entry used to throw inside the repair loop and take
+         * the whole garden down with it. What is merely missing gets a default;
+         * what is unreadable gets dropped, and the rest of the garden survives.
+         */
+        parsed.plants = parsed.plants.filter(
+          (pl): pl is Plant => !!pl && typeof pl === "object" && !!pl.dna && !!pl.stats && !!pl.growth,
+        );
+        if (typeof parsed.seeds !== "object" || parsed.seeds === null || Array.isArray(parsed.seeds)) parsed.seeds = {};
+        if (!Number.isFinite(parsed.items)) parsed.items = 0;
+        if (!Number.isFinite(parsed.geneCrystal)) parsed.geneCrystal = 0;
+        if (!Number.isFinite(parsed.inventoryCap) || (parsed.inventoryCap as number) < 1) parsed.inventoryCap = 60;
+        if (!Number.isFinite(parsed.nurseryCap) || (parsed.nurseryCap as number) < 1) parsed.nurseryCap = 6;
+        if (!Number.isFinite(parsed.breederLevel) || (parsed.breederLevel as number) < 1) parsed.breederLevel = 1;
+        if (!Number.isFinite(parsed.breederXp)) parsed.breederXp = 0;
+        if (!Array.isArray(parsed.ledger)) parsed.ledger = [];
+        if (!Array.isArray(parsed.seenGenes)) parsed.seenGenes = [];
+        if (typeof parsed.playerId !== "string" || !parsed.playerId) parsed.playerId = `pl_${seedToken("player", Date.now(), Math.random())}`;
+        if (typeof parsed.name !== "string" || !parsed.name) parsed.name = "Nhà Lai Tạo";
+        if (!Number.isFinite(parsed.createdAt)) parsed.createdAt = Date.now();
+        if (!Number.isFinite(parsed.lastSeen)) parsed.lastSeen = Date.now();
+        for (const pl of parsed.plants) {
+          pl.dna.elementGenes = pl.dna.elementGenes ?? ({} as Plant["dna"]["elementGenes"]);
+          pl.dna.statGenes = pl.dna.statGenes ?? ({} as Plant["dna"]["statGenes"]);
+          pl.dna.skillGenes = pl.dna.skillGenes ?? ({} as Plant["dna"]["skillGenes"]);
+          pl.dna.mutationGenes = pl.dna.mutationGenes ?? ({} as Plant["dna"]["mutationGenes"]);
+          pl.baseLineage = Array.isArray(pl.baseLineage) ? pl.baseLineage : [];
+          pl.careMemory = { recent: [], counts: {}, lastAction: null, ...(pl.careMemory as Partial<Plant["careMemory"]> | undefined) };
+          pl.stress = pl.stress ?? {};
+          pl.locks = { favorite: false, manual: false, battle: false, breeding: false, transaction: false, ...(pl.locks as Partial<Plant["locks"]> | undefined) };
+          /* Battle/breeding/transaction locks describe an operation that was live
+             when the save was written — a reload means it is over, whatever the
+             save says. Keeping a saved `battle: true` would lock the plant out of
+             selling and breeding forever. `manual`/`favorite` are the player's
+             choice and persist. */
+          pl.locks.battle = false;
+          pl.locks.breeding = false;
+          pl.locks.transaction = false;
+          pl.economy = { purchaseCost: 0, investedMaterialValue: 0, careCycles: 0, expectedSellPrice: 0, ...(pl.economy as Partial<Plant["economy"]> | undefined) };
+          pl.growthStats = { growthRate: 0.5, careEfficiency: 0.5, mutationChance: 0.05, breedingPower: 0.4, stability: 0.8, ...(pl.growthStats as Partial<Plant["growthStats"]> | undefined) };
+          pl.hidden = { temperament: 0.5, wildness: 0.5, genePurity: 0.5, latentPower: 0.5, mutationDebt: 0, ...(pl.hidden as Partial<Plant["hidden"]> | undefined) };
+          pl.traits = Array.isArray(pl.traits) ? pl.traits : [];
+          pl.mutations = Array.isArray(pl.mutations) ? pl.mutations : [];
+          pl.skills = Array.isArray(pl.skills) ? pl.skills : [];
+          pl.parents = pl.parents ?? { a: null, b: null };
+          pl.potential = pl.potential ?? {};
+          if (typeof pl.mood !== "string") pl.mood = "calm";
+          pl.growth.stage = STAGE_ORDER.includes(pl.growth.stage) ? pl.growth.stage : "seed";
+          if (!Number.isFinite(pl.growth.stageStartedAt)) pl.growth.stageStartedAt = Date.now();
+          if (!Number.isFinite(pl.growth.stageReadyAt)) pl.growth.stageReadyAt = pl.growth.stageStartedAt + STAGE_SECONDS[pl.growth.stage] * 1000;
+          if (!Number.isFinite(pl.growth.level) || pl.growth.level < 1) pl.growth.level = 1;
+          if (!Number.isFinite(pl.growth.xp)) pl.growth.xp = 0;
+          /* A NaN in a stat propagates into power, sell price and every care
+             preview — clamp it to 0 here rather than print NaN in the HUD. */
+          for (const [k, v] of Object.entries(pl.stats)) {
+            if (!Number.isFinite(v)) (pl.stats as unknown as Record<string, number>)[k] = 0;
+          }
+          if (!Number.isFinite(pl.powerRating)) pl.powerRating = 0;
+          if (!Number.isFinite(pl.rarityScore)) pl.rarityScore = 0;
+        }
         // Repair missing pity.
         parsed.pity = { ...emptyPity(), ...parsed.pity };
         // Repair the currencies a save written before the multi-currency shop has none of.

@@ -142,6 +142,7 @@ check(
   young.growth.stage = "seed";
   check("cannot breed with an immature plant", !store.breed(young.plantId, young.plantId).ok);
   check("cannot breed a plant with itself", !store.breed(young.plantId, young.plantId).ok);
+
   check(
     "cannot breed a plant that is already spent",
     !store.breed(a.plantId, second.plantId).ok,
@@ -163,6 +164,42 @@ check(
     if (store.buySeed(id).ok) store.plantSeed(id);
   }
   check("the garden has stock for the remaining sections", store.state.plants.length >= 3, `${store.state.plants.length} plants`);
+
+  /*
+   * A full garden can still breed: fusion spends two plots and gives one back,
+   * so requiring a free slot first would force a pointless sell. The old check
+   * counted the child against the cap without crediting the parents leaving.
+   */
+  {
+    const capBefore = store.state.nurseryCap;
+    const coinsB = store.state.leafCoin;
+    const p1 = store.state.plants[0];
+    const p2 = store.state.plants[1];
+    for (const pl of [p1, p2]) {
+      pl.growth.stage = "mature";
+      pl.growth.level = 12;
+    }
+    store.state.leafCoin = 99999;
+    // A plant in a live fight carries locks.battle — spending it as a breeding
+    // parent mid-fight would leave the running battle paying out to a plant the
+    // garden no longer owns.
+    p1.locks.battle = true;
+    check(
+      "cannot breed a plant that is in a live fight",
+      !store.breed(p1.plantId, p2.plantId).ok,
+    );
+    p1.locks.battle = false;
+    store.state.nurseryCap = store.state.plants.length; // garden exactly full
+    const atCap = store.breed(p1.plantId, p2.plantId);
+    check("a full garden can still breed", atCap.ok, atCap.reason);
+    check(
+      "breeding a full garden frees a plot",
+      store.state.plants.length === store.state.nurseryCap - 1,
+      `cap ${store.state.nurseryCap}, plants ${store.state.plants.length}`,
+    );
+    store.state.nurseryCap = capBefore;
+    store.state.leafCoin = coinsB;
+  }
 }
 
 section("6. Battle and rewards");

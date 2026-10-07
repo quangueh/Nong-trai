@@ -383,6 +383,11 @@ function renderPickOpponent(nav: Navigate, plant: Plant): HTMLElement {
   const go = el("button", { class: "btn primary block", style: "margin-top:16px" }, ["⚔ Bắt đầu trận"]);
   go.addEventListener("click", () => {
     root.replaceChildren();
+    /* The fight is live until onFinish. A plant in a live fight must not be sold
+       or bred out from under it — the settle would pay out to a plant the garden
+       no longer owns. Cleared in onFinish, including when the view is running
+       detached after a nav-away: the fight still resolves and still clears. */
+    plant.locks.battle = true;
     const view = new BattleView({
       container: root,
       plantA: plant,
@@ -390,6 +395,7 @@ function renderPickOpponent(nav: Navigate, plant: Plant): HTMLElement {
       mySide: "a",
       interactive: true,
       onFinish: ({ winner, a }) => {
+        plant.locks.battle = false;
         const won = winner === "a";
         const draw = winner === "draw";
         const payout = reward(plant, won, draw, won ? 60 : draw ? 25 : 18, won ? 18 : draw ? 12 : 10, a.damageDealt);
@@ -596,6 +602,7 @@ function renderRoomHost(nav: Navigate, myPlant: Plant): HTMLElement {
       return;
     }
     host.markInBattle();
+    myPlant.locks.battle = true;
     host.snapshot.battleSeed = host.makeBattleSeed(myPlant.plantId, guestPlant.plantId);
     client.broadcastState(host.snapshot);
     setButtonsDisabled(root, true);
@@ -611,6 +618,7 @@ function renderRoomHost(nav: Navigate, myPlant: Plant): HTMLElement {
       seed: host.snapshot.battleSeed ?? undefined,
       onIntent: (intent) => client.sendIntent(intent),
       onFinish: ({ winner, a, b }) => {
+        myPlant.locks.battle = false;
         const won = winner === "a";
         const draw = winner === "draw";
         reward(myPlant, won, draw, won ? 80 : draw ? 30 : 20, won ? 20 : 12, a.damageDealt);
@@ -819,6 +827,7 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
 
   function startMirror(battleSeed?: string | null) {
     if (!opponent || activeView) return;
+    myPlant.locks.battle = true;
     activeView = new BattleView({
       container: battleHost,
       // Mirror the host's camera: in host terms the host is `a` and this client is `b`. Using the
@@ -831,6 +840,7 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
       seed: battleSeed ?? undefined,
       onIntent: (intent: BattleIntent) => client.sendIntent(intent),
       onFinish: () => {
+        myPlant.locks.battle = false;
         note.textContent = "Đang chờ máy chủ chốt kết quả...";
       },
     });
@@ -872,6 +882,10 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
 
   const leaveBtn = el("button", { class: "btn ghost block", style: "margin-top:12px" }, ["← Rời phòng"]);
   leaveBtn.addEventListener("click", () => {
+    /* Leaving mid-fight abandons it — the lock the fight put on the plant has to
+       go with it, or the fighter stays unsellable and unbreedable until reload
+       (load repair also clears it, but the garden should not wait for one). */
+    myPlant.locks.battle = false;
     activeView?.destroy();
     client.destroy();
     nav("arena");

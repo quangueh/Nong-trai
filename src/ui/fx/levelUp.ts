@@ -21,7 +21,7 @@
  * sensitivity gets told exactly what they unlocked, in the same order, in about a second.
  */
 
-import { el } from "../components";
+import { el, dismissOnEscape } from "../components";
 import { reducedMotion, sfx } from "../../audio/audio";
 import {
   xpRemainingText,
@@ -126,14 +126,12 @@ export function celebrateLevelUp(options: LevelUpOptions): Promise<void> {
   host.appendChild(overlay);
 
   const done = new Promise<void>((resolve) => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        finish();
-      }
-    };
+    let leaving = false;
     const finish = (): void => {
-      document.removeEventListener("keydown", onKey);
+      /* A second Escape during the leave animation would replay the tap and
+         re-register removal — once is enough. */
+      if (leaving) return;
+      leaving = true;
       sfx.play("tap");
       overlay.classList.add("is-leaving");
       // Removed on the animation's own end rather than after a guessed delay: a timeout
@@ -148,11 +146,13 @@ export function celebrateLevelUp(options: LevelUpOptions): Promise<void> {
     };
     go.addEventListener("click", finish);
     overlay.addEventListener("click", (e: Event) => {
-      if (e.target === overlay) finish();
+      /* detail > 1 is the trailing click of whatever double-gesture preceded the
+         celebration - not a dismiss. */
+      if (e.target === overlay && (e as MouseEvent).detail <= 1) finish();
     });
     // Escape dismisses like the button and the backdrop — a celebration that
     // cannot be left by the keyboard is a celebration that traps it.
-    document.addEventListener("keydown", onKey);
+    dismissOnEscape(overlay, finish);
   });
 
   /* The bar animates from empty, because "your bar filled" is the fact the celebration is

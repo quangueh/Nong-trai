@@ -18,7 +18,7 @@
  * to the end — so it is never a barrier, only a beat.
  */
 
-import { el } from "./components";
+import { el, dismissOnEscape } from "./components";
 import { sfx, reducedMotion } from "../audio/audio";
 import { store } from "./app";
 import { renderPlantSvg } from "../render/plantRenderer";
@@ -127,18 +127,11 @@ export function playFusion(child: Plant, onDone: () => void): void {
   const revealTimer = window.setTimeout(() => sfx.play("levelUp", { gain: 0.7 }), calm ? 60 : 900);
 
   let finished = false;
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      finish();
-    }
-  };
   const finish = (): void => {
     if (finished) return;
     finished = true;
     window.clearTimeout(timer);
     window.clearTimeout(revealTimer);
-    document.removeEventListener("keydown", onKey);
     sfx.play("tap", { gain: 0.5 });
     overlay.remove();
     onDone();
@@ -146,9 +139,9 @@ export function playFusion(child: Plant, onDone: () => void): void {
   const timer = window.setTimeout(finish, calm ? 700 : TOTAL_MS);
 
   overlay.addEventListener("click", finish);
-  // Escape should leave, not trap — and not linger: the listener leaves with
-  // the overlay, not on a guess-ahead timeout.
-  document.addEventListener("keydown", onKey);
+  // Escape should leave, not trap — the shared stack drops the entry when the
+  // overlay does, so nothing lingers on a guess-ahead timeout.
+  dismissOnEscape(overlay, finish);
 }
 
 /**

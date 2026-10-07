@@ -261,15 +261,41 @@ function focusFirstIn(root: HTMLElement): void {
   });
 }
 
-/** Focus `root`'s first control on mount and run `close` when Escape bubbles to it. */
+/**
+ * The Escape stack. Overlays push on mount; the single document listener closes
+ * the topmost live one.
+ *
+ * Why a stack and not a listener per overlay on the element: an element-level
+ * keydown only sees Escape while focus is inside that overlay. Focus can sit on
+ * `body` — the player tapped the scrim, or a screen reader parked it there —
+ * and then Escape hits nothing. A document listener per overlay is the opposite
+ * leak: it outlives its overlay and stacks one handler per reopen. A shared
+ * stack gets both right: capture phase sees every Escape no matter where focus
+ * is, dead entries are popped lazily by the isConnected check, and the topmost
+ * overlay — not the earliest-registered — is the one that closes.
+ */
+const escapeStack: { root: HTMLElement; close: () => void }[] = [];
+let escapeBound = false;
+
+function onEscapeKey(e: KeyboardEvent): void {
+  if (e.key !== "Escape") return;
+  while (escapeStack.length && !escapeStack[escapeStack.length - 1].root.isConnected) escapeStack.pop();
+  const top = escapeStack.pop();
+  if (!top) return;
+  /* Escape consumed by a modal must not fall through to the game underneath —
+     battle pause, tool disarm, or a second overlay closing at once. */
+  e.stopPropagation();
+  top.close();
+}
+
+/** Focus `root`'s first control on mount and run `close` on Escape while it lives. */
 export function dismissOnEscape(root: HTMLElement, close: () => void): void {
   focusFirstIn(root);
-  root.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      close();
-    }
-  });
+  escapeStack.push({ root, close });
+  if (!escapeBound) {
+    document.addEventListener("keydown", onEscapeKey, true);
+    escapeBound = true;
+  }
 }
 
 export function sheet(content: HTMLElement, onClose?: () => void): { overlay: HTMLElement; sheet: HTMLElement } {
@@ -277,18 +303,16 @@ export function sheet(content: HTMLElement, onClose?: () => void): { overlay: HT
   const s = el("div", { class: "sheet" });
   s.appendChild(el("div", { class: "handle" }));
   s.appendChild(content);
-  overlay.addEventListener("click", onClose ?? (() => {}));
+  /* A double-click that opened this sheet lands its second click on the scrim —
+     detail 2 — which would slam the sheet shut before it was ever read. The
+     opening gesture is not a dismiss gesture. */
+  overlay.addEventListener("click", (e) => {
+    if (e.detail <= 1) onClose?.();
+  });
   /* Mouse users see no focus ring — :focus-visible follows the last input
      modality — but the position is set for whoever reaches for the keyboard. */
-  focusFirstIn(s);
-  if (onClose) {
-    s.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    });
-  }
+  if (onClose) dismissOnEscape(s, onClose);
+  else focusFirstIn(s);
   return { overlay, sheet: s };
 }
 

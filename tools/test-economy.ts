@@ -398,5 +398,64 @@ check("a loss can drop Ember, but far more rarely than a win",
   check("a non-numeric balance is repaired to a number", back2.state.pollen === 0, `${String(back2.state.pollen)}`);
 }
 
+/* --- 10. a structurally damaged save keeps what is playable --------------- */
+/* One truncated plant used to throw inside load repair and cost the whole
+   garden; mistyped scalar fields (seeds as null, items as a string) crashed
+   shop/care paths later. Both are now triaged rather than fatal. */
+{
+  mem.clear();
+  const s = new GameStore();
+  s.state.leafCoin = 555;
+  s.save();
+  const raw = JSON.parse(localStorage.getItem("mutant-sprout-save-v1")!) as {
+    plants: unknown[];
+    seeds: unknown;
+    items: unknown;
+    nurseryCap: unknown;
+  };
+  raw.plants.push({ plantId: "ghost" }); // no dna/stats/growth — cannot be played
+  raw.plants[0] = null; // a hole in the array
+  raw.seeds = null;
+  raw.items = "plenty";
+  raw.nurseryCap = 0;
+  localStorage.setItem("mutant-sprout-save-v1", JSON.stringify(raw));
+
+  const back = new GameStore();
+  check("unplayable plants are dropped, not the garden", back.state.plants.length === 0, `${back.state.plants.length}`);
+  check("a null seeds bag repairs to an object", !!back.state.seeds && typeof back.state.seeds === "object" && !Array.isArray(back.state.seeds));
+  check(
+    "buySeed does not crash on a repaired bag",
+    (() => {
+      try {
+        back.buySeed("thornroot" as never, 1);
+        return true;
+      } catch {
+        return false;
+      }
+    })(),
+  );
+  check("mistyped items repair to a number", typeof back.state.items === "number", `${String(back.state.items)}`);
+  check("a broken nursery cap repairs", back.state.nurseryCap >= 1, `${back.state.nurseryCap}`);
+  check("ledger repairs to an array", Array.isArray(back.state.ledger));
+}
+
+/* --- 11. the shop refuses hostile counts ----------------------------------- */
+/* buySeed(sp, -5) priced the "purchase" negative — debitCurrency then paid
+   coins in and drove the seed bag negative. Only positive integers buy. */
+{
+  mem.clear();
+  const s = new GameStore();
+  s.state.leafCoin = 1000;
+  const before = s.state.leafCoin;
+  const bad = s.buySeed("thornroot", -5);
+  check("a negative count is refused", !bad.ok, bad.reason);
+  check("and pays nothing", s.state.leafCoin === before, `${s.state.leafCoin}`);
+  check("and takes no seeds", (s.state.seeds["thornroot"] ?? 0) >= 0, `${s.state.seeds["thornroot"]}`);
+  const zero = s.buySeed("thornroot", 0);
+  check("a zero count is refused too", !zero.ok, zero.reason);
+  const frac = s.buySeed("thornroot", 2.5);
+  check("a fractional count is refused", !frac.ok);
+}
+
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
