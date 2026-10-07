@@ -503,7 +503,11 @@ async function handlePutSave(req: Request, auth: Session, env: Env): Promise<Res
     accountName?.name?.trim() ||
     accountName?.email?.split("@")[0] ||
     "Người chơi";
-  puts.push(writeEntry(env, accountKeyFor, entryFromState(body.state, displayName)));
+  const entry = entryFromState(body.state, displayName);
+  // The board shows the account email — the handle a player recognises as "my gmail".
+  // Names are decorative and editable; this one is the identity that signed in.
+  entry.email = accountName?.email;
+  puts.push(writeEntry(env, accountKeyFor, entry));
 
   await Promise.all(puts);
   return ROK({ savedAt: body.savedAt, kept: "yours", writes });

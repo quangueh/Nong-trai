@@ -16,6 +16,8 @@ import { REFUSAL_TEXT, type Outcome, type Refusal } from "./social";
 export interface BoardRow {
   rank: number;
   name: string;
+  /** The account email the row belongs to — the label players actually recognise. */
+  email?: string;
   power: number;
   level: number;
   me: boolean;
@@ -27,7 +29,7 @@ export interface Leaderboards {
   /** Sorted by breeder level, descending. */
   level: BoardRow[];
   /** The caller's own placement — present even when outside either list. */
-  me: { name: string; power: number; level: number; powerRank: number; levelRank: number } | null;
+  me: { name: string; email?: string; power: number; level: number; powerRank: number; levelRank: number } | null;
   /** How many players the index knows about. */
   total: number;
 }

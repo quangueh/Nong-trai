@@ -450,20 +450,23 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   check("a malformed save does not throw", entryFromState("junk", "A").level === 1);
 
   // Three players: two on power order, one level king.
-  await writeEntry(lbEnv, "acct:a", { name: "Alice", power: 500, level: 9, at: 100 });
-  await writeEntry(lbEnv, "acct:b", { name: "Bob", power: 900, level: 5, at: 200 });
-  await writeEntry(lbEnv, "acct:c", { name: "Carol", power: 100, level: 30, at: 300 });
+  await writeEntry(lbEnv, "acct:a", { name: "Alice", email: "alice@gmail.com", power: 500, level: 9, at: 100 });
+  await writeEntry(lbEnv, "acct:b", { name: "Bob", email: "bob@gmail.com", power: 900, level: 5, at: 200 });
+  await writeEntry(lbEnv, "acct:c", { name: "Carol", power: 100, level: 30, at: 300 }); // no email: an entry from before emails were indexed
 
   const res = await handleLeaderboard(lbEnv, "acct:a");
   const board = (await res.json()) as {
-    power: { rank: number; name: string; power: number; me: boolean }[];
-    level: { rank: number; name: string; level: number; me: boolean }[];
-    me: { powerRank: number; levelRank: number } | null;
+    power: { rank: number; name: string; email?: string; power: number; me: boolean }[];
+    level: { rank: number; name: string; email?: string; level: number; me: boolean }[];
+    me: { powerRank: number; levelRank: number; email?: string } | null;
     total: number;
   };
   check("power board sorts strongest first", board.power[0].name === "Bob" && board.power[0].power === 900, JSON.stringify(board.power.map(r => r.name)));
   check("level board sorts highest first", board.level[0].name === "Carol" && board.level[0].level === 30);
   check("the caller is marked in the list", board.power.find((r) => r.name === "Alice")?.me === true);
+  check("rows carry the account email", board.power[0].email === "bob@gmail.com" && board.me?.email === "alice@gmail.com",
+    JSON.stringify(board.power[0]));
+  check("an email-less entry still boards", board.level[0].name === "Carol" && board.level[0].email === undefined);
   check("the caller's own ranks are returned", board.me?.powerRank === 2 && board.me?.levelRank === 2, JSON.stringify(board.me));
   check("the roster size is reported", board.total === 3);
 

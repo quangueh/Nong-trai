@@ -15,6 +15,7 @@ import { el, fmt, dismissOnEscape } from "./components";
 import { store } from "./app";
 import { boardsSnapshot, onBoardsChange, refreshBoards, type Leaderboards } from "../account/leaderboard";
 import { socialUnavailableBecause } from "../account/social";
+import { accountStatus } from "../account/sync";
 
 /** Rows shown per board. The caller's own row is pinned separately, not counted here. */
 const VISIBLE = 8;
@@ -27,16 +28,24 @@ let wired = false;
 const liveRepaints = new Set<() => void>();
 
 /** What a "me" row looks like when there is no server to ask — the local truth. */
-function localMe(): { name: string; power: number; level: number } {
+function localMe(): { name: string; email?: string; power: number; level: number } {
   const power = Math.max(0, ...store.state.plants.map((p) => p.powerRating ?? 0));
-  return { name: store.state.name || "Bạn", power: Math.round(power), level: store.state.breederLevel };
+  return {
+    name: store.state.name || "Bạn",
+    email: accountStatus().email ?? undefined,
+    power: Math.round(power),
+    level: store.state.breederLevel,
+  };
 }
 
-function rowEl(rank: number, name: string, value: string, me: boolean): HTMLElement {
+/** Rows are labelled by account email — the identity players recognise — falling back
+ *  to the display name only for entries written before emails were indexed. */
+function rowEl(rank: number, row: { name: string; email?: string }, value: string, me: boolean): HTMLElement {
+  const label = row.email ?? row.name;
   const r = el("div", { class: "lb-row" + (me ? " me" : "") });
   r.append(
     el("span", { class: "lb-rank mono" }, [rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : `#${rank}`]),
-    el("span", { class: "lb-name" }, [me ? `${name} (bạn)` : name]),
+    el("span", { class: "lb-name", title: row.name !== label ? row.name : label }, [me ? `${label} (bạn)` : label]),
     el("span", { class: "lb-val mono" }, [value]),
   );
   return r;
@@ -52,7 +61,7 @@ function paintBoard(host: HTMLElement, rows: Leaderboards["power"], kind: "power
     host.appendChild(el("div", { class: "tiny muted", style: "padding:6px 0" }, ["Chưa có ai trên bảng."]));
   }
   for (const r of shown) {
-    host.appendChild(rowEl(r.rank, r.name, kind === "power" ? `⚔ ${fmt(r.power)}` : `Lv ${r.level}`, r.me));
+    host.appendChild(rowEl(r.rank, r, kind === "power" ? `⚔ ${fmt(r.power)}` : `Lv ${r.level}`, r.me));
   }
 
   const me = data?.me;
@@ -60,9 +69,9 @@ function paintBoard(host: HTMLElement, rows: Leaderboards["power"], kind: "power
   const meRank = kind === "power" ? me?.powerRank : me?.levelRank;
   const mePower = me?.power ?? local.power;
   const meLevel = me?.level ?? local.level;
-  const meName = me?.name ?? local.name;
+  const meRow = me ?? local;
   host.appendChild(el("div", { class: "lb-me" }, [
-    rowEl(meRank ?? 0, meName, kind === "power" ? `⚔ ${fmt(mePower)}` : `Lv ${meLevel}`, true),
+    rowEl(meRank ?? 0, meRow, kind === "power" ? `⚔ ${fmt(mePower)}` : `Lv ${meLevel}`, true),
     el("div", { class: "tiny muted", style: "margin-top:4px" }, [
       meRank ? `Hạng ${meRank}/${data?.total ?? "?"} của bảng này` : socialUnavailableBecause() ? "Đăng nhập để có hạng" : "Chưa có trên bảng — đồng bộ lưu để xuất hiện",
     ]),
@@ -102,9 +111,9 @@ export function leaderboardPanel(): HTMLElement {
       const me = localMe();
       body.append(
         el("div", { class: "lb-sub" }, ["⚔ Sức mạnh cây"]),
-        rowEl(0, `${me.name} (bạn)`, `⚔ ${fmt(me.power)}`, true),
+        rowEl(0, me, `⚔ ${fmt(me.power)}`, true),
         el("div", { class: "lb-sub", style: "margin-top:10px" }, ["🌱 Cấp nhà lai tạo"]),
-        rowEl(0, `${me.name} (bạn)`, `Lv ${me.level}`, true),
+        rowEl(0, me, `Lv ${me.level}`, true),
         el("div", { class: "tiny muted", style: "margin-top:8px" }, [
           socialUnavailableBecause() ?? "Máy chủ xếp hạng chưa sẵn sàng.",
         ]),

@@ -42,6 +42,12 @@ export const lbKey = (accountKey: string): string => `lb:${accountKey}`;
 /** One ranked player. `power` is the best plant's power rating, `level` the breeder's. */
 export interface LbEntry {
   name: string;
+  /**
+   * The account email — the identity players actually recognise ("gmail của mình").
+   * Names collide and are editable; the email is neither. Optional because entries
+   * written before this field existed have only a name, and a board must still show them.
+   */
+  email?: string;
   power: number;
   level: number;
   /** When the save that produced this entry was written — the tie-breaker. */
@@ -111,6 +117,7 @@ async function readAll(env: LbEnv): Promise<LbRow[]> {
         return {
           key: k.name,
           name: e.name,
+          email: typeof e.email === "string" && e.email ? e.email : undefined,
           power: Number(e.power) || 0,
           level: Number(e.level) || 1,
           at: Number(e.at) || 0,
@@ -136,6 +143,7 @@ const byLevel = (a: LbRow, b: LbRow): number => b.level - a.level || b.power - a
 const rowFor = (row: LbRow, rank: number, myKey: string) => ({
   rank,
   name: row.name,
+  email: row.email,
   power: row.power,
   level: row.level,
   me: row.key === myKey,
@@ -162,6 +170,7 @@ export async function handleLeaderboard(env: LbEnv, myKey: string): Promise<Resp
     me: mine
       ? {
           name: mine.name,
+          email: mine.email,
           power: mine.power,
           level: mine.level,
           powerRank: power.indexOf(mine) + 1,
