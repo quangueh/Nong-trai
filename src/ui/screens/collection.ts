@@ -1,7 +1,9 @@
 /** Collection screen: list + filters + sell (docs/05 §5, docs/16). */
 
-import { el, plantCard, toast, rarityTag, fmt } from "../components";
+import { el, plantCard, toast, rarityTag, fmt, plantThumb } from "../components";
 import { store, navigate } from "../app";
+import { rewardFly } from "../fx/gardenFx";
+import { sfx } from "../../audio/audio";
 
 import { RARITY_ORDER, type Rarity } from "../../config/rarity";
 import { canSell } from "../../growth/stages";
@@ -83,7 +85,11 @@ export function renderCollection(nav: Navigate): HTMLElement {
   } else {
     const list = el("div", { class: "card" });
     for (const p of sellable.slice(0, 12)) {
-      const row = el("div", { class: "row", style: "padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)" });
+      const row = el("div", { class: "row sell-row", style: "padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)" });
+      /* The plant itself, small: the row is where "sell the wrong one" happens,
+         and a face is quicker to check than a name. */
+      const thumb = el("div", { class: "sell-thumb" });
+      thumb.innerHTML = plantThumb(p, 34).innerHTML;
       const info = el("div", { class: "grow" });
       info.append(
         el(
@@ -109,11 +115,18 @@ export function renderCollection(nav: Navigate): HTMLElement {
         }
         const r = store.sell(p.plantId);
         if (r.ok) {
+          rewardFly(row, { coins: r.price });
           toast(`+${r.price}🪙`);
           navigate("collection");
-        } else toast(r.reason ?? "Không bán được");
+        } else {
+          row.classList.remove("shop-deny");
+          void row.offsetWidth;
+          row.classList.add("shop-deny");
+          sfx.play("error");
+          toast(r.reason ?? "Không bán được");
+        }
       });
-      row.append(info, rarityTag(p.rarity), price, sellBtn);
+      row.append(thumb, info, rarityTag(p.rarity), price, sellBtn);
       list.appendChild(row);
     }
     root.appendChild(list);

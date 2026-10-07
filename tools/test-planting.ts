@@ -101,19 +101,21 @@ function setupGarden(seedId = "thornroot") {
 }
 
 /**
- * Tap a plot, then press the card for `want`.
+ * Tap a plot, pick the row for `want`, then press Trồng.
  *
- * Every planting test goes through this, because planting is now two deliberate
- * steps. A test that reaches past the chooser would not be testing what a player
- * actually does.
+ * Every planting test goes through this, because planting is now three deliberate
+ * steps — open the sheet, select a seed, confirm. A test that reaches past the
+ * chooser would not be testing what a player actually does.
  */
 async function plantViaChooser(want?: string): Promise<void> {
   click($(".empty-plot"));
   await wait(30);
-  const cards = $$(".picker-card");
-  const target = want ? cards.find((c) => c.textContent?.includes(want)) : cards[0];
-  if (!target) throw new Error(`no picker card for ${want ?? "(first)"}`);
+  const rows = $$(".seed-pick");
+  const target = want ? rows.find((c) => c.textContent?.includes(want)) : rows[0];
+  if (!target) throw new Error(`no seed row for ${want ?? "(first)"}`);
   click(target);
+  await wait(30);
+  click($(".seed-cta"));
   await wait(30);
 }
 
@@ -139,39 +141,27 @@ const seedsUntouched = store.state.seeds[seedId] ?? 0;
 const plantsUntouched = store.state.plants.length;
 click(emptyPlots[0]);
 await wait(30);
-check("tapping a plot opens the chooser", !!$(".seed-picker"));
+check("tapping a plot opens the chooser", !!$(".seed-sheet"));
 check("and plants nothing yet", store.state.plants.length === plantsUntouched);
 check("and consumes no seed yet", (store.state.seeds[seedId] ?? 0) === seedsUntouched);
-check("the chooser lists the seeds held", $$(".picker-card").length > 0, `${$$(".picker-card").length} cards`);
-check("with a preview of one", !!$(".seed-preview"));
-// Anchored to the plot, so there is no dimming overlay any more — a popover beside
-// the thing you tapped does not need one, and adding it back would put the tall
-// full-screen surface this replaced.
-check("and no full-screen overlay", !$(".overlay") && !$(".seed-pop-scrim"));
+check("the chooser lists the seeds held", $$(".seed-pick").length > 0, `${$$(".seed-pick").length} rows`);
+check("with a preview of one", !!$(".seed-hero"));
+// The chooser is a bottom sheet now: a dimming overlay behind it is the thing
+// that closes on an outside tap, and the surface the phone's thumb reaches.
+check("and it opens as a sheet with a scrim", !!$(".overlay") && !!$(".sheet"));
 
-// Tapping anywhere outside closes it. A real tap produces pointerdown before
-// click, and jsdom will not synthesise one from `click()`.
-document.dispatchEvent(new w.PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+// Tapping the scrim closes it — the sheet's own dismiss path.
+click($(".overlay"));
 await wait(20);
-check("tapping outside closes it", !$(".seed-pop") && !$(".seed-picker"));
+check("tapping outside closes it", !$(".seed-sheet"));
 
 // And it can be reopened, so the dismissal did not leave the plot dead.
 click(emptyPlots[0]);
 await wait(30);
-// Placement is asserted from the inline left/top that placePopover writes, not from
-// getBoundingClientRect — jsdom has no layout engine, so every rect is zero and a
-// distance check here would be comparing 0 to 0. Whether the popover actually
-// lands next to the plot is verified in tools/shot-picker.ts, which runs a real
-// browser and can see position.
-const positioned = (): boolean => {
-  const pop = $(".seed-pop");
-  return Boolean(pop && pop.style.left && pop.style.top);
-};
-check("the plot still opens the chooser again", !!$(".seed-pop"));
-check("and it was positioned from the anchor", positioned(), `left="${$(".seed-pop")?.style.left ?? ""}"`);
+check("the plot still opens the chooser again", !!$(".seed-sheet"));
 document.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 await wait(20);
-check("escape closes it", !$(".seed-pop"));
+check("escape closes it", !$(".seed-sheet"));
 
 section("2. Choosing a seed runs the ceremony");
 
@@ -298,25 +288,25 @@ const plot = $(".empty-plot");
 // spend a seed is worse than no path at all.
 plot?.dispatchEvent(new w.Event("pointerdown", { bubbles: true, cancelable: true }));
 await wait(600);
-check("holding alone does nothing", !$(".seed-picker"));
+check("holding alone does nothing", !$(".seed-sheet"));
 check("and plants nothing", store.state.plants.length === 1, `${store.state.plants.length}`);
 
 plot?.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
 await wait(30);
-check("tapping opens the chooser", !!$(".seed-pop"));
-check("it is titled", ($(".seed-pop")?.textContent ?? "").includes("Chọn hạt"));
+check("tapping opens the chooser", !!$(".seed-sheet"));
+check("it is titled", ($(".seed-sheet")?.textContent ?? "").includes("Chọn hạt"));
 check(
   "it lists the seeds actually held",
-  store.state.seeds[seedId] !== undefined && $$(".picker-card").length > 0,
+  store.state.seeds[seedId] !== undefined && $$(".seed-pick").length > 0,
 );
 check(
-  "each card says how many are held",
-  ($$(".picker-card")[0]?.querySelector(".seed-orb")?.textContent ?? "").trim() === "5",
-  ($$(".picker-card")[0]?.querySelector(".seed-orb")?.textContent ?? "").trim(),
+  "each row says how many are held",
+  ($$(".seed-pick")[0]?.querySelector(".seed-orb")?.textContent ?? "").trim() === "5",
+  ($$(".seed-pick")[0]?.querySelector(".seed-orb")?.textContent ?? "").trim(),
 );
 document.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 await wait(20);
-check("Escape closes it", !$(".seed-picker"));
+check("Escape closes it", !$(".seed-sheet"));
 
 section("8. Planting with an empty bag buys the seed first");
 
@@ -329,14 +319,19 @@ const coinsBefore = store.state.leafCoin;
 // The chooser opens before anything is read off it.
 click($(".empty-plot"));
 await wait(30);
-// The price comes off the card the player presses, not from a preselected
-// species, so it is read off that card rather than looked up in the registry.
-const priceCard = $$(".picker-card")[0];
-const price = Number((/Mua\s+([\d.]+)\s+xu/.exec(priceCard?.textContent ?? "")?.[1] ?? "0").replace(/\./g, ""));
-check("an empty bag offers seeds to buy", $$(".picker-card").length > 0);
-check("and the card states its price", price > 0, `price=${price}`);
+// A leafCoin row, deterministically: featured stock can price in other
+// currencies, and the assertion below only watches the coin ledger.
+const priceCard = $$(".seed-pick").find((c) => c.textContent?.includes("🪙"));
+const price = Number(
+  ((priceCard?.querySelector(".seed-pick-meta")?.textContent ?? "").match(/([\d.]+)🪙/)?.[1] ?? "0").replace(/\./g, ""),
+);
+check("an empty bag offers seeds to buy", $$(".seed-pick").length > 0);
+check("and the row states its price", price > 0, `price=${price}`);
 const plantsBeforeBuy = store.state.plants.length;
-click(priceCard);
+click(priceCard ?? null);
+await wait(30);
+check("the buy row updates the CTA to purchase", ($(".seed-cta")?.textContent ?? "").includes("Mua"));
+click($(".seed-cta"));
 await wait(40);
 // Bought then planted from a single card press, so the bag ends up back at zero.
 // The evidence that it was bought is the coin movement, not the seed count.
@@ -354,12 +349,12 @@ section("9. Nothing leaks between plantings");
 setupGarden();
 await wait(20);
 // Opening and dismissing the chooser must leave nothing behind. Dismissal is a
-// pointerdown outside the popover — there is no overlay to click.
+// tap on the scrim behind the sheet.
 click($(".empty-plot"));
 await wait(30);
-document.dispatchEvent(new w.PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+click($(".overlay"));
 await wait(20);
-check("closing the chooser leaves nothing behind", !$(".seed-pop") && !$(".seed-picker"));
+check("closing the chooser leaves nothing behind", !$(".seed-sheet") && !$(".overlay"));
 await plantViaChooser();
 await wait(20);
 click($(".plant-skip"));

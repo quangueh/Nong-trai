@@ -108,7 +108,14 @@ check("topbar shows currency", ($(".topbar")?.textContent ?? "").includes("1."))
 
 section("1. Garden screen");
 await render("garden renders", () => navigate("garden"));
-check("shows nursery capacity", /\d+\/\d+/.test(($(".screen")?.textContent ?? "").slice(0, 40)), ($(".screen")?.textContent ?? "").slice(0, 30));
+// The capacity count sits in the plots section title ("Vườn  n/m · 25 ô"),
+// after the tab row and the quest tracker, so it is no longer the first text on
+// the screen — assert it where it actually renders.
+check(
+  "shows nursery capacity",
+  /\d+\/\d+/.test($(".screen .sec-title")?.textContent ?? ""),
+  ($(".screen .sec-title")?.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40),
+);
 check("shows a plot for the starting plant", $$(".screen .plantcard").length >= 1);
 // The seed belt moved to its own tab. It used to sit above the plots, which put
 // shop information (prices) inside the screen you plant from.
@@ -118,11 +125,13 @@ check(
   ($(".screen .tabs .tab.active")?.textContent ?? "").trim() === "Vườn",
   ($(".screen .tabs .tab.active")?.textContent ?? ""),
 );
-check("the seed belt is not on the plots tab", !$(".seed-belt"), "the belt is still mixed in with the plots");
+// On desktop the right rail intentionally keeps a seed bag beside the screen,
+// so the belt must be absent from the *screen*, not from the document.
+check("the seed belt is not on the plots tab", !$(".screen .seed-belt"), "the belt is still mixed in with the plots");
 
 // And it is there, intact, on its own tab.
 await render("open the seed tab", () => click(byText(".screen .tabs .tab", "Túi hạt")));
-const belt = $(".seed-belt");
+const belt = $(".screen .seed-belt");
 check("shows the seed belt on its own tab", !!belt);
 check(
   "the belt explains how to use it",
@@ -135,14 +144,15 @@ check(
   "the belt does not advertise the removed long press",
   !(belt?.textContent ?? "").includes("Giữ ô đất"),
 );
-check("the belt lists seeds with the count held", $$(".seed-belt .seed-card").length > 0, `${$$(".seed-belt .seed-card").length}`);
+check("the belt lists seeds with the count held", $$(".screen .seed-belt .seed-card").length > 0, `${$$(".screen .seed-belt .seed-card").length}`);
 
 // The plots must come back when the tab is switched.
 await render("back to the plots tab", () => click(byText(".screen .tabs .tab", "Vườn")));
 check("the plots are on the garden tab", $$(".screen .plots .plot").length > 0, `${$$(".screen .plots .plot").length}`);
-// The day tab is where the goals live now, so they are not above the soil.
-await render("open the today tab", () => click(byText(".screen .tabs .tab", "Hôm nay")));
-check("the today tab has the day content", /\d+\/\d+/.test($(".screen")?.textContent ?? ""), ($(".screen")?.textContent ?? "").slice(0, 60));
+// The day goals folded into the quest shelf, so that is where progress lives
+// now, not above the soil.
+await render("open the quests tab", () => click(byText(".screen .tabs .tab", "Nhiệm vụ")));
+check("the quests tab shows quest progress", /\d+\/\d+/.test($(".screen")?.textContent ?? ""), ($(".screen")?.textContent ?? "").slice(0, 60));
 await render("return to the plots tab", () => click(byText(".screen .tabs .tab", "Vườn")));
 // Layout: plots are 2-up on mobile so the generated plant is actually legible.
 // jsdom has no layout engine, so size is asserted from the SVG attributes.

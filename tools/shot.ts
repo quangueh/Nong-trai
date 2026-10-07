@@ -160,8 +160,33 @@ async function assertStylesheetIsCurrent(page: import("playwright-core").Page): 
  * `full` is now opt-in, for a contact sheet of many specimens where the point is
  * to see them side by side rather than to answer "what is on screen".
  */
+/**
+ * Clear blocking celebration overlays before photographing.
+ *
+ * The seed grants enough EXP to cross a level threshold, and the level-up panel
+ * then sits over every screen the harness navigates to — the screenshots showed
+ * the modal, not the screen being audited. Clicking the panel's own "Tiếp tục"
+ * resolves the queue entry properly (the app awaits dismissal before showing
+ * the next), so this loops until none are left rather than ripping nodes out
+ * of the DOM and leaving their promises pending.
+ */
+async function dismissCelebrations(page: import("playwright-core").Page): Promise<void> {
+  for (let i = 0; i < 24; i++) {
+    const clicked = await page.evaluate(`(() => {
+      const btn = document.querySelector(".lvlup .btn");
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`);
+    if (!clicked) return;
+    await page.waitForTimeout(400); // room for the queue's next entry to render
+  }
+}
+
 async function shot(page: import("playwright-core").Page, name: string, full = false): Promise<void> {
   const path = `${OUT}/${name}.png`;
+
+  await dismissCelebrations(page);
 
   if (!full) {
     // The one measurement that would have caught it. Worth a round trip.
@@ -360,6 +385,7 @@ async function main(): Promise<void> {
       g.navigate("garden");
     });
     await page.waitForTimeout(400);
+    await dismissCelebrations(page);
     // press a card. Tapping the plot alone opens the chooser and photographs
     // the garden, which is how this harness quietly stopped capturing the
     // ceremony at all without reporting anything wrong.
@@ -368,9 +394,15 @@ async function main(): Promise<void> {
       plot?.click();
     });
     await page.waitForTimeout(350);
+    // The chooser was a popover of plant-now cards; it is now a pick-then-plant
+    // sheet. Drive whichever one is on the page.
     await page.evaluate(() => {
-      const card = document.querySelector(".picker-card") as HTMLElement | null;
+      const card = document.querySelector(".picker-card, .seed-pick") as HTMLElement | null;
       card?.click();
+    });
+    await page.waitForTimeout(150);
+    await page.evaluate(() => {
+      (document.querySelector(".seed-cta") as HTMLElement | null)?.click();
     });
 
     await page.waitForTimeout(560);

@@ -1,14 +1,11 @@
 /**
- * Look at the anchored seed picker.
+ * Look at the seed chooser sheet.
  *
- * The complaint it has to answer is "I have to scroll to pick a seed", so the
- * thing worth measuring is not that a popover exists — it is whether the popover
- * appears *without the page moving*. So this records the scroll position before
- * and after, and treats any change as the failure it is.
- *
- * Three taps: a plot in the middle of the garden, one near the bottom (which must
- * flip upward rather than fall off screen), and one in the right-hand column
- * (which must clamp back inside the viewport).
+ * The original complaint was "I have to scroll to pick a seed". The chooser is
+ * no longer an anchored popover — it is a bottom sheet (a right-docked drawer
+ * on desktop), so the question changed: does the sheet appear in view, over
+ * the garden, without the page moving? This records scroll before and after,
+ * and measures the sheet against the viewport.
  */
 import { chromium } from "playwright-core";
 import { mkdirSync } from "node:fs";
@@ -27,7 +24,7 @@ page.on("console", (m) => {
   if (m.type() === "error") errs.push(m.text());
 });
 
-await page.goto("http://localhost:5173", { waitUntil: "networkidle" });
+await page.goto("http://localhost:5174", { waitUntil: "networkidle" });
 await page.waitForFunction(() => Boolean(window.__game), { timeout: 15000 });
 await page.waitForTimeout(500);
 
@@ -73,27 +70,29 @@ await page.evaluate(`(() => {
 await page.waitForTimeout(600);
 
 const state = await page.evaluate(`(() => {
-  const pop = document.querySelector(".seed-pop");
-  if (!pop) return { open: false };
-  const r = pop.getBoundingClientRect();
+  const sheet = document.querySelector(".sheet");
+  const body = document.querySelector(".seed-sheet");
+  if (!sheet || !body) return { open: false };
+  const r = sheet.getBoundingClientRect();
+  const vw = document.documentElement.clientWidth;
+  const vh = document.documentElement.clientHeight;
   return {
     open: true,
     rect: { top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) },
-    viewport: { w: document.documentElement.clientWidth, h: document.documentElement.clientHeight },
-    insideX: r.left >= 0 && r.right <= document.documentElement.clientWidth,
-    insideY: r.top >= 0 && r.bottom <= document.documentElement.clientHeight,
-    flipped: pop.classList.contains("is-above"),
-    cards: pop.querySelectorAll(".picker-card").length,
-    hasPreview: !!pop.querySelector(".seed-preview"),
-    anchorHighlighted: document.querySelectorAll(".plot.is-picking").length,
-    hasScrim: !!document.querySelector(".seed-pop-scrim"),
+    viewport: { w: vw, h: vh },
+    insideX: r.left >= 0 && r.right <= vw + 1,
+    insideY: r.bottom <= vh + 1,
+    anchoredBottom: r.bottom <= vh + 1 && r.bottom >= vh - 40,
+    rows: body.querySelectorAll(".seed-pick").length,
+    hasHero: !!body.querySelector(".seed-hero"),
+    hasCta: !!body.querySelector(".seed-cta"),
+    hasScrim: !!document.querySelector(".overlay"),
   };
 })()`);
 const after = (await page.evaluate(`(() => ({ scrollY: window.scrollY }))`)) as { scrollY: number };
 
 console.log(JSON.stringify(state, null, 2));
 console.log("scroll before:", before.scrollY, " after:", after.scrollY, after.scrollY === before.scrollY ? "(page did NOT move)" : "(PAGE MOVED — the original complaint)");
-console.log("page height:", before.docH, "vs viewport 820 — a full sheet would need this much room");
 
 await page.screenshot({ path: "shots/picker-mid.png" });
 

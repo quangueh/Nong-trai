@@ -17,6 +17,7 @@ export {
   LOOKAHEAD,
   STAT_LADDER_END,
   describeStage,
+  isBossStage,
   stageAffixes,
   stageBand,
   stageExtraDrop,

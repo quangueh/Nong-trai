@@ -59,7 +59,9 @@ export type SfxName =
   | "combo"
   | "enemy"
   // Something taken.
-  | "collect";
+  | "collect"
+  // A quest's progress moving. Softer than \`reward\`: it fires mid-action, not at a payout.
+  | "questProgress";
 
 export interface PlayOpts {
   /** Scales the whole effect. */
@@ -688,6 +690,19 @@ function build(ctx: AudioContext, out: AudioNode, t: number, name: SfxName, p: n
       // Taken, not earned. A short bright blip that a caller can pitch per item.
       tone(ctx, out, t, { type: "triangle", from: 1320 * p, peak: 0.07, attack: 0.002, decay: 0.09 });
       tone(ctx, out, t, { type: "sine", from: 2640 * p, peak: 0.03, attack: 0.002, decay: 0.12, at: 0.022 });
+      break;
+    }
+    case "questProgress": {
+      /*
+       * A quest ticked upward.
+       *
+       * Sits between `hover` and `collect` in weight: this fires inside another action's
+       * moment — the plant was just watered, the hit just landed — so it has to register as
+       * "the tracker moved" without competing with the sound of the action itself. Two short
+       * rising thirds, sine only, no noise.
+       */
+      tone(ctx, out, t, { type: "sine", from: 880 * p, peak: 0.05, attack: 0.002, decay: 0.09 });
+      tone(ctx, out, t, { type: "sine", from: 1174 * p, peak: 0.045, attack: 0.002, decay: 0.12, at: 0.055 });
       break;
     }
 

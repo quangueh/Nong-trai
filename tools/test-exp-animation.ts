@@ -311,8 +311,25 @@ console.log("\n5. phone viewport:");
    * (`.notice-level`, mid `is-in` → `is-out`, with a multi-second lifetime of its own), the top
    * bar's bump class, and the garden's plant SVGs. None of them belong to this animation.
    */
-  await page.evaluate(`(() => { document.querySelector(".lvlup-panel .btn.primary")?.click(); })()`);
-  await page.waitForTimeout(1400);
+  /*
+   * Dismiss the whole queue, not just the first panel.
+   *
+   * The grant levels the plant and pays the breeder, and since celebrations are queued
+   * rather than dropped, dismissing the plant's panel brings the breeder's up — a second
+   * panel arriving is the queue working, not a leak. Click through each until none is
+   * left, wait out the last exit, and only then count what this module left behind.
+   */
+  for (let i = 0; i < 8; i++) {
+    const clicked = (await page.evaluate(`(() => {
+      const b = document.querySelector(".lvlup-panel .btn.primary");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`)) as boolean;
+    if (!clicked) break;
+    await page.waitForTimeout(900);
+  }
+  await page.waitForTimeout(500);
 
   const owned = (await page.evaluate(`(() => ({
     flying: document.querySelectorAll(".expfly, .expfly-trail").length,

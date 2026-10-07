@@ -2130,7 +2130,6 @@ h4 {
 .empty-plot:hover .plot-hole {
   opacity: 0.78;
 }
-}
 
 .empty-plot strong {
   position: relative;
@@ -2531,10 +2530,78 @@ input::placeholder {
   background: rgba(255, 253, 241, 0.58);
   transition: all 0.16s;
 }
+.slot:hover {
+  border-color: var(--accent);
+  background: rgba(255, 253, 241, 0.85);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(46, 96, 57, 0.14);
+}
+
+.slot:active {
+  transform: translateY(0) scale(0.99);
+}
+
 .slot.filled {
   border-style: solid;
   border-color: var(--accent);
   background: rgba(47, 159, 98, 0.12);
+  box-shadow: 0 0 0 1px rgba(47, 159, 98, 0.22), 0 4px 14px rgba(46, 96, 57, 0.12);
+}
+
+/* The pick lands: the plant pops into the slot rather than appearing in place,
+   the same spring the fusion child's reveal uses, scaled down to a card. */
+.slot.filled > * {
+  animation: slot-drop 0.34s var(--spring) both;
+}
+.slot.filled > *:nth-child(2) { animation-delay: 40ms; }
+.slot.filled > *:nth-child(3) { animation-delay: 80ms; }
+.slot.filled > *:nth-child(4) { animation-delay: 120ms; }
+
+@keyframes slot-drop {
+  from { opacity: 0; transform: translateY(-10px) scale(0.86); }
+  to { opacity: 1; transform: none; }
+}
+
+/* One parent chosen: the still-empty slot breathes so it reads as the next
+   thing to fill rather than as the same empty tile again. */
+.slot.is-next {
+  border-color: var(--accent);
+  animation: slot-invite 1.6s ease-in-out infinite;
+}
+
+@keyframes slot-invite {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(47, 159, 98, 0); }
+  50% { box-shadow: 0 0 0 5px rgba(47, 159, 98, 0.16); }
+}
+
+/* --- the breeding report -------------------------------------------------- */
+
+/* The result sheet carries the pull's rarity colour on its top edge — quiet
+   for a common, unmistakable for a rare. `--rar` is set from RARITY_META. */
+.sheet.breed-report {
+  border-top: 3px solid var(--rar, transparent);
+  box-shadow:
+    0 -18px 44px -22px color-mix(in srgb, var(--rar, transparent) 45%, transparent),
+    0 24px 60px rgba(18, 34, 22, 0.3);
+}
+
+.breed-report-thumb {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+/* A rare pull's portrait glows in its own colour; a common one gets no halo,
+   which is itself the information. */
+.breed-report-thumb.is-rare::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--rar) 30%, transparent), transparent 70%);
+  z-index: -1;
+  animation: fusionHalo 900ms ease-out both;
 }
 
 .fadein {
@@ -4233,6 +4300,26 @@ body.planting {
   100% { transform: scale(11); opacity: 0; }
 }
 
+/* The flare: a second, sharper ring in the result's rarity colour, fired only
+   when the pull was S-or-better. The ceremony itself is identical — the extra
+   beat is what marks this one as the result worth remembering. */
+.fusion-flare {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2.5px solid var(--rar, #ffd76a);
+  box-shadow: 0 0 18px var(--rar, #ffd76a), 0 0 40px 6px color-mix(in srgb, var(--rar, #ffd76a) 55%, transparent);
+  opacity: 0;
+  animation: fusionFlare 720ms cubic-bezier(0.16, 0.8, 0.3, 1) 660ms both;
+}
+
+@keyframes fusionFlare {
+  0% { transform: scale(0.8); opacity: 0; }
+  18% { opacity: 1; }
+  100% { transform: scale(17); opacity: 0; }
+}
+
 /* --- gene motes ----------------------------------------------------------- */
 
 .fusion-mote {
@@ -4280,10 +4367,16 @@ body.planting {
   inset: 8% 2%;
   pointer-events: none;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 238, 180, 0.34), rgba(160, 220, 140, 0.12) 52%, transparent 72%);
+  /* The halo answers in the rarity's colour when one was set, and in the
+     default warm leaf-gold when it was not. */
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--rar, #ffeeb4) 34%, transparent),
+    color-mix(in srgb, var(--rar, #a0dc8c) 12%, transparent) 52%,
+    transparent 72%
+  );
   opacity: 0;
   animation: fusionHalo 900ms ease-out 620ms both;
-  pointer-events: none;
 }
 
 @keyframes fusionHalo {
@@ -4315,6 +4408,20 @@ body.planting {
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6);
   opacity: 0;
   animation: fusionCaption 460ms ease-out 900ms both;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+}
+
+/* The rarity stated under the name, in its own colour — the caption carries
+   the verdict, not just the name. */
+.fusion-rarity {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rar, #ffd76a);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--rar, #ffd76a) 60%, transparent);
 }
 
 @keyframes fusionCaption {
@@ -4599,12 +4706,16 @@ body.planting {
 
 .levelbadge-bar i {
   display: block;
+  width: 100%;
   height: 100%;
   border-radius: 2px;
   background: linear-gradient(90deg, #2f9f62, #6fce8f);
-  /* Width is written by script; a short transition turns a 40-point XP grant
-     into something you can see rather than a jump. */
-  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  /* Fill is written by script as a scaleX — a short transition turns a 40-point
+     XP grant into something you can see rather than a jump, on the compositor
+     instead of paying a layout per frame. */
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* A light sweep across the badge when the level moves. The number itself is the
@@ -4677,6 +4788,17 @@ body.planting {
   opacity: 0;
   transform: translateY(-10px) scale(0.97);
   transition-duration: 0.26s;
+}
+
+/* A keyed notice whose body just refreshed pulses once, so a merged tick still
+   reads as "something changed" rather than looking frozen. */
+.notice.is-bump {
+  animation: notice-bump 0.32s var(--spring);
+}
+@keyframes notice-bump {
+  40% {
+    transform: translateY(0) scale(1.045);
+  }
 }
 
 .notice-title {
@@ -6886,4 +7008,1472 @@ body.planting {
   .coach-where {
     margin-top: auto;
   }
+}
+
+/* ==========================================================================
+   Quick action dock (garden).
+
+   The most repeated interaction in the game used to be three screens deep:
+   plot -> detail sheet -> care sheet -> action. This dock puts tending one tap
+   away - arm a tool, tap a plant. It lives inside the screen's DOM with
+   position: fixed, so it rides just above the bottom nav inside the thumb zone
+   on a phone and under the garden on a desktop, and it dies with the plots tab
+   instead of needing teardown.
+   ========================================================================== */
+
+.qabar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  /* 62px of bottomnav plus a breath. Safe-area is inside the nav's own padding,
+     so the number only has to clear the bar itself. */
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 68px);
+  z-index: 28;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 10px);
+  /* The wrapper is a column of floating pills: clicks between the pills fall
+     through to the plots instead of dying on an invisible tray. */
+  pointer-events: none;
+}
+
+.qabar > * {
+  pointer-events: auto;
+}
+
+/* On the desktop frame the shell floats 24px+ off the viewport bottom, so the
+   dock anchors to the shell's bottom edge, not the window's. The formula is the
+   shell inset in app-object mode: half of what the 1040px cap leaves behind. */
+@media (min-width: 900px) {
+  .qabar {
+    bottom: calc((100dvh - min(100dvh - 48px, 1040px)) / 2 + 66px);
+  }
+}
+
+/* The screen has to leave room for nav + dock + chips below the last row of
+   plots, or the final row scrolls under the bar. Only when the dock exists -
+   other screens keep the old padding. */
+.screen:has(.qabar) {
+  padding-bottom: 208px;
+}
+
+/* Toasts were pinned just above the nav; with a dock there too they would land
+   on it. Above the whole stack instead. */
+.shell:has(.qabar) .toast {
+  bottom: 190px;
+}
+
+/* --- the dock itself ------------------------------------------------------ */
+
+.qadock {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 6px;
+  border-radius: 20px;
+  background: rgba(255, 248, 226, 0.94);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 10px 30px rgba(80, 104, 53, 0.26);
+  /* Nine tools is more than a small phone is wide: the dock scrolls sideways
+     rather than shrinking buttons below a tap target. */
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-width: 100%;
+}
+
+.qadock::-webkit-scrollbar {
+  display: none;
+}
+
+.qabtn {
+  position: relative;
+  flex: none;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 50px;
+  height: 54px;
+  padding: 4px 6px;
+  border-radius: 14px;
+  font-family: inherit;
+  color: var(--muted);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease,
+    box-shadow 0.15s ease;
+}
+
+.qabtn .qaico {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.qabtn .qalbl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.qabtn:hover {
+  background: rgba(47, 159, 98, 0.1);
+}
+
+.qabtn:active {
+  transform: scale(0.94);
+}
+
+.qabtn:focus-visible {
+  outline: 2px solid rgba(47, 159, 98, 0.6);
+  outline-offset: 1px;
+}
+
+/* The armed tool. Same green the active tab wears, so "this is selected" means
+   the same thing everywhere in the game. */
+.qabtn.armed {
+  background: linear-gradient(150deg, #1e7a4a, #17653e);
+  color: #f2fbf3;
+  box-shadow: 0 3px 10px rgba(23, 101, 62, 0.32);
+}
+
+/* Off, not disabled: the button still takes the tap and answers with the reason
+   ("Cần 1🧺 vật tư"), which a disabled control cannot do. */
+.qabtn.off {
+  opacity: 0.45;
+}
+
+/* Claimable quests on "Việc", empty beds on "Gieo". */
+.qabadge {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger-fill);
+  color: #fffdf1;
+  font-size: 9.5px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1px 4px rgba(163, 35, 27, 0.4);
+}
+
+/* A count that is information rather than urgency: open plots are an offer,
+   not a debt, so they do not get the alarm red. */
+.qabadge.quiet {
+  background: var(--accent-2-fill);
+  box-shadow: 0 1px 4px rgba(110, 73, 18, 0.35);
+}
+
+.qasep {
+  flex: none;
+  width: 1px;
+  height: 30px;
+  margin: 0 3px;
+  background: rgba(90, 104, 78, 0.22);
+}
+
+/* --- contextual chips above the dock --------------------------------------- */
+
+.qachips {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.qachips:empty {
+  display: none;
+}
+
+.qachip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 248, 226, 0.95);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 18px rgba(80, 104, 53, 0.2);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+button.qachip {
+  appearance: none;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.1s ease, filter 0.15s ease;
+}
+
+button.qachip:hover {
+  filter: brightness(1.04);
+}
+
+button.qachip:active {
+  transform: scale(0.95);
+}
+
+/* The armed-state line: what the tool is, and what a tap now does. */
+.qachip.status {
+  color: var(--accent);
+  border-color: rgba(38, 121, 79, 0.42);
+  background: rgba(205, 231, 212, 0.94);
+}
+
+/* Do-something chips (mass tend, claim all, arena). A soft gold, so they read
+   as opportunities rather than warnings. */
+.qachip.act {
+  color: var(--accent-2);
+  border-color: rgba(159, 105, 26, 0.4);
+  background: linear-gradient(160deg, #ffe9b8, #f7d88e);
+}
+
+/* The quiet suggestion ("4 cây có thể tưới") that teaches the dock exists. */
+.qachip.hint {
+  color: var(--info);
+  border-color: rgba(38, 124, 171, 0.36);
+  background: var(--info-soft);
+}
+
+/* --- what the tool does to the cards --------------------------------------- */
+
+/* Eligible plants get a soft green outline: on a phone there is no hover, so
+   "this can be watered" has to be visible before the tap, not under it. */
+.plots.armed-care .plantcard {
+  cursor: pointer;
+}
+
+.plots.armed-care .plantcard.can-tend {
+  outline: 2px solid rgba(56, 171, 112, 0.6);
+  outline-offset: 2px;
+}
+
+.plots.armed-care .plantcard.can-tend:hover {
+  transform: translateY(-3px);
+}
+
+/* Plants resting from the armed tool dim and wear their countdown. */
+.plots.armed-care .plantcard.cooling {
+  filter: saturate(0.7) brightness(0.95);
+}
+
+.care-mark {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 249, 230, 0.95);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  z-index: 3;
+}
+
+.care-mark.show {
+  display: block;
+}
+
+/* Applied: a lift-and-glow pulse so the card itself confirms the action. */
+.plantcard.care-flash {
+  animation: careFlash 0.55s var(--ease);
+}
+
+@keyframes careFlash {
+  0% {
+    filter: brightness(1);
+    transform: translateY(0);
+  }
+  35% {
+    filter: brightness(1.16) saturate(1.25);
+    transform: translateY(-4px);
+  }
+  100% {
+    filter: brightness(1);
+    transform: translateY(0);
+  }
+}
+
+/* Refused: a short shake, cheaper to read than a toast alone. */
+.plantcard.care-deny-shake,
+.shop-deny {
+  animation: denyShake 0.34s ease;
+}
+
+@keyframes denyShake {
+  20% {
+    transform: translateX(-4px);
+  }
+  45% {
+    transform: translateX(4px);
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* --- narrow screens ---------------------------------------------------------
+
+   Everything shrinks but the tap target: 40x48 stays reachable by a thumb, and
+   if nine buttons still overflow, the dock scrolls sideways instead of letting
+   them crush. */
+@media (max-width: 560px) {
+  .qadock {
+    gap: 2px;
+    padding: 5px;
+    border-radius: 18px;
+  }
+
+  .qabtn {
+    min-width: 40px;
+    height: 48px;
+    padding: 3px 4px;
+    border-radius: 12px;
+  }
+
+  .qabtn .qaico {
+    font-size: 18px;
+  }
+
+  .qabtn .qalbl {
+    /* 8.5px was the squeeze that made nine buttons fit by width; the dock
+       scrolls sideways for that already, and sub-9.5px text on a phone is the
+       readability failure the fit was bought with. */
+    font-size: 9.5px;
+  }
+
+  .qachip {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qabtn,
+  .qabtn:active,
+  button.qachip,
+  button.qachip:active {
+    transition: none;
+    transform: none;
+  }
+
+  .plantcard.care-flash,
+  .plantcard.care-deny-shake {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   Quest shelf & tracker (Nhiệm vụ).
+
+   The quest tab ships as data + markup from garden.ts; this is its skin. Rows
+   reuse the palette's colour roles: a claimable quest is gold on green, a
+   locked one is muted but still a tile, and a claimed one is quiet.
+   ========================================================================== */
+
+.tab-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger-fill);
+  color: #fffdf1;
+  font-size: 10px;
+  font-weight: 800;
+  box-shadow: 0 1px 4px rgba(163, 35, 27, 0.4);
+  vertical-align: 1px;
+}
+
+/* The tracker card on the plots tab: the answer to "what do I do now". */
+.quest-tracker {
+  display: block;
+  width: 100%;
+  appearance: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid rgba(71, 123, 55, 0.26);
+  border-radius: 18px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.1)),
+    linear-gradient(180deg, #fdf6dd, #e8f2c8);
+  box-shadow: var(--shadow);
+  transition: transform 0.12s var(--ease), box-shadow 0.2s var(--ease);
+}
+
+.quest-tracker:hover {
+  transform: translateY(-1px);
+}
+
+.quest-tracker.has-claim {
+  border-color: rgba(159, 105, 26, 0.55);
+  background:
+    linear-gradient(140deg, rgba(255, 240, 190, 0.75), rgba(255, 255, 255, 0.14)),
+    linear-gradient(180deg, #fff3cf, #eee4ad);
+}
+
+.quest-tracker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.quest-track-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 0;
+}
+
+.quest-track-main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.quest-track-main b,
+.quest-track-main small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quest-track-main small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.quest-ico {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: rgba(255, 253, 241, 0.8);
+  border: 1px solid rgba(71, 123, 55, 0.18);
+  font-size: 17px;
+}
+
+.quest-ico.sm {
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+.quest-count {
+  flex: none;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+/* The four shelves. Same rhythm as the garden's own tab row, but quieter —
+   these are sub-tabs, not screens. */
+.quest-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+
+.quest-tab {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: rgba(255, 248, 226, 0.72);
+  border-radius: 12px;
+  padding: 7px 4px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.quest-tab .quest-tab-ico {
+  font-size: 14px;
+}
+
+.quest-tab.active {
+  background: linear-gradient(150deg, #1e7a4a, #17653e);
+  border-color: transparent;
+  color: #f2fbf3;
+}
+
+.quest-list {
+  display: grid;
+  gap: 8px;
+}
+
+/* One quest row. The whole card is the action: claim when done, travel when not. */
+.quest-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  appearance: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 10px 12px;
+  border-radius: 15px;
+  border: 1px solid rgba(71, 123, 55, 0.2);
+  background: rgba(255, 253, 241, 0.78);
+  transition: transform 0.12s var(--ease), box-shadow 0.15s var(--ease), background 0.15s ease;
+}
+
+.quest-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(80, 104, 53, 0.18);
+}
+
+.quest-card .quest-main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.quest-card .quest-main b {
+  font-size: 13px;
+}
+
+.quest-card .quest-main small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.quest-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.quest-reward {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.quest-reward.rw-exp {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.quest-reward.rw-coin {
+  color: var(--accent-2);
+  background: var(--accent-2-soft);
+}
+
+.quest-reward.rw-item {
+  color: var(--info);
+  background: var(--info-soft);
+}
+
+.quest-reward.rw-crystal {
+  color: #5b3fa0;
+  background: #e8defc;
+}
+
+.quest-reward.rw-unlock {
+  color: var(--accent-2);
+  background: #ffeec4;
+  border-style: dashed;
+}
+
+.quest-bar .bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(71, 123, 55, 0.16);
+}
+
+.quest-bar .bar > i {
+  background: linear-gradient(90deg, var(--accent-fill), var(--accent-bright));
+}
+
+.quest-cta {
+  flex: none;
+  min-width: 40px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 800;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+/* Claimable: gold pill with a soft pulse — the one control that should catch
+   the eye in a list of quests. */
+.quest-cta.claim {
+  color: #5d3d05;
+  background: linear-gradient(160deg, #ffd95e, #f0b42e);
+  border-color: rgba(159, 105, 26, 0.5);
+  box-shadow: 0 3px 10px rgba(240, 180, 46, 0.45);
+}
+
+.quest-cta.claim.pulse {
+  animation: questPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes questPulse {
+  0%,
+  100% {
+    box-shadow: 0 3px 10px rgba(240, 180, 46, 0.35);
+  }
+  50% {
+    box-shadow: 0 3px 16px rgba(240, 180, 46, 0.75);
+  }
+}
+
+.quest-cta.done {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.quest-card.done {
+  border-color: rgba(159, 105, 26, 0.5);
+  background: linear-gradient(150deg, rgba(255, 236, 170, 0.8), rgba(255, 253, 241, 0.85));
+}
+
+.quest-card.claimed {
+  opacity: 0.62;
+}
+
+.quest-card.locked {
+  opacity: 0.78;
+  background: rgba(238, 240, 226, 0.62);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quest-cta.claim.pulse {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   Plot states — the farm-game read on the floating islands.
+
+   Each state is a distinct visual, not a text change:
+     needs-water  a droplet badge on the crown edge, bobbing gently
+     ready        a warm gold ring plus drifting motes (the harvest glow)
+     stage chips  the word for what is in the soil, beside the growth ring
+   ========================================================================== */
+
+/* The "can take water" droplet. */
+.need-water {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #e8f7ff, #bfe4fb);
+  border: 1.5px solid rgba(38, 124, 171, 0.4);
+  box-shadow: 0 2px 6px rgba(38, 124, 171, 0.3);
+  font-size: 12px;
+  animation: dropletBob 2.6s ease-in-out infinite;
+}
+
+@keyframes dropletBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* Ready to earn: gold light, and three motes drifting off the crown. */
+.plot.ready {
+  box-shadow:
+    0 0 0 2px rgba(240, 180, 46, 0.55),
+    0 0 22px rgba(240, 190, 60, 0.4),
+    0 34px 26px rgba(48, 78, 100, 0.32);
+}
+
+.plot-shine {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.plot-shine i {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(50% 50% at 40% 35%, #fff8d8, #f0b42e);
+  box-shadow: 0 0 7px rgba(240, 190, 60, 0.9);
+  opacity: 0;
+  animation: moteTwinkle 3.4s ease-in-out infinite;
+}
+
+.plot-shine i:nth-child(1) {
+  left: 18%;
+  top: 30%;
+  animation-delay: 0s;
+}
+
+.plot-shine i:nth-child(2) {
+  left: 74%;
+  top: 22%;
+  animation-delay: 1.2s;
+}
+.plot-shine i:nth-child(3) {
+  left: 52%;
+  top: 12%;
+  animation-delay: 2.3s;
+}
+
+@keyframes moteTwinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.5);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1);
+  }
+  70% {
+    opacity: 0.4;
+    transform: translateY(-10px) scale(0.8);
+  }
+}
+
+.grow-stage {
+  align-items: center;
+}
+
+.stage-chip {
+  flex: none;
+}
+
+.grow-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.grow-timer .ring {
+  width: 22px;
+  height: 22px;
+}
+
+.grow-timer .ring .track {
+  fill: none;
+  stroke: rgba(71, 123, 55, 0.2);
+  stroke-width: 3;
+}
+
+.grow-timer .ring .fill {
+  fill: none;
+  stroke: var(--accent-fill);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+.grow-timer-text {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.plot-locked::before {
+  filter: saturate(0.5) brightness(0.94);
+}
+
+.plot-locked .plot-mark {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  z-index: 3;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: #5c523a;
+  background: linear-gradient(180deg, #f2ecd8, #ddd3b4);
+  border-radius: 999px;
+}
+
+.plot-locked .plot-veil {
+  position: absolute;
+  inset: 22% -4% auto -4%;
+  height: 52%;
+  z-index: 2;
+  border-radius: 50%;
+  background:
+    radial-gradient(50% 80% at 30% 42%, rgba(255, 255, 255, 0.95), transparent 75%),
+    radial-gradient(55% 85% at 68% 46%, rgba(248, 252, 255, 0.9), transparent 78%);
+  filter: blur(1px);
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   The garden scene — a place, not a grid.
+   ========================================================================== */
+
+.garden-scene {
+  position: relative;
+  isolation: isolate;
+  border-radius: 30px;
+  padding: 14px 10px 20px;
+  margin-bottom: 14px;
+  background:
+    radial-gradient(120% 60% at 50% -10%, rgba(255, 244, 190, 0.5), transparent 60%),
+    linear-gradient(180deg, #a5d9f5 0%, #c6e8f7 42%, #e6f4e0 78%, #d8eec4 100%);
+  border: 1px solid rgba(120, 168, 196, 0.5);
+  box-shadow:
+    inset 0 2px 8px rgba(255, 255, 255, 0.55),
+    0 18px 40px rgba(70, 110, 140, 0.22);
+  overflow: hidden;
+}
+
+.scene-sun {
+  position: absolute;
+  top: -34px;
+  right: 6%;
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  background: radial-gradient(50% 50% at 50% 50%, #fff8cf 0%, #ffe27a 55%, rgba(255, 214, 96, 0) 78%);
+  filter: blur(0.5px);
+  opacity: 0.95;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.scene-cloud {
+  position: absolute;
+  border-radius: 999px;
+  background:
+    radial-gradient(55% 60% at 32% 40%, rgba(255, 255, 255, 0.96), transparent 72%),
+    radial-gradient(60% 65% at 66% 46%, rgba(244, 251, 255, 0.92), transparent 76%);
+  filter: blur(1.5px);
+  pointer-events: none;
+  z-index: 0;
+  animation: cloudDrift linear infinite;
+}
+
+.scene-cloud.c1 {
+  width: 220px;
+  height: 74px;
+  top: 8%;
+  animation-duration: 90s;
+}
+
+.scene-cloud.c2 {
+  width: 160px;
+  height: 56px;
+  top: 30%;
+  opacity: 0.75;
+  animation-duration: 120s;
+  animation-delay: -40s;
+}
+
+.scene-cloud.c3 {
+  width: 260px;
+  height: 88px;
+  bottom: 6%;
+  opacity: 0.6;
+  animation-duration: 150s;
+  animation-delay: -90s;
+}
+
+@keyframes cloudDrift {
+  from {
+    transform: translateX(-30%);
+  }
+  to {
+    transform: translateX(calc(100vw - 100%));
+  }
+}
+
+.scene-isle {
+  position: absolute;
+  border-radius: 50% 50% 44% 44% / 60% 60% 40% 40%;
+  background:
+    linear-gradient(180deg, rgba(147, 207, 102, 0.85) 0 42%, rgba(156, 112, 72, 0.8) 42% 100%);
+  filter: blur(2.5px);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
+  animation: isleBob ease-in-out infinite;
+}
+
+.scene-isle.i1 {
+  width: 92px;
+  height: 44px;
+  left: 4%;
+  top: 16%;
+  animation-duration: 7s;
+}
+
+.scene-isle.i2 {
+  width: 70px;
+  height: 34px;
+  right: 9%;
+  top: 52%;
+  animation-duration: 9s;
+  animation-delay: -3s;
+}
+
+@keyframes isleBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+.scene-flutter {
+  position: absolute;
+  z-index: 0;
+  font-size: 13px;
+  opacity: 0.75;
+  pointer-events: none;
+  animation: flutter linear infinite;
+}
+
+.scene-flutter.f1 {
+  top: 20%;
+  animation-duration: 34s;
+}
+
+.scene-flutter.f2 {
+  top: 58%;
+  animation-duration: 46s;
+  animation-delay: -18s;
+}
+
+@keyframes flutter {
+  0% {
+    transform: translate(-6%, 0) rotate(-8deg);
+  }
+  25% {
+    transform: translate(24vw, -16px) rotate(6deg);
+  }
+  50% {
+    transform: translate(52vw, 6px) rotate(-5deg);
+  }
+  75% {
+    transform: translate(76vw, -12px) rotate(7deg);
+  }
+  100% {
+    transform: translate(104vw, 0) rotate(-8deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-cloud,
+  .scene-isle,
+  .scene-flutter,
+  .need-water,
+  .plot-shine i {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   Desktop game frame — shell becomes a screen, not a page.
+   ========================================================================== */
+
+.workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+
+.side-panel {
+  display: none;
+}
+
+.workspace > .screen {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .shell {
+    width: calc(100vw - 40px);
+    max-width: 1560px;
+    height: calc(100dvh - 40px);
+    max-height: none;
+  }
+
+  #app {
+    padding: 20px;
+  }
+
+  .side-panel {
+    display: block;
+    flex: none;
+    width: 292px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px 10px 24px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+
+  .side-panel:empty {
+    display: none;
+  }
+
+  .screen:has(.garden-scene) > .fadein > .tabs {
+    display: none;
+  }
+
+  .sheet {
+    left: auto;
+    right: 10px;
+    top: 10px;
+    bottom: 10px;
+    width: min(430px, 42vw);
+    max-height: none;
+    border-radius: 22px;
+    border: 1px solid var(--line);
+    box-shadow: -14px 0 44px rgba(80, 104, 53, 0.3);
+    animation: sheetDock 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .sheet .handle {
+    display: none;
+  }
+
+  @keyframes sheetDock {
+    from {
+      transform: translateX(40px);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  .qabar {
+    bottom: calc(20px + 66px);
+  }
+}
+
+.side-panel .quest-tracker {
+  margin-bottom: 10px;
+}
+
+.side-panel .panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 2px 2px 8px;
+}
+
+.side-panel .panel-title .tiny {
+  font-weight: 700;
+}
+
+.side-quest-list {
+  display: grid;
+  gap: 6px;
+}
+
+@media (min-width: 1440px) {
+  .side-panel {
+    width: 318px;
+  }
+}
+
+/* ==========================================================================
+   Seed sheet & detail growth block.
+   ========================================================================== */
+
+.seed-sheet {
+  display: grid;
+  gap: 12px;
+}
+
+.seed-hero {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 16px;
+  background:
+    radial-gradient(80% 100% at 20% 0%, rgba(255, 255, 255, 0.6), transparent 60%),
+    linear-gradient(160deg, rgba(205, 231, 212, 0.75), rgba(255, 248, 226, 0.9));
+  border: 1px solid rgba(71, 123, 55, 0.24);
+}
+
+.seed-hero-art {
+  flex: none;
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: radial-gradient(70% 60% at 50% 80%, rgba(176, 138, 88, 0.35), rgba(255, 253, 241, 0.5));
+  overflow: hidden;
+}
+
+.seed-hero-art svg {
+  width: 88px;
+  height: 88px;
+}
+
+.seed-hero-info {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.seed-hero-info b {
+  font-size: 15px;
+}
+
+.seed-hero-info small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.seed-hero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.seed-hero-chips .tag {
+  font-size: 10px;
+}
+
+.seed-pick-list {
+  display: grid;
+  gap: 6px;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.seed-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  appearance: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 13px;
+  border: 1.5px solid rgba(71, 123, 55, 0.16);
+  background: rgba(255, 253, 241, 0.72);
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.1s ease;
+}
+
+.seed-pick:hover {
+  background: rgba(255, 253, 241, 0.95);
+}
+
+.seed-pick.selected {
+  border-color: var(--accent-fill);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px rgba(56, 171, 112, 0.25);
+}
+
+.seed-pick .seed-orb {
+  flex: none;
+}
+
+.seed-pick-info {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.seed-pick-info b {
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seed-pick-info small {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.seed-pick-meta {
+  flex: none;
+  display: grid;
+  gap: 1px;
+  text-align: right;
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.seed-cta {
+  font-size: 14px;
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.detail-growth {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-top: 8px;
+  border-radius: 14px;
+  background: rgba(205, 231, 212, 0.5);
+  border: 1px solid rgba(71, 123, 55, 0.2);
+}
+
+.detail-growth .growline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.detail-growth .bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(71, 123, 55, 0.16);
+}
+
+.detail-growth .bar > i {
+  background: linear-gradient(90deg, var(--accent-fill), var(--accent-bright));
+}
+
+.harvest-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  appearance: none;
+  font-family: inherit;
+  cursor: pointer;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid rgba(159, 105, 26, 0.5);
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #5d3d05;
+  background: linear-gradient(160deg, #ffe07a, #f0b42e);
+  box-shadow: 0 5px 16px rgba(240, 180, 46, 0.4);
+  transition: transform 0.12s var(--ease), box-shadow 0.2s var(--ease);
+}
+
+.harvest-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(240, 180, 46, 0.55);
+}
+
+.harvest-cta:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 767px) {
+  .garden-scene {
+    padding: 10px 6px 16px;
+    margin: 0 -4px 12px;
+    border-radius: 24px;
+  }
+
+  .seed-pick-list {
+    max-height: 34vh;
+  }
+}
+
+/* ==========================================================================
+   Reconciliation: the pieces the earlier passes left unwired.
+   ========================================================================== */
+
+/* The scene's real content sits above the sun, clouds and far islands. */
+.garden-scene .scene-body {
+  position: relative;
+  z-index: 1;
+}
+
+/* The growth ring lives inside `.grow-timer` now — the old `.ring` rule still
+   positions it absolutely, which works only for the direct-child-of-plot
+   layout it was written for. In the timer row it must sit in flow. */
+.grow-stage .grow-timer {
+  justify-content: flex-end;
+  margin-top: 0;
+  margin-left: auto;
+}
+
+.grow-stage .grow-timer .ring {
+  position: static;
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+/* `tag` variants the seed sheet uses for "còn N" versus "mua N xu". */
+.tag.ok {
+  color: #fffdf1;
+  background: var(--accent-fill);
+  border-color: transparent;
+}
+
+.tag.gold {
+  color: #5a3d08;
+  background: var(--accent-2-soft);
+  border-color: var(--accent-2-fill);
+}
+
+/* The card's own level strip — level, XP bar and the count to the next one.
+   Rendered by `levelStrip` on every plot card; previously unstyled, so the
+   strip wrapped into whatever the card happened to give it. */
+.lvstrip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  position: relative;
+  z-index: 2;
+}
+
+.lvstrip-level {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.lvstrip-bar {
+  flex: 1 1 0;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(71, 123, 55, 0.16);
+  overflow: hidden;
+}
+
+.lvstrip-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-fill), var(--accent-bright));
+}
+
+.lvstrip-xp {
+  flex: none;
+  font-size: 9.5px;
+  color: var(--muted);
+}
+
+/* A plant that can take water gets the barest blue lift on its island edge —
+   enough to scan for, quiet enough not to compete with the droplet badge. */
+.plot.needs-water {
+  box-shadow:
+    0 0 0 2px rgba(86, 169, 232, 0.3),
+    0 34px 26px rgba(48, 78, 100, 0.32);
+}
+
+.plot.needs-water:hover {
+  box-shadow:
+    0 0 0 2px rgba(86, 169, 232, 0.45),
+    0 40px 30px rgba(48, 78, 100, 0.36);
+}
+
+/* The plots tab carries a compact quest tracker; on the wide layout the left
+   rail already shows it, so the in-screen copy is a duplicate saying the same
+   three lines twice. Hidden there, kept everywhere else. */
+@media (min-width: 1024px) {
+  .screen .quest-tracker {
+    display: none;
+  }
+}
+
+/* --- sell rows ------------------------------------------------------------ */
+
+/* The plant's face in the sell row: "sell the wrong one" is the row's whole
+   risk, and a face is quicker to check than a name. */
+.sell-thumb {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(120, 180, 100, 0.14);
+  display: grid;
+  place-items: center;
+}
+
+.sell-thumb svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }

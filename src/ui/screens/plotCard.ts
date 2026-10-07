@@ -2,7 +2,10 @@
  * Garden plot card.
  *
  * A plot reads as a patch of soil with the plant standing in it, so the plant
- * is the hero. State is one chip, growth is a ring — not a stack of micro-text.
+ * is the hero. State is carried by the tile itself: a droplet badge when the
+ * plant can take water, a gold glow and drifting motes when it is ready to
+ * earn, and a growth ring while it is still developing — not a stack of
+ * micro-text.
  */
 
 import { el } from "../components";
@@ -10,17 +13,40 @@ import { renderPlantSvg } from "../../render/plantRenderer";
 import { RARITY_META } from "../../config/rarity";
 import { STAGE_LABEL, type Plant } from "../../core/types";
 import { canBattle, canBreed, stageProgress } from "../../growth/stages";
+import { CARE_ACTIONS } from "../../config/careActions";
 import { plantSnapshot, xpRemainingText } from "../../progression/levels";
+import { consumeStageUp, consumeUnlock } from "../fx/gardenFx";
+
+/**
+ * Whether the plant can take water right now.
+ *
+ * The garden's "cần tưới" badge is honest rather than decorative: it appears
+ * exactly when the water action would succeed — never on cooldown, never on a
+ * plant that just drank, and never on a mature plant that no longer needs it to
+ * grow. Mature plants still gain from care, but a permanent droplet on every
+ * finished plant turns the badge into noise, which is how players stop reading
+ * badges.
+ */
+export function canWaterNow(plant: Plant, now: number): boolean {
+  if (canBattle(plant)) return false;
+  const last = plant.careMemory.lastAction;
+  if (last && last.id === "water" && now - last.at < CARE_ACTIONS.water.cooldownSeconds * 1000) return false;
+  return true;
+}
 
 /**
  * `plotNumber` is optional so the card still renders where a position is not
  * known — the collection grid, where plants are not in soil.
+ *
+ * `onClick` receives the card element, so a caller that wants to play an effect
+ * on the tile itself (watering, harvesting) has it without a DOM lookup.
  */
-export function plotCard(plant: Plant, onClick: () => void, plotNumber?: number): HTMLElement {
+export function plotCard(plant: Plant, onClick: (card: HTMLElement) => void, plotNumber?: number): HTMLElement {
   const now = Date.now();
   const mature = plant.growth.stage === "mature" || plant.growth.stage === "awakened";
   const progress = stageProgress(plant, now);
   const meta = RARITY_META[plant.rarity];
+  const thirsty = canWaterNow(plant, now);
 
   /* `plot` paints the island: soil, grass cap, and a root tapering to a point below the card.
 
@@ -30,8 +56,30 @@ export function plotCard(plant: Plant, onClick: () => void, plotNumber?: number)
      what put the stray pot beneath the card in the collection screenshot. */
   const inSoil = plotNumber !== undefined;
   const card = el("div", {
-    class: "plantcard" + (inSoil ? " plot" : "") + (mature ? " ready" : "") + (canBreed(plant) ? " bred" : ""),
+    class:
+      "plantcard" +
+      (inSoil ? " plot" : "") +
+      ` stage-${plant.growth.stage}` +
+      (mature ? " ready" : "") +
+      (canBreed(plant) ? " bred" : "") +
+      (thirsty ? " needs-water" : ""),
   });
+  card.dataset.plantId = plant.plantId;
+
+  /* One-shot effects picked up from the tick loop and the plot purchase.
+
+     They are consumed here, at render, so they fire exactly once on the card that
+     arrived after the event — a stage that turned over pops open, a plot that was
+     just bought lifts its cloud. */
+  if (inSoil && consumeStageUp(plant.plantId)) {
+    card.classList.add("stage-pop");
+    window.setTimeout(() => card.classList.remove("stage-pop"), 1200);
+  }
+  if (inSoil && consumeUnlock(plotNumber)) {
+    const veil = el("div", { class: "unlock-veil" }, [el("i"), el("i")]);
+    card.appendChild(veil);
+    window.setTimeout(() => veil.remove(), 1400);
+  }
 
   // Rarity ribbon across the top.
   const ribbon = el("div", { class: "ribbon" });
@@ -50,10 +98,23 @@ export function plotCard(plant: Plant, onClick: () => void, plotNumber?: number)
   if (plant.locks.manual) flags.appendChild(el("span", {}, ["🔒"]));
   if (flags.children.length) card.appendChild(flags);
 
+  /* The "can take water" badge. A droplet on the crown edge, floating gently —
+     the same icon the care sheet uses for the action, so the badge and the
+     button never disagree about what a droplet means. */
+  if (inSoil && thirsty) {
+    card.appendChild(el("div", { class: "need-water", title: "Có thể tưới cây" }, ["💧"]));
+  }
+
   // The plant itself.
   const bed = el("div", { class: "bed" });
   bed.innerHTML = renderPlantSvg(plant, 150);
   card.appendChild(bed);
+
+  /* Ready-to-earn shine: three motes drifting over the crown. Kept to three
+     elements because this exists on every mature plot at once. */
+  if (inSoil && mature) {
+    card.appendChild(el("div", { class: "plot-shine", "aria-hidden": "true" }, [el("i"), el("i"), el("i")]));
+  }
 
   // Name.
   const name = el("div", { class: "pname" });
@@ -86,10 +147,17 @@ export function plotCard(plant: Plant, onClick: () => void, plotNumber?: number)
     if (canBattle(plant)) flagsRow.appendChild(el("span", { class: "chip gold" }, ["⚔ Đấu"]));
     card.appendChild(flagsRow);
   } else {
-    card.appendChild(growthRing(progress, plant.growth.stageReadyAt - now, plant.growth.stageReadyAt));
+    /* The stage word travels with the ring, so "đã gieo hạt" and "đang lớn" are
+       different things on the tile and not just different numbers. */
+    card.appendChild(
+      el("div", { class: "prow grow-stage" }, [
+        el("span", { class: "chip dim stage-chip" }, [STAGE_LABEL[plant.growth.stage]]),
+        growthRing(progress, plant.growth.stageReadyAt - now, plant.growth.stageReadyAt),
+      ]),
+    );
   }
 
-  card.addEventListener("click", onClick);
+  card.addEventListener("click", () => onClick(card));
   return card;
 }
 
@@ -116,7 +184,7 @@ function levelStrip(plant: Plant): HTMLElement {
     "aria-valuemax": "100",
     "aria-label": `Cấp ${snap.level}, ${xpRemainingText(snap)}`,
   });
-  bar.appendChild(el("i", { style: `width:${snap.pct.toFixed(1)}%` }));
+  bar.appendChild(el("i", { style: `transform:scaleX(${(snap.pct / 100).toFixed(3)})` }));
 
   wrap.append(
     el("span", { class: "lvstrip-level mono" }, [`Lv${snap.level}`]),
@@ -138,11 +206,10 @@ function growthRing(progress: number, msRemaining: number, readyAt: number): HTM
     <circle class="fill" cx="13" cy="13" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - progress)).toFixed(1)}"></circle>
     <text x="13" y="16" text-anchor="middle" font-size="8.5" font-weight="700" fill="#435636">${initial}</text>
   </svg>`;
-  const wrap = el("div", { class: "plot" });
-  wrap.style.cssText = "all:unset;display:block";
+  const wrap = el("div");
   wrap.innerHTML = svg;
   const holder = el("div", { class: "grow-timer" });
-  const text = el("span", { class: "grow-timer-text mono" }, [`Còn ${formatRemaining(initial)} nữa lớn`]);
+  const text = el("span", { class: "grow-timer-text mono" }, [`${formatRemaining(initial)}`]);
   const svgEl = wrap.firstElementChild as SVGElement;
   const label = svgEl.querySelector("text");
   const interval = window.setInterval(() => {
@@ -152,7 +219,7 @@ function growthRing(progress: number, msRemaining: number, readyAt: number): HTM
     }
     const seconds = Math.ceil(Math.max(0, readyAt - Date.now()) / 1000);
     if (label) label.textContent = String(seconds);
-    text.textContent = seconds > 0 ? `Còn ${formatRemaining(seconds)} nữa lớn` : "Sẵn sàng lớn";
+    text.textContent = seconds > 0 ? formatRemaining(seconds) : "xong";
   }, 1000);
   holder.appendChild(wrap.firstElementChild as Node);
   holder.appendChild(text);

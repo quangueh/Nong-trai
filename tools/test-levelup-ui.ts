@@ -182,11 +182,36 @@ const b = await chromium.launch();
     `lv${after.level} xp${after.xp}`,
   );
 
-  /* Dismiss and confirm it cleans up. */
-  await page.evaluate(`(() => { const b = document.querySelector(".lvlup-panel .btn.primary"); if (b) b.click(); })()`);
-  await page.waitForTimeout(900);
+  /*
+   * Dismiss every celebration the grant produced, then confirm the last cleans up.
+   *
+   * The grant levels the plant *and* pays the breeder — and since celebrations are
+   * queued rather than dropped, a second panel arriving after the first is dismissed
+   * is the queue working, not a leak. The check is that the queue *drains*: click
+   * through each panel until none is left, then the DOM must be clean.
+   */
+  let dismissed = 0;
+  for (let i = 0; i < 6; i++) {
+    const clicked = (await page.evaluate(`(() => {
+      const b = document.querySelector(".lvlup-panel .btn.primary");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`)) as boolean;
+    if (!clicked) {
+      /* The queue's next panel mounts a frame after the previous resolves, so a
+         single "nothing found" is not proof the queue is empty — it can be the
+         gap between panels. Only a second empty look, after a real wait, counts. */
+      await page.waitForTimeout(600);
+      const stillNone = (await page.evaluate(`(() => !document.querySelector(".lvlup-panel .btn.primary"))()`)) as boolean;
+      if (stillNone) break;
+      continue;
+    }
+    dismissed++;
+    await page.waitForTimeout(800);
+  }
   const gone = (await page.evaluate(`(() => !document.querySelector(".lvlup-panel"))()`)) as boolean;
-  check("and the overlay is removed when dismissed", gone);
+  check("and the overlays are removed when dismissed", gone, `${dismissed} dismissed`);
 
   /* --- reload: the level survived the save ------------------------------ */
   const saved = await page.evaluate(`(() => {

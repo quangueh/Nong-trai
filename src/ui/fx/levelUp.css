@@ -166,11 +166,15 @@
 
 .lvlup-bar i {
   display: block;
-  width: 0;
+  width: 100%;
   height: 100%;
   border-radius: 5px;
   background: linear-gradient(90deg, #6fce8f, #ffe89a);
-  transition: width 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  /* Scaled, not resized — the fill runs on the compositor, same convention as
+     .bar > i, instead of paying a layout for every frame of the fill. */
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .lvlup-bar-text {

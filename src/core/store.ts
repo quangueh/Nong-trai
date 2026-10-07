@@ -21,6 +21,7 @@ import {
 import { EMBER_DAILY_CAP, rollDrops, type DropRoll } from "./drops";
 import {
   describeStage,
+  isBossStage,
   monsterFor,
   stageExtraDrop,
   stageIsOpen,
@@ -36,7 +37,7 @@ import { applyCare, gainXp, xpRequired } from "../growth/care";
 import type { CareActionId } from "../config/careActions";
 import { tickGrowth } from "../growth/stages";
 import { addSkillXp } from "../genetics/skillGenerator";
-import { evaluateObjectives, objectiveContext, type ObjectiveOutcome } from "../progression/objectives";
+import { evaluateObjectives, objectiveContext, readCombo, type ObjectiveOutcome } from "../progression/objectives";
 import { canSell, tryAwaken } from "../growth/stages";
 import { sellPrice } from "../economy/shop";
 import { emptyPity, type PityCounters, type Rarity } from "../config/rarity";
@@ -44,7 +45,9 @@ import { TIER_META, type CombatTier } from "../config/balance";
 import type { SpeciesId } from "../config/species";
 import { SPECIES, SPECIES_BY_ID } from "../config/species";
 import { PLOT_DEFS, checkUnlock, contextFrom, type UnlockContext } from "../config/unlocks";
-import { DAILY_GOAL_COUNT, GOAL_COOLDOWN_DAYS, GOAL_POOL, MILESTONES, WEATHER_INFO, streakMultiplier, type MilestoneMetric } from "../config/quests";
+import { QUEST_CATALOG } from "../quests/catalog";
+import { advance as questAdvance, claim as questClaim, emptyQuestSave, questViews as computeQuestViews, repairQuestSave, tracked as questTracked, type QuestContext, type QuestEvent, type QuestSave, type QuestView } from "../quests/engine";
+import type { QuestReward } from "../quests/types";
 import { finalRarityWeights } from "../config/rarity";
 import { simulateBattle, type BattleConfig, type BattleResult } from "../battle/engine";
 
@@ -116,20 +119,6 @@ export interface LedgerEntry {
 }
 
 export type GardenWeather = "mist" | "sun" | "storm" | "moon";
-/**
- * The kinds a daily goal can be about.
- *
- * Eight rather than four, and that is the point: goals are drawn at most one per
- * kind per day, so the number of kinds is a hard ceiling on how alike a day can
- * look. With four kinds and three goals the guarantee held only because there
- * were enough templates to hide behind; widening the pool without widening the
- * kinds would still let two rows read the same.
- *
- * `battle` and `win` are separate on purpose — "đấu hai trận" and "thắng hai
- * trận" are genuinely different asks and a player who loses twice should see one
- * of them move and not the other.
- */
-export type DailyGoalKind = "plant" | "care" | "battle" | "win" | "breed" | "sell" | "awaken" | "openPlot" | "unlock";
 
 /**
  * Something the player should be told about, right now.
@@ -140,7 +129,7 @@ export type DailyGoalKind = "plant" | "care" | "battle" | "win" | "breed" | "sel
  */
 export interface Notice {
   id: number;
-  kind: "level" | "unlock" | "goal" | "plot" | "milestone";
+  kind: "level" | "unlock" | "quest" | "plot" | "milestone";
   title: string;
   body?: string;
   /**
@@ -184,26 +173,15 @@ export interface Notice {
   species?: SpeciesId[];
   /** How many more there were than are listed. */
   moreCount?: number;
-}
-
-export interface DailyGoal {
-  id: string;
-  kind: DailyGoalKind;
-  label: string;
-  target: number;
-  progress: number;
-  reward: { leafCoin?: number; geneCrystal?: number; items?: number };
-  claimed: boolean;
-  /** What to actually do, shown on tap. A goal that names a verb is still a puzzle. */
-  hint: string;
   /**
-   * Whether the "done" banner has already played.
+   * Dedup identity for notices that would otherwise stack.
    *
-   * `claimed` cannot carry this: a goal stays unclaimed while complete, and
-   * without a separate flag the announcement would repeat every time the same
-   * kind ticked again.
+   * Quest progress ticks once per event, and a burst of actions can tick the same
+   * quest several times in a second — five banners saying "928/10000" piled over
+   * the garden. Given a key, the HUD refreshes the banner already on screen
+   * instead of adding another copy.
    */
-  announced: boolean;
+  key?: string;
 }
 
 export interface GardenDayState {
@@ -211,12 +189,14 @@ export interface GardenDayState {
   weather: GardenWeather;
   streak: number;
   focus: number;
-  goals: DailyGoal[];
   /**
    * Template ids drawn in the last few days.
    *
    * Carried forward so the next day can bar them. Kept on the day state rather
    * than recomputed from history because there is no separate day log to read.
+   *
+   * Kept after the daily-goal system was replaced by the quest shelf: an old save carries it,
+   * and dropping the field would mean a migration for data nothing reads.
    */
   recentGoals: string[];
 }
@@ -229,16 +209,6 @@ export interface DiscoveryState {
   battles: number;
   breeds: number;
   claimed: string[];
-}
-
-export interface DiscoveryMilestone {
-  id: string;
-  label: string;
-  hint: string;
-  progress: number;
-  target: number;
-  reward: { leafCoin?: number; geneCrystal?: number; items?: number };
-  claimed: boolean;
 }
 
 export interface PlayerState {
@@ -278,6 +248,22 @@ export interface PlayerState {
   seenGenes: string[];
   gardenDay: GardenDayState;
   discovery: DiscoveryState;
+  /**
+   * The quest shelf: progress on every quest, plus the day's daily roll.
+   *
+   * The heart of progression. Everything the player is told to do next comes from here, and
+   * every reward in it is paid through the same paths a fight or a harvest would use.
+   */
+  quests: QuestSave;
+  /**
+   * Every point of experience this account has ever earned.
+   *
+   * Accumulated rather than derived, because it is a *total*, not a current level: the score
+   * achievements ("đạt tổng 10.000 điểm") are about everything done, and no amount of arithmetic
+   * on the current level can recover that. Written by the same two methods that pay experience,
+   * so it cannot drift from them.
+   */
+  lifetimeExp: number;
   /**
    * The PvE ladder: how far this player has climbed.
    *
@@ -580,7 +566,6 @@ export class GameStore {
       return { ok: false, reason: `Không đủ ${def.cost.toLocaleString("vi-VN")} xu` };
     }
     this.state.nurseryCap = def.index;
-    this.advanceGoal("openPlot", 1);
     this.commit("buyPlot");
     return { ok: true };
   }
@@ -690,10 +675,15 @@ export class GameStore {
       };
     }
     this.state.seeds[species] = (this.state.seeds[species] ?? 0) + count;
-    // "Unlock" means the gate had not passed before this purchase. Counting every
-    // seed purchase would make the goal a synonym of "buy a seed", which is a
-    // different thing and a worse goal.
-    if (!def.unlock) this.advanceGoal("unlock", 1);
+    /*
+     * Buying seeds is collecting items, and it is also the moment a species becomes yours.
+     *
+     * `skill_unlocked` is emitted only for a species whose gate had just opened, which is the
+     * event a "mở khoá một loài" quest would listen to. Emitting it on every purchase would make
+     * it a synonym for "buy a seed", which is a different and worse thing to measure.
+     */
+    this.questEvent({ name: "item_collected", amount: count });
+    if (!def.unlock) this.questEvent({ name: "skill_unlocked", amount: 1 });
     this.commit("buySeed");
     return { ok: true };
   }
@@ -706,7 +696,7 @@ export class GameStore {
     plant.economy.purchaseCost = SPECIES_BY_ID[species].seedPrice;
     this.state.plants.push(plant);
     this.recordPlantDiscovery(plant);
-    this.advanceGoal("plant", 1);
+    this.questEvent({ name: "plant", amount: 1 });
     this.commit("plantSeed");
     return { ok: true, plantId: plant.plantId };
   }
@@ -739,7 +729,7 @@ export class GameStore {
     plant.validation = validateGenome(plant);
     addUnique(this.state.discovery.careActions, action);
     this.recordPlantDiscovery(plant);
-    this.advanceGoal("care", 1);
+    this.questEvent({ name: "care", amount: 1 });
     // Nectar, from tending. Paid on every action without exception, which is what makes
     // this currency a floor rather than a goal: a player who does nothing but tend can
     // always eventually reach the tier-2 shelf.
@@ -888,7 +878,7 @@ export class GameStore {
     );
     this.state.discovery.breeds++;
     this.recordPlantDiscovery(result.plant);
-    this.advanceGoal("breed", 1);
+    this.questEvent({ name: "breed", amount: 1 });
     // Pollen, from breeding. Paid for the act rather than for the result, because the
     // result is already standing in the garden as the child plant.
     this.creditCurrency("pollen", POLLEN_PER_BREED, `Lai tạo: ${a.name} × ${b.name}`);
@@ -925,6 +915,10 @@ export class GameStore {
  */
 addPlantXp(plant: Plant, xp: number) {
   const levels = gainXp(plant, xp);
+  // The lifetime total, so a quest or an achievement that measures everything earned is not
+  // restricted to what happens to be sitting in the current bar.
+  this.state.lifetimeExp += Math.max(0, Math.round(xp));
+  this.questEvent({ name: "exp_gained", amount: Math.max(0, Math.round(xp)) });
   // The grant is passed on because this is the only place that knows it. `gainXp` reports
   // how many levels were crossed and says nothing about experience, and the celebration
   // prints "+N EXP" — so with nothing to print it fell back to "đã lên cấp", which is the
@@ -1004,7 +998,6 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     const price = sellPrice(plant);
     this.state.plants = this.state.plants.filter((p) => p.plantId !== plantId);
     this.credit(price, `Bán ${plant.name}`);
-    this.advanceGoal("sell", 1);
     this.commit("sell");
     return { ok: true, price };
   }
@@ -1023,7 +1016,6 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     if (!plant) return { ok: false, reason: "Không tìm thấy cây" };
     const r = tryAwaken(plant, Date.now());
     if (!r.ok) return r;
-    this.advanceGoal("awaken", 1);
     this.addPlantXp(plant, 30);
     this.recordPlantDiscovery(plant);
     this.commit("awaken");
@@ -1258,8 +1250,21 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
       ascent.attempts++;
     }
 
-    this.advanceGoal("battle", 1);
-    if (won) this.advanceGoal("win", 1);
+    /*
+     * The ladder's quest events, emitted where the fight was actually settled.
+     *
+     * A win is three separate facts — a stage was cleared, an enemy was defeated, and a combo
+     * was run — and each is a different quest. The replay flag is carried so "luyện lại ải cũ"
+     * can tell a first clear from a repeat without the quest needing to know the ladder's rules.
+     */
+    if (won) {
+      this.questEvent({ name: "stage_completed", stage, boss: isBossStage(stage), replay: alreadyCleared });
+      this.questEvent({ name: "enemy_defeated", amount: 1 });
+      const combo = readCombo(result.events, "a").best;
+      if (combo >= 2) this.questEvent({ name: "combo_reached", value: combo });
+    } else {
+      this.questEvent({ name: "stage_failed", stage });
+    }
     this.commit("ascent");
     this.pushNotice({
       kind: "level",
@@ -1296,10 +1301,9 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     this.addPlantXp(me, won ? 15 : 10);
     this.state.discovery.battles++;
     this.recordPlantDiscovery(me);
-    this.advanceGoal("battle", 1);
-    // Only on a win. Sharing the "battle" counter would mean a player who loses
-    // eight times in a row completes a quest called "thắng hai trận".
-    if (won) this.advanceGoal("win", 1);
+    // A quick battle is not a ladder stage, so it counts as an enemy defeated and nothing else.
+    // Folding it into `stage_completed` would let a player farm the ladder quests in the arena.
+    if (won) this.questEvent({ name: "enemy_defeated", amount: 1 });
     this.commit("battle");
     return { result, won };
   }
@@ -1326,6 +1330,10 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
 
   addBreederXp(amount: number) {
     this.state.breederXp += amount;
+    // The lifetime total, so the score achievements measure everything ever earned rather than
+    // the current level's leftovers.
+    this.state.lifetimeExp += Math.max(0, Math.round(amount));
+    this.questEvent({ name: "exp_gained", amount: Math.max(0, Math.round(amount)) });
 
     const levelBefore = this.state.breederLevel;
     const beforeUnlock = this.unlockedSpeciesIds();
@@ -1395,22 +1403,10 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     // level up still advances the bar, and the badge shows XP to the next level,
     // so the player has to see it move. Skipping this was why the badge could
     // read level 1 while the store held level 10.
+    if (this.state.breederLevel > levelBefore) {
+      this.questEvent({ name: "level_up", value: this.state.breederLevel, amount: crossed.length });
+    }
     this.commit("addBreederXp");
-  }
-
-  claimGoal(goalId: string): { ok: boolean; reason?: string; goal?: DailyGoal } {
-    this.refreshGardenDay();
-    const goal = this.state.gardenDay.goals.find((g) => g.id === goalId);
-    if (!goal) return { ok: false, reason: "Không tìm thấy nhiệm vụ" };
-    if (goal.claimed) return { ok: false, reason: "Đã nhận thưởng" };
-    if (goal.progress < goal.target) return { ok: false, reason: "Chưa hoàn thành" };
-    goal.claimed = true;
-    if (goal.reward.leafCoin) this.credit(goal.reward.leafCoin, `Thưởng ${goal.label}`);
-    if (goal.reward.geneCrystal) this.state.geneCrystal += goal.reward.geneCrystal;
-    if (goal.reward.items) this.state.items += goal.reward.items;
-    this.state.gardenDay.focus = Math.min(100, this.state.gardenDay.focus + 18);
-    this.commit("claimGoal");
-    return { ok: true, goal };
   }
 
   gardenWeatherNote(): string {
@@ -1422,61 +1418,6 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
       moon: "Đêm trăng: dễ mở đặc tính hiếm và đột biến mạnh hơn bình thường.",
     };
     return notes[this.state.gardenDay.weather];
-  }
-
-  /** Progress for a milestone metric, read live from player state. */
-  private metricProgress(metric: MilestoneMetric): number {
-    const d = this.state.discovery;
-    switch (metric) {
-      case "species":
-        return d.species.length;
-      case "elements":
-        return d.elements.length;
-      case "traits":
-        return d.traits.length;
-      case "careActions":
-        return d.careActions.length;
-      case "battles":
-        return d.battles;
-      case "breeds":
-        return d.breeds;
-      case "wins":
-        return this.state.plants.reduce((a, p) => a + p.battleRecord.wins, 0);
-      case "plantsOwned":
-        return this.state.plants.length;
-      case "highestGeneration":
-        return this.state.plants.reduce((a, p) => Math.max(a, p.generation), 1);
-      case "highestRarity": {
-        // Rarity points: C=0 B=1 A=2 S=3 SS=4 SSS=5.
-        const pts: Record<string, number> = { C: 0, B: 1, A: 2, S: 3, SS: 4, SSS: 5 };
-        return this.state.plants.reduce((a, p) => Math.max(a, pts[p.rarity] ?? 0), 0);
-      }
-    }
-  }
-
-  discoveryMilestones(): DiscoveryMilestone[] {
-    return MILESTONES.map((t) => ({
-      id: t.id,
-      label: t.label,
-      hint: t.hint,
-      progress: this.metricProgress(t.metric),
-      target: t.target,
-      reward: t.reward,
-      claimed: this.state.discovery.claimed.includes(t.id),
-    }));
-  }
-
-  claimDiscovery(id: string): { ok: boolean; reason?: string; milestone?: DiscoveryMilestone } {
-    const milestone = this.discoveryMilestones().find((m) => m.id === id);
-    if (!milestone) return { ok: false, reason: "Không tìm thấy mốc khám phá" };
-    if (milestone.claimed) return { ok: false, reason: "Đã nhận thưởng" };
-    if (milestone.progress < milestone.target) return { ok: false, reason: "Chưa đủ tiến độ" };
-    this.state.discovery.claimed.push(id);
-    if (milestone.reward.leafCoin) this.credit(milestone.reward.leafCoin, `Khám phá: ${milestone.label}`);
-    if (milestone.reward.geneCrystal) this.state.geneCrystal += milestone.reward.geneCrystal;
-    if (milestone.reward.items) this.state.items += milestone.reward.items;
-    this.commit("claimDiscovery");
-    return { ok: true, milestone };
   }
 
   private recordPlantDiscovery(plant: Plant) {
@@ -1493,33 +1434,113 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     this.state.gardenDay = createGardenDay(key, this.state.gardenDay, this.state.breederLevel, this.state.playerId);
   }
 
-  private advanceGoal(kind: DailyGoalKind, amount: number) {
-    this.refreshGardenDay();
-    let moved = false;
-    for (const goal of this.state.gardenDay.goals) {
-      if (goal.kind === kind && !goal.claimed && goal.progress < goal.target) {
-        goal.progress = Math.min(goal.target, goal.progress + amount);
-        moved = true;
-      }
+  // --- quests -------------------------------------------------------------
+  //
+  // The whole progression system. Gameplay does not touch a quest: it calls `questEvent` with
+  // what happened, and the engine decides which quests that moves. Adding a quest means adding a
+  // definition in `quests/catalog.ts`, not editing the six screens that happen to cause it.
+
+  /**
+   * Everything a quest's conditions are judged against, read from the save right now.
+   *
+   * Recomputed on every call rather than cached: a cached context is a second copy of the
+   * player's progress, and the whole reason the old systems drifted is that they each kept one.
+   */
+  private questContext(): QuestContext {
+    let speciesCount = 0;
+    for (const n of Object.values(this.state.seeds)) if ((n ?? 0) > 0) speciesCount++;
+    const claimed = new Set<string>();
+    for (const [id, entry] of Object.entries(this.state.quests.entries)) {
+      if (entry.status === "claimed") claimed.add(id);
     }
-    // Fires once, and only on the transition into "done". Announcing on every
-    // increment would spam a player who just planted three seeds in a row.
-    if (moved) this.checkGoalCompletion();
+    return {
+      level: this.state.breederLevel,
+      highestStage: this.state.ascent.highest,
+      stagesCleared: this.state.ascent.cleared,
+      speciesCount,
+      wins: this.state.plants.reduce((a, p) => a + p.battleRecord.wins, 0),
+      score: this.state.lifetimeExp,
+      claimed,
+      day: dayKey(Date.now()),
+      playerId: this.state.playerId,
+    };
+  }
+
+  /** Every quest, resolved for the UI. Syncs first, so a new quest appears without a migration. */
+  questViews(): QuestView[] {
+    return computeQuestViews(this.state.quests, this.questContext(), QUEST_CATALOG);
+  }
+
+  /** The main quest to track, plus a couple of optional ones worth showing beside it. */
+  questTracker(): { main: QuestView | null; extras: QuestView[] } {
+    return questTracked(this.questViews());
+  }
+
+  /** How many quests have a reward waiting. What the HUD badge counts. */
+  questClaimableCount(): number {
+    let n = 0;
+    for (const v of this.questViews()) if (v.status === "completed") n++;
+    return n;
   }
 
   /**
-   * Announce any goal that just became claimable.
+   * Tell the quest system that something happened.
    *
-   * Shared by `advanceGoal` and by the unlock/plot/awaken paths, which can clear a
-   * goal without going through a counter at all.
+   * The single entry point. Every call site below is inside the store's own action — planting,
+   * caring, breeding, settling a stage — so no screen can advance a quest, and no quest can be
+   * advanced twice by two screens that both noticed the same thing.
    */
-  private checkGoalCompletion(): void {
-    for (const goal of this.state.gardenDay.goals) {
-      if (!goal.claimed && goal.progress >= goal.target && !goal.announced) {
-        goal.announced = true;
-        this.pushNotice({ kind: "goal", title: "Hoàn thành nhiệm vụ", body: goal.label });
+  questEvent(ev: QuestEvent): void {
+    const result = questAdvance(this.state.quests, this.questContext(), QUEST_CATALOG, ev);
+    if (result.changed.length === 0 && result.completed.length === 0) return;
+    this.state.quests = result.save;
+    for (const c of result.changed) {
+      if (result.completed.includes(c.id)) continue; // announced below, and once
+      const def = QUEST_CATALOG.find((q) => q.id === c.id);
+      this.pushNotice({ kind: "quest", title: def?.title ?? c.id, body: `${c.progress}/${c.target}`, key: `quest:${c.id}` });
+    }
+    for (const id of result.completed) {
+      const def = QUEST_CATALOG.find((q) => q.id === id);
+      this.pushNotice({ kind: "quest", title: "Hoàn thành nhiệm vụ!", body: def?.title ?? id, key: `quest-done:${id}` });
+    }
+    this.commit("quest");
+  }
+
+  /**
+   * Take a finished quest's reward.
+   *
+   * Every part of it goes through the path the rest of the game uses: experience through
+   * `addPlantXp`/`addBreederXp` (so a level-up fires and celebrates for real), coins through
+   * `credit` (so the ledger records it), items and crystals into the same fields the shop reads.
+   * A reward that only moved a number in the quest panel would be the "UI giả" the brief warns
+   * about.
+   */
+  claimQuest(id: string): { ok: boolean; reason?: string; title?: string; levels?: number; rewards?: QuestReward } {
+    const result = questClaim(this.state.quests, this.questContext(), QUEST_CATALOG, id);
+    if (!result.ok || !result.def) return { ok: false, reason: result.reason };
+    const def = result.def;
+    const r = def.rewards;
+    this.state.quests = result.save;
+
+    let levels = 0;
+    if (r.exp) {
+      const fighter = this.bestFighter();
+      if (fighter) levels = this.addPlantXp(fighter, r.exp);
+      else {
+        this.state.lifetimeExp += r.exp;
+        this.questEvent({ name: "exp_gained", amount: r.exp });
       }
     }
+    if (r.breederXp) this.addBreederXp(r.breederXp);
+    if (r.coins) this.credit(r.coins, `Nhiệm vụ: ${def.title}`);
+    if (r.items) this.state.items += r.items;
+    if (r.geneCrystal) this.state.geneCrystal += r.geneCrystal;
+
+    // Emitted after the payment so a future "claim N quests" quest sees it. It cannot advance
+    // the quest just claimed: that one is already `claimed`, and `advance` only touches `active`.
+    this.questEvent({ name: "reward_claimed", amount: 1 });
+    this.commit("claimQuest");
+    return { ok: true, title: def.title, levels, rewards: r };
   }
 
   private tryCareCombo(plant: Plant) {
@@ -1602,6 +1623,31 @@ function loadOrCreate(rawOverride?: string): PlayerState {
         }
         parsed.gardenDay = parsed.gardenDay ?? createGardenDay(dayKey(Date.now()), undefined, parsed.breederLevel ?? 1, parsed.playerId ?? "player");
         parsed.discovery = repairDiscovery(parsed.discovery);
+        /*
+         * The quest shelf.
+         *
+         * Repaired rather than required, so a save written before quests existed simply gains an
+         * empty shelf. Progress is *not* back-filled here: `syncQuests` seeds every measurable
+         * quest from the state it measures, so a returning player with ten stages cleared sees
+         * "vượt 10 ải" already complete the first time the panel opens, without a migration that
+         * would have to guess what the old systems had recorded.
+         */
+        parsed.quests = repairQuestSave(parsed.quests, dayKey(Date.now()));
+        /*
+         * Lifetime experience.
+         *
+         * A save written before this field existed has none, and the score achievements would
+         * then read zero for a veteran. Seeded from what is recoverable — breeder experience
+         * plus every plant's banked experience — which is a lower bound and is honest about it:
+         * experience already spent on levels cannot be recovered, so the number is "at least
+         * this much" rather than a claim to be exact.
+         */
+        parsed.lifetimeExp = Number.isFinite(parsed.lifetimeExp)
+          ? parsed.lifetimeExp
+          : Math.round(
+              (Number(parsed.breederXp) || 0) +
+                parsed.plants.reduce((a, p) => a + (Number(p.growth?.xp) || 0), 0),
+            );
         // Repair the ladder. Field by field rather than spreading a whole object over it,
         // because a save written by a build that had the ladder but not the daily escalation
         // has an `ascent` with no `day`, and a default that spread would reset the record to
@@ -1657,6 +1703,8 @@ function loadOrCreate(rawOverride?: string): PlayerState {
     seenGenes: [],
     gardenDay: createGardenDay(dayKey(now), undefined, 1, playerId),
     discovery: emptyDiscovery(),
+    quests: emptyQuestSave(dayKey(now)),
+    lifetimeExp: 0,
     ascent: emptyAscent(dayKey(now)),
   };
   // Seed the first plant.
@@ -1725,92 +1773,33 @@ function daysBetween(previous: string, current: string): number {
 }
 
 /**
- * Build today's board: goals drawn from the pool, gated by breeder level, with
- * the weather giving its favoured kinds a small edge. Streak carries over from
- * yesterday and resets after a missed day.
- */
-/**
- * Build a day's state.
+ * Build a day's state: the weather, the streak, and the focus number.
  *
- * Exported because it is the only pure seam in the day cycle: it takes the
- * previous day and returns the next, so a test can walk a month of rotation in a
- * loop without touching the clock that `refreshGardenDay` reads.
+ * The daily *goals* that used to be drawn here are gone — the quest shelf owns daily work now,
+ * and the engine rolls its own three from `quests/catalog.ts`. What is left is the weather and
+ * the streak, which are about the garden rather than about a checklist, and `recentGoals` is kept
+ * only so an old save's field round-trips.
+ *
+ * Exported because it is the only pure seam in the day cycle: it takes the previous day and
+ * returns the next, so a test can walk a month of rotation in a loop without touching the clock
+ * that `refreshGardenDay` reads.
  */
 export function createGardenDay(key: string, previous: GardenDayState | undefined, level: number, playerId: string): GardenDayState {
   const rng = new Rng(seedToken("garden-day", key, playerId));
   const weather = rng.pick(["mist", "sun", "storm", "moon"] as GardenWeather[]) ?? "mist";
-  const favours = WEATHER_INFO[weather].favours;
 
   let streak = 0;
   if (previous) {
     streak = daysBetween(previous.dayKey, key) === 1 ? previous.streak + 1 : 0;
   }
-
-  const eligible = GOAL_POOL.filter((t) => level >= t.minLevel);
-  const want = Math.min(DAILY_GOAL_COUNT, eligible.length);
-  const picked: DailyGoal[] = [];
-  const usedIds = new Set<string>();
-  const usedKinds = new Set<DailyGoalKind>();
-
-  // Everything barred today: already picked, or seen inside the cooldown window.
-  // The cooldown is what stops a daily player settling on a favourite three. With
-  // one-goal-per-kind the variety inside a day is already real; this is what makes
-  // the rotation across days move as well.
-  const barred = new Set<string>(previous?.recentGoals ?? []);
-
-  let guard = 0;
-  while (picked.length < want && guard++ < 120) {
-    const choice = rng.weighted(
-      // One goal per kind. Two "plant" rows on the same day differ by a number
-      // and read as one quest twice, however carefully the pool is written.
-      eligible.filter((t) => !usedIds.has(t.id) && !usedKinds.has(t.kind) && !barred.has(t.id)),
-      (t) => t.weight * (favours.includes(t.kind) ? 1.4 : 1) * (level >= t.minLevel + 3 ? 0.6 : 1),
-    );
-    // If the cooldown ate every remaining option, drop the cooldown rather than
-    // hand out fewer goals than promised. A short day is worse than a repeat.
-    const pick =
-      choice ??
-      rng.weighted(
-        eligible.filter((t) => !usedIds.has(t.id) && !usedKinds.has(t.kind)),
-        (t) => t.weight,
-      );
-    if (!pick || usedIds.has(pick.id) || usedKinds.has(pick.kind)) break;
-    usedIds.add(pick.id);
-    usedKinds.add(pick.kind);
-    picked.push({
-      id: `${key}-${pick.id}`,
-      kind: pick.kind,
-      label: pick.label,
-      target: pick.target,
-      progress: 0,
-      reward: scaleReward(pick.reward, streak),
-      claimed: false,
-      hint: pick.hint,
-      announced: false,
-    });
-  }
+  void level;
 
   return {
     dayKey: key,
     weather,
     streak,
-    focus: Math.min(100, 15 + streak * 5 + (picked.length >= DAILY_GOAL_COUNT ? 10 : 0)),
-    goals: picked,
-    // Today's picks join the window and the oldest fall out, so a player sees each
-    // template once every few days rather than whenever the weights say so.
-    recentGoals: [...picked.map((g) => g.id.slice(key.length + 1)), ...(previous?.recentGoals ?? [])].slice(
-      0,
-      GOAL_COOLDOWN_DAYS * DAILY_GOAL_COUNT,
-    ),
-  };
-}
-
-function scaleReward(reward: { leafCoin?: number; geneCrystal?: number; items?: number }, streak: number) {
-  const mult = streakMultiplier(streak);
-  return {
-    leafCoin: reward.leafCoin ? Math.round(reward.leafCoin * mult) : undefined,
-    geneCrystal: reward.geneCrystal,
-    items: reward.items,
+    focus: Math.min(100, 15 + streak * 5),
+    recentGoals: [],
   };
 }
 

@@ -13,7 +13,7 @@ import { el, toast, oddsBar, probabilityRows, rarityTag, traitChips, plantThumb,
 import { store } from "../app";
 import type { Plant } from "../../core/types";
 
-import { MUTATION_TIER_META } from "../../config/rarity";
+import { MUTATION_TIER_META, MUTATION_TIERS, RARITY_META, RARITY_POINT } from "../../config/rarity";
 
 import { dominantArchetype } from "../../core/types";
 import { plantDisplayName } from "../../core/plantNames";
@@ -84,6 +84,9 @@ export function renderBreeding(nav: Navigate): HTMLElement {
       }),
       "cây B",
     );
+    /* One slot filled turns the other into the invitation. */
+    slotElA.classList.toggle("is-next", !slotA && Boolean(slotB));
+    slotElB.classList.toggle("is-next", !slotB && Boolean(slotA));
     paintInfo();
   };
 
@@ -200,8 +203,8 @@ const meta = el("div");
       // The two promises the protocol makes, stated numerically. A ceiling of
       // "no higher than major" is easier to trust than "mutates less", and it is
       // what the code actually does.
-      const ceilingIndex = 3 + getProtocol(protocol).tierCeilingShift;
-      const ceiling = ceilingIndex >= 3 ? "tái bảc cao nhất" : ["vi mối", "nhỏ", "cao", "tái cao nhất"][ceilingIndex];
+      const ceilingIndex = Math.min(3, Math.max(0, 3 + getProtocol(protocol).tierCeilingShift));
+      const ceiling = MUTATION_TIER_META[MUTATION_TIERS[ceilingIndex]].label + " cao nhất";
       meta.appendChild(el("div", { class: "row between tiny muted" }, [el("span", {}, ["Đột biến cao nhất"]), el("span", { class: "mono" }, [ceiling])]));
     }
     meta.appendChild(el("div", { class: "row between tiny muted" }, [el("span", {}, ["Độ đa dạng gene"]), el("span", { class: "mono" }, [diversityLabel(a, b)])]));
@@ -230,7 +233,7 @@ const meta = el("div");
     const b = slotB ? store.get(slotB) : undefined;
     if (!a || !b || a.plantId === b.plantId) {
       cost.className = "proto-cost";
-      cost.replaceChildren(el("div", { class: "tiny muted" }, ["Chịn hai cây trưởng thành để lai. Cây con sẽ là cây mối."]));
+      cost.replaceChildren(el("div", { class: "tiny muted" }, ["Chọn hai cây trưởng thành để lai. Cây con sẽ là cây mới."]));
       return;
     }
     cost.className = "proto-cost is-live";
@@ -344,7 +347,12 @@ export function openMutationReport(result: BreedingResult, onClose: () => void) 
   const shell = document.querySelector(".shell")!;
   const { plant, report } = result;
   const overlay = el("div", { class: "overlay" });
-  const s = el("div", { class: "sheet", style: "max-height:92%" });
+  const s = el("div", { class: "sheet breed-report", style: "max-height:92%" });
+  /* The whole report is tinted by what it describes: the headline halo and the
+     sheet's edge read the rarity colour, so "this one mattered" is visible
+     before a single mutation row is read. */
+  s.style.setProperty("--rar", RARITY_META[report.rarity].colour);
+  s.classList.add("r-" + report.rarity.toLowerCase());
   s.appendChild(el("div", { class: "handle" }));
 
   const content = el("div", { class: "fadein" });
@@ -352,7 +360,7 @@ export function openMutationReport(result: BreedingResult, onClose: () => void) 
 
   // headline
   const headline = el("div", { class: "row", style: "gap:12px;align-items:center" });
-  const thumb = el("div");
+  const thumb = el("div", { class: "breed-report-thumb" + ((RARITY_POINT[report.rarity] ?? 0) >= 2 ? " is-rare" : "") });
   thumb.style.width = "100px";
   thumb.style.height = "100px";
   thumb.innerHTML = plantThumb(plant, 100).innerHTML;

@@ -237,7 +237,13 @@ const frontierOf = (page: Page): Promise<Record<string, unknown>> =>
     const b = [...document.querySelectorAll(".stagebrief-panel button")].find((x) => /Bắt đầu/.test(x.textContent || ""));
     if (b) b.click();
   })()`);
-  await page.waitForFunction(`(() => Boolean(document.querySelector(".stagelive-panel")))()`, { timeout: 150000 });
+  /*
+   * The replay is real-time — a grind can run a minute and a half — so the wait has to
+   * outlast the longest fight. `waitForFunction` takes its options as the third argument;
+   * passing `{ timeout }` as the second fed it to the page function and left the default
+   * 30s in force, which is why this used to time out mid-fight.
+   */
+  await page.waitForFunction(`(() => Boolean(document.querySelector(".stagelive-panel")))()`, undefined, { timeout: 150000 });
   await page.waitForTimeout(2600);
   await page.screenshot({ path: "shots/ascent/3-result.png" });
 

@@ -31,15 +31,21 @@
 
 .lvstrip-bar i {
   display: block;
+  width: 100%;
   height: 100%;
   border-radius: 2px;
   background: linear-gradient(90deg, #2f9f62, #8ad6a6);
-  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  /* Scaled, not resized — same convention as .bar > i. */
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .lvstrip-xp {
   font-size: 9.5px;
-  color: #5d8168;
+  /* Was #5d8168 — 3.2:1 on the card's cream, below the floor the audit holds
+     small text to. Darkened to the strip's own level green, which passes. */
+  color: #3d6b4e;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -84,10 +90,13 @@
 
 .mastery-bar i {
   display: block;
+  width: 100%;
   height: 100%;
   border-radius: 2px;
   background: linear-gradient(90deg, #6f9fe0, #7fc4ff);
-  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .mastery-text {

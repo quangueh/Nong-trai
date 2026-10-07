@@ -4,16 +4,17 @@ import { el, plantThumb, elementTags, traitChips, bar, statRow, rarityTag, toast
 import { store } from "../app";
 import type { Plant } from "../../core/types";
 import { STAGE_LABEL, STAT_LABEL } from "../../core/types";
-import type { DailyGoal, GardenWeather } from "../../core/store";
-import { canBattle, canBreed } from "../../growth/stages";
-import { plotCard } from "./plotCard";
-import { GOAL_POOL, WEATHER_INFO, streakLabel } from "../../config/quests";
+import type { GardenWeather } from "../../core/store";
+import { canBattle, stageProgress } from "../../growth/stages";
+import { plotCard, canWaterNow } from "./plotCard";
+import { WEATHER_INFO, streakLabel } from "../../config/quests";
+import { QUEST_TABS } from "../../quests/catalog";
+import type { QuestType, QuestView } from "../../quests/types";
 import { CARE_ACTIONS, CARE_LIST, MOOD_LABEL, MOOD_EFFECTS, type CareActionId } from "../../config/careActions";
 import { ARCHETYPE_STRENGTH, ARCHETYPE_WEAKNESS, ARCHETYPE_ROLE } from "../../config/balance";
 import { dominantArchetype } from "../../core/types";
 import { SPECIES, type SpeciesId, type SpeciesDef } from "../../config/species";
 import { featuredSpecies } from "../../economy/shop";
-import { TRAITS_BY_ID } from "../../config/traits";
 import { playPlanting, setRevealArt } from "./planting";
 import { sfx } from "../../audio/audio";
 import { MAX_PLOTS, plotStatuses, type PlotStatus } from "../../config/unlocks";
@@ -21,8 +22,11 @@ import { seedColor } from "../components";
 import { renderPlantSvg } from "../../render/plantRenderer";
 import { skillMasteryPct, skillMasteryText } from "../../progression/objectives";
 import { celebrateExpGain } from "../fx/expGain";
-import type { Navigate } from "./types";
-import { coachStrip } from "./coach";
+import { markUnlock, rewardFly } from "../fx/gardenFx";
+import { currencyInfo } from "../../core/currency";
+import { createSeedPlant } from "../../genetics/genomeGenerator";
+import type { Navigate, Screen } from "./types";
+import { gardenBar } from "./gardenBar";
 
 // The ceremony renders real plant art, so it needs the renderer. Wiring it here
 // keeps planting.ts free of a render import.
@@ -37,8 +41,11 @@ let selectedSeed: SpeciesId | null = null;
  * Resetting it on every render meant the banner that says "1163 loài mới" arrived
  * on the plots tab, whatever the player was reading a moment earlier.
  */
-type GardenTab = "plots" | "today" | "seeds";
+type GardenTab = "plots" | "quests" | "seeds";
 let gardenTab: GardenTab = "plots";
+
+/** Which shelf of the quest panel is open. Survives re-renders the same way `gardenTab` does. */
+let questTab: QuestType = "main";
 
 export function renderGarden(nav: Navigate): HTMLElement {
   const root = el("div", { class: "fadein" });
@@ -46,40 +53,56 @@ export function renderGarden(nav: Navigate): HTMLElement {
 
   selectedSeed = selectedSeed ?? firstOwnedSeed() ?? SPECIES[0].id;
 
+  const claimable = store.questClaimableCount();
   const tabs: { id: GardenTab; label: string }[] = [
     { id: "plots", label: "Vườn" },
-    { id: "today", label: "Hôm nay" },
+    { id: "quests", label: "Nhiệm vụ" },
     { id: "seeds", label: "Túi hạt" },
   ];
 
   const chipRow = el("div", { class: "tabs", role: "tablist" });
   const body = el("div");
+
+  /*
+   * Tab switching, in one place.
+   *
+   * The quick-action dock needs the same jump the tab row performs (its "Việc"
+   * and "Hạt" buttons are shortcuts to Nhiệm vụ and Túi hạt), and two paths
+   * changing the same tab is how the strip and the content disagree about which
+   * one is active.
+   */
+  const goTab = (t: GardenTab): void => {
+    if (gardenTab === t) return;
+    gardenTab = t;
+    for (const other of chipRow.querySelectorAll<HTMLElement>(".tab")) {
+      const on = other.dataset.tab === t;
+      other.classList.toggle("active", on);
+      other.setAttribute("aria-selected", String(on));
+    }
+    sfx.play("tap");
+    paint();
+  };
+
   for (const t of tabs) {
     const b = el(
       "button",
-      { class: "tab" + (t.id === gardenTab ? " active" : ""), role: "tab", "aria-selected": String(t.id === gardenTab) },
+      { class: "tab" + (t.id === gardenTab ? " active" : ""), role: "tab", "aria-selected": String(t.id === gardenTab), "data-tab": t.id },
       [t.label],
     );
-    b.addEventListener("click", () => {
-      if (gardenTab === t.id) return;
-      gardenTab = t.id;
-      for (const other of chipRow.querySelectorAll(".tab")) {
-        other.classList.remove("active");
-        other.setAttribute("aria-selected", "false");
-      }
-      b.classList.add("active");
-      b.setAttribute("aria-selected", "true");
-      sfx.play("tap");
-      paint();
-    });
+    // The reward badge lives on the tab itself: a player on the plots tab still needs to
+    // know a claim is waiting without opening the panel to check.
+    if (t.id === "quests" && claimable > 0) {
+      b.appendChild(el("span", { class: "tab-badge" }, [String(claimable)]));
+    }
+    b.addEventListener("click", () => goTab(t.id));
     chipRow.appendChild(b);
   }
   root.append(chipRow, body);
 
   const paint = () => {
     body.replaceChildren();
-    if (gardenTab === "plots") paintPlots(body, nav, shell);
-    else if (gardenTab === "today") paintToday(body, nav);
+    if (gardenTab === "plots") paintPlots(body, nav, shell, goTab);
+    else if (gardenTab === "quests") paintQuests(body, nav);
     else paintSeeds(body, nav);
   };
   paint();
@@ -88,17 +111,19 @@ export function renderGarden(nav: Navigate): HTMLElement {
 }
 
 /** The plots, and nothing else. */
-function paintPlots(body: HTMLElement, nav: Navigate, shell: Element): void {
+function paintPlots(body: HTMLElement, nav: Navigate, shell: Element, goTab: (t: GardenTab) => void): void {
   /*
-   * The coach, above the plots.
+   * The quest tracker, above the plots.
    *
-   * Above rather than below because the plots are a wall of empty tiles on a new account, and
-   * a strip placed under them would only ever be reached by scrolling past the very thing it
-   * is meant to explain. `coachStrip` returns null once all three steps are true, so there is
-   * no flag to clear and no way for it to linger on an established garden.
+   * One main line plus whatever optional work is closest to done — the answer to "what should
+   * I do now" — sitting above the soil because the plots are a wall of tiles and a tracker
+   * under them would only be found by scrolling past the thing it is meant to direct. Tapping
+   * it opens the quest shelf; claiming happens there, not here.
    */
-  const coach = coachStrip();
-  if (coach) body.appendChild(coach);
+  body.appendChild(questTracker(() => {
+    gardenTab = "quests";
+    nav("garden");
+  }));
 
   // --- plots ---
   const section = el("div");
@@ -110,11 +135,38 @@ function paintPlots(body: HTMLElement, nav: Navigate, shell: Element): void {
   section.appendChild(title);
 
   const grid = el("div", { class: "plots" });
+
+  /*
+   * The quick-action dock.
+   *
+   * Created before the cards so a plot tap can be routed through it: every card
+   * asks the dock what a tap means right now (inspect, a care tool, or the full
+   * menu) instead of hard-wiring the detail sheet. The dock is `position:
+   * fixed` inside the screen, so it rides above the bottom nav without covering
+   * the soil and dies with the tab.
+   */
+  const cardById = new Map<string, HTMLElement>();
+  const qaBar = gardenBar({
+    cards: cardById,
+    grid,
+    nav,
+    goTab,
+    pickSeed: () => openSeedPicker(nav),
+    openDetail: (p) => openDetail(p, nav, shell),
+    openCare: (p) => openCare(p, nav, shell),
+  });
+
   // Plants fill plots from 1 upward, so the nth plant is in plot n. That is the
   // same convention the ladder uses, which is what lets a player go from "ô 7"
   // in the shop to the same tile here.
   store.state.plants.forEach((plant, i) => {
-    grid.appendChild(plotCard(plant, () => openDetail(plant, nav, shell), i + 1));
+    const card = plotCard(plant, () => qaBar.onPlotTap(plant, card), i + 1);
+    card.dataset.plantId = plant.plantId;
+    // The cooldown chip the dock writes into. Present from the start so a badge
+    // never has to be inserted under a tap.
+    card.appendChild(el("span", { class: "care-mark", "aria-hidden": "true" }));
+    cardById.set(plant.plantId, card);
+    grid.appendChild(card);
   });
 
   // Every plot, open or not, in one grid. The locked ones carry their own
@@ -122,8 +174,12 @@ function paintPlots(body: HTMLElement, nav: Navigate, shell: Element): void {
   const plots = plotStatuses(store.unlockContext(), store.state.nurseryCap);
   for (const status of plots) {
     if (status.open) {
-      // The plot's own number, not a slot index. See the note on emptyPlot.
-      grid.appendChild(emptyPlot(nav, status.index));
+      /*
+       * Only the *unoccupied* remainder. Plants fill the grid from index 1 up,
+       * so every open status at or below `plants.length` already has a card —
+       * rendering it a second time gave the garden two tiles numbered "1".
+       */
+      if (status.index > store.state.plants.length) grid.appendChild(emptyPlot(nav, status.index));
     } else {
       grid.appendChild(lockedPlot(status, () => nav("garden")));
     }
@@ -133,7 +189,29 @@ function paintPlots(body: HTMLElement, nav: Navigate, shell: Element): void {
     grid.appendChild(el("div", { class: "empty" }, [el("div", { class: "big" }, ["🌱"]), el("div", {}, ["Vườn trống. Mua hạt ở Cửa hàng để bắt đầu."])]));
   }
   section.appendChild(grid);
-  body.appendChild(section);
+
+  /*
+   * The garden is a scene, not a grid of cards.
+   *
+   * Sky, a sun, drifting clouds and two far islands give the floating soil
+   * something to float in. Decoration is absolutely positioned behind the
+   * plots with pointer-events:none, so it costs the grid nothing and can
+   * never steal a tap.
+   */
+  const scene = el("div", { class: "garden-scene" });
+  scene.append(
+    el("div", { class: "scene-sun", "aria-hidden": "true" }),
+    el("div", { class: "scene-cloud c1", "aria-hidden": "true" }),
+    el("div", { class: "scene-cloud c2", "aria-hidden": "true" }),
+    el("div", { class: "scene-cloud c3", "aria-hidden": "true" }),
+    el("div", { class: "scene-isle i1", "aria-hidden": "true" }),
+    el("div", { class: "scene-isle i2", "aria-hidden": "true" }),
+    el("div", { class: "scene-flutter f1", "aria-hidden": "true" }, ["🦋"]),
+    el("div", { class: "scene-flutter f2", "aria-hidden": "true" }, ["🦋"]),
+    el("div", { class: "scene-body" }, [section]),
+  );
+  body.appendChild(scene);
+  body.appendChild(qaBar.root);
 
   // Kept on the plots tab rather than the today tab: it explains what the plots
   // are for, and it is what a new player needs on their first visit to the soil.
@@ -151,11 +229,257 @@ function paintPlots(body: HTMLElement, nav: Navigate, shell: Element): void {
   body.appendChild(info);
 }
 
-/** Everything that is a to-do for today rather than a place. */
-function paintToday(body: HTMLElement, nav: Navigate): void {
-  body.appendChild(gardenPulse(nav));
-  body.appendChild(starterRoadmap(nav));
-  body.appendChild(discoveryBook(nav));
+/**
+ * The quest shelf: today's weather on top, then the four kinds of quest in tabs.
+ *
+ * This is the whole progression surface — the main line, optional work, the day's roll and the
+ * long-term marks — one list behind one set of tabs. It replaced three older to-do surfaces
+ * (a starter roadmap, a discovery book and the daily-goal rows) which each kept their own
+ * progress and their own claim path and none of which knew about the others.
+ */
+function paintQuests(body: HTMLElement, nav: Navigate): void {
+  body.appendChild(gardenPulse());
+
+  const views = store.questViews();
+  const tabs = el("div", { class: "quest-tabs", role: "tablist" });
+  const list = el("div", { class: "quest-list" });
+
+  const paintList = (): void => {
+    list.replaceChildren();
+    const inTab = views.filter((v) => v.def.type === questTab);
+    // Claimable first, then active by closeness, then locked, then claimed last — the order a
+    // player reads it: what can I take, what am I close to, what is still shut, what is done.
+    const rank = (v: QuestView): number =>
+      v.status === "completed" ? 0 : v.status === "active" ? 1 : v.status === "locked" ? 2 : 3;
+    const ordered = [...inTab].sort(
+      (a, b) => rank(a) - rank(b) || b.fraction - a.fraction || a.def.priority - b.def.priority,
+    );
+    if (!ordered.length) {
+      list.appendChild(
+        el("div", { class: "empty" }, [
+          el("div", { class: "big" }, ["📋"]),
+          el("div", {}, [questTab === "daily" ? "Hôm nay chưa có nhiệm vụ. Vượt ải 2 để mở hằng ngày." : "Chưa có nhiệm vụ nào ở đây."]),
+        ]),
+      );
+    }
+    for (const v of ordered) list.appendChild(questCard(v, nav));
+  };
+
+  for (const t of QUEST_TABS) {
+    const badge = views.filter((v) => v.def.type === t.type && v.status === "completed").length;
+    const b = el(
+      "button",
+      {
+        class: "quest-tab" + (t.type === questTab ? " active" : ""),
+        role: "tab",
+        "aria-selected": String(t.type === questTab),
+      },
+      [el("span", { class: "quest-tab-ico" }, [t.icon]), el("span", {}, [t.label])],
+    );
+    if (badge > 0) b.appendChild(el("span", { class: "tab-badge" }, [String(badge)]));
+    b.addEventListener("click", () => {
+      if (questTab === t.type) return;
+      questTab = t.type;
+      for (const o of tabs.querySelectorAll(".quest-tab")) {
+        o.classList.remove("active");
+        o.setAttribute("aria-selected", "false");
+      }
+      b.classList.add("active");
+      b.setAttribute("aria-selected", "true");
+      sfx.play("tap");
+      paintList();
+    });
+    tabs.appendChild(b);
+  }
+
+  body.append(tabs, list);
+  paintList();
+}
+
+/**
+ * Where a quest's work is done, for the "go" action on an unfinished card.
+ *
+ * Mapped from the event the quest listens to rather than stored on the definition: the
+ * catalogue is data about *what* is measured, and the screen it is measured on is a UI fact.
+ */
+function questDestination(v: QuestView): Screen | null {
+  switch (v.def.track.event) {
+    case "plant":
+      return "garden";
+    case "care":
+      return "garden";
+    case "breed":
+      return "breeding";
+    case "stage_completed":
+    case "stage_failed":
+    case "enemy_defeated":
+    case "combo_reached":
+      return "ascent";
+    case "level_up":
+      return "ascent";
+    case "item_collected":
+      return "lab";
+    case "exp_gained":
+      return "ascent";
+    case "skill_unlocked":
+      return "lab";
+    case "reward_claimed":
+      return null;
+    default:
+      return null;
+  }
+}
+
+/** One reward, as a chip. `unlocks` render separately because they name a gate, not a payout. */
+function rewardChip(label: string, cls: string): HTMLElement {
+  return el("span", { class: `quest-reward ${cls}` }, [label]);
+}
+
+function questRewardChips(v: QuestView): HTMLElement[] {
+  const r = v.def.rewards;
+  const chips: HTMLElement[] = [];
+  if (r.exp) chips.push(rewardChip(`✨ ${r.exp} EXP cây`, "rw-exp"));
+  if (r.breederXp) chips.push(rewardChip(`🎖️ ${r.breederXp} EXP nhà lai`, "rw-exp"));
+  if (r.coins) chips.push(rewardChip(`🪙 ${r.coins.toLocaleString("vi-VN")}`, "rw-coin"));
+  if (r.items) chips.push(rewardChip(`🧺 ${r.items}`, "rw-item"));
+  if (r.geneCrystal) chips.push(rewardChip(`💎 ${r.geneCrystal}`, "rw-crystal"));
+  for (const u of r.unlocks ?? []) chips.push(rewardChip(`🔓 ${u}`, "rw-unlock"));
+  return chips;
+}
+
+/**
+ * One quest.
+ *
+ * The card is also the claim button — a finished quest gets a glowing "Nhận" chip and the
+ * whole row claims it — because splitting "read the quest" from "take the reward" into two
+ * controls is how a claim ends up behind a second tap for no reason.
+ */
+function questCard(v: QuestView, nav: Navigate): HTMLElement {
+  const state =
+    v.status === "completed" ? "done" : v.status === "claimed" ? "claimed" : v.status === "locked" ? "locked" : "active";
+  const card = el("button", { class: `quest-card ${state}` });
+  card.setAttribute("aria-label", `${v.def.title} — ${v.progress}/${v.target}`);
+
+  const pctText = `${Math.min(v.progress, v.target).toLocaleString("vi-VN")}/${v.target.toLocaleString("vi-VN")}`;
+
+  const right =
+    v.status === "completed"
+      ? el("span", { class: "quest-cta claim pulse" }, ["Nhận"])
+      : v.status === "claimed"
+        ? el("span", { class: "quest-cta done" }, ["✓"])
+        : v.status === "locked"
+          ? el("span", { class: "quest-cta" }, ["🔒"])
+          : el("span", { class: "quest-count mono" }, [pctText]);
+
+  card.append(
+    el("span", { class: "quest-ico" }, [v.def.icon]),
+    el("span", { class: "quest-main" }, [
+      el("b", {}, [v.def.title]),
+      el("small", {}, [
+        v.status === "locked" ? v.lockedReason : v.status === "claimed" ? "Đã nhận thưởng" : v.def.objective,
+      ]),
+      el("span", { class: "quest-rewards" }, questRewardChips(v)),
+      v.status !== "claimed" && v.status !== "locked"
+        ? el("span", { class: "quest-bar" }, [bar(v.fraction)])
+        : null,
+    ]),
+    right,
+  );
+
+  card.addEventListener("click", () => {
+    if (v.status === "completed") {
+      const res = store.claimQuest(v.def.id);
+      if (res.ok) {
+        // Rewards visibly fly into the HUD pills, then the pill bumps — the
+        // claim is the moment the garden pays out, and it should look like one.
+        rewardFly(card, v.def.rewards);
+        sfx.play("reward");
+        const what = questRewardChips(v)
+          .map((c) => c.textContent ?? "")
+          .join("  ");
+        toast(`Nhận thưởng ${res.title}: ${what || "xong"}`, 2600);
+      } else {
+        sfx.play("error");
+        toast(res.reason ?? "Chưa nhận được");
+      }
+      nav("garden");
+      return;
+    }
+    if (v.status === "claimed") return;
+    if (v.status === "locked") {
+      sfx.play("error");
+      toast(v.lockedReason || "Chưa mở");
+      return;
+    }
+    const dest = questDestination(v);
+    if (dest && dest !== "garden") {
+      sfx.play("tap");
+      nav(dest);
+    } else if (dest === "garden") {
+      gardenTab = "plots";
+      sfx.play("tap");
+      nav("garden");
+    } else {
+      toast(v.def.description, 2600);
+    }
+  });
+  return card;
+}
+
+/**
+ * The tracker on the plots tab: the main line and the nearest optional work.
+ *
+ * Compact on purpose — it is a signpost, not the shelf. Progress, the next objective and a
+ * claimable count are the whole content; tapping anywhere on it opens the quest tab.
+ */
+function questTracker(open: () => void): HTMLElement {
+  const { main, extras } = store.questTracker();
+  const claimable = store.questClaimableCount();
+
+  const card = el("button", { class: "quest-tracker" + (claimable > 0 ? " has-claim" : "") });
+  card.setAttribute("aria-label", "Mở bảng nhiệm vụ");
+
+  const head = el("div", { class: "quest-tracker-head" }, [
+    el("b", {}, ["Nhiệm vụ"]),
+    claimable > 0
+      ? el("span", { class: "tab-badge" }, [`${claimable} thưởng`])
+      : el("span", { class: "tiny muted" }, ["Xem tất cả ›"]),
+  ]);
+  card.appendChild(head);
+
+  if (main) {
+    card.appendChild(
+      el("div", { class: "quest-track-row main" }, [
+        el("span", { class: "quest-ico sm" }, [main.def.icon]),
+        el("span", { class: "quest-track-main" }, [
+          el("b", {}, [main.def.objective]),
+          el("span", { class: "quest-bar" }, [bar(main.fraction)]),
+        ]),
+        el("span", { class: "quest-count mono" }, [`${main.progress}/${main.target}`]),
+      ]),
+    );
+  }
+  for (const v of extras) {
+    card.appendChild(
+      el("div", { class: "quest-track-row" }, [
+        el("span", { class: "quest-ico sm" }, [v.def.icon]),
+        el("span", { class: "quest-track-main" }, [
+          el("small", {}, [v.def.objective]),
+          el("span", { class: "quest-bar" }, [bar(v.fraction)]),
+        ]),
+        el("span", { class: "quest-count mono" }, [`${v.progress}/${v.target}`]),
+      ]),
+    );
+  }
+  if (!main && extras.length === 0) {
+    card.appendChild(el("div", { class: "tiny muted", style: "padding:4px 0" }, [claimable > 0 ? "Có phần thưởng chờ nhận." : "Đã xong hết nhiệm vụ chính."]));
+  }
+
+  card.addEventListener("click", () => {
+    sfx.play("tap");
+    open();
+  });
+  return card;
 }
 
 /** The seed bag, read-only: what you hold and what it costs. */
@@ -166,127 +490,6 @@ function paintSeeds(body: HTMLElement, nav: Navigate): void {
     ]),
   );
   body.appendChild(seedBelt(nav));
-}
-
-function starterRoadmap(nav: Navigate): HTMLElement {
-  const plants = store.state.plants;
-  const hasPlant = plants.length > 0;
-  const hasCared = plants.some((p) => p.economy.careCycles > 0);
-  const mature = plants.some((p) => canBattle(p));
-  const fought = plants.some((p) => p.battleRecord.wins + p.battleRecord.losses + p.battleRecord.draws > 0);
-  const breedable = plants.filter((p) => canBreed(p)).length >= 2;
-  const steps = [
-    { label: "Gieo cây đầu tiên", done: hasPlant, action: "Gieo", target: "garden" },
-    { label: "Chăm 1 lần để tăng chỉ số", done: hasCared, action: "Chăm", target: "care" },
-    { label: "Đợi cây trưởng thành", done: mature, action: "Xem giờ", target: "garden" },
-    { label: "Đấu AI/người chơi để nhận xu + vật tư", done: fought, action: "Đấu", target: "arena" },
-    { label: "Dùng thưởng để chăm tiếp hoặc lai giống", done: breedable, action: breedable ? "Lai" : "Tiếp tục", target: breedable ? "breeding" : "arena" },
-  ];
-  const current = steps.find((s) => !s.done) ?? steps[steps.length - 1];
-  const card = el("section", { class: "roadmap-card" });
-  card.append(
-    el("div", { class: "roadmap-head" }, [
-      el("div", {}, [
-        el("b", {}, ["Lộ trình tân thủ"]),
-        el("small", {}, ["Làm theo từng bước, game sẽ tự mở nhịp chăm và đấu"]),
-      ]),
-      el("button", { class: "roadmap-action" }, [current.action]),
-    ]),
-  );
-  card.querySelector("button")?.addEventListener("click", () => {
-    if (current.target === "arena") nav("arena");
-    else if (current.target === "breeding") nav("breeding");
-    else nav("garden");
-  });
-  const list = el("div", { class: "roadmap-list" });
-  for (const step of steps) {
-    list.appendChild(el("div", { class: `roadmap-step ${step.done ? "done" : step === current ? "current" : ""}` }, [
-      el("span", {}, [step.done ? "✓" : step === current ? "•" : ""]),
-      el("b", {}, [step.label]),
-    ]));
-  }
-  card.appendChild(list);
-  return card;
-}
-
-function discoveryBook(nav: Navigate): HTMLElement {
-  const milestones = store.discoveryMilestones();
-  const done = milestones.filter((m) => m.claimed).length;
-  const claimable = milestones.filter((m) => m.progress >= m.target && !m.claimed);
-  const card = el("section", { class: "discovery-card" });
-
-  card.append(
-    el("div", { class: "discovery-head" }, [
-      el("div", {}, [
-        el("b", {}, ["Sổ khám phá"]),
-        el("small", {}, [`${done}/${milestones.length} mốc · ${store.state.discovery.species.length} giống · ${store.state.discovery.elements.length} hệ · ${store.state.discovery.traits.length} đặc tính`]),
-      ]),
-      claimable.length
-        ? el("button", { class: "discovery-action pulse" }, [`Nhận ${claimable.length} mốc`])
-        : el("button", { class: "discovery-action" }, ["Mở rộng"]),
-    ]),
-  );
-  card.querySelector("button")?.addEventListener("click", () => {
-    if (claimable.length) {
-      // Claim everything the player has already earned.
-      let got = 0;
-      for (const m of claimable) {
-        if (store.claimDiscovery(m.id).ok) got++;
-      }
-      // Pitched by how much was taken, so a single reward and a sweep of five are not the
-      // same sound — and a big claim is the one moment the garden should feel generous.
-      if (got > 0) sfx.play("collect", { pitch: Math.min(12, (got - 1) * 3) });
-      toast(got > 0 ? `Đã nhận ${got} phần thưởng khám phá` : "Chưa nhận được phần thưởng nào");
-      nav("garden");
-      return;
-    }
-    nav("collection");
-  });
-
-  // Claimable first, then in-progress by closeness, then locked.
-  const ordered = [...milestones].sort((a, b) => {
-    const rank = (m: typeof a) => (m.claimed ? 2 : m.progress >= m.target ? 0 : 1);
-    if (rank(a) !== rank(b)) return rank(a) - rank(b);
-    return b.progress / b.target - a.progress / a.target;
-  });
-
-  const list = el("div", { class: "discovery-list scrollable" });
-  for (const milestone of ordered) {
-    const finished = milestone.progress >= milestone.target;
-    const reward = rewardLabel(milestone.reward);
-    const row = el("button", { class: `discovery-row ${finished ? "done" : ""} ${milestone.claimed ? "claimed" : ""}` });
-    row.append(
-      el("span", { class: "discovery-main" }, [
-        el("b", {}, [milestone.label]),
-        el("small", {}, [milestone.claimed ? "Đã nhận thưởng" : `${milestone.hint} · ${reward}`]),
-        el("span", { class: "discovery-bar" }, [bar(Math.min(1, milestone.progress / milestone.target))]),
-      ]),
-      el("span", { class: "discovery-progress mono" }, [`${Math.min(milestone.progress, milestone.target)}/${milestone.target}`]),
-    );
-    row.addEventListener("click", () => {
-      if (finished && !milestone.claimed) {
-        const res = store.claimDiscovery(milestone.id);
-        toast(res.ok ? `Đã nhận thưởng: ${milestone.label}` : res.reason ?? "Chưa nhận được");
-        nav("garden");
-      }
-    });
-    list.appendChild(row);
-  }
-  card.appendChild(list);
-
-  const recentTraits = store.state.discovery.traits.slice(-4).map((id) => TRAITS_BY_ID[id]?.name ?? id);
-  if (recentTraits.length) {
-    card.appendChild(el("div", { class: "discovery-traits tiny" }, [`Đặc tính đã gặp: ${recentTraits.join(", ")}`]));
-  }
-  return card;
-}
-
-function rewardLabel(reward: { leafCoin?: number; geneCrystal?: number; items?: number }): string {
-  return [
-    reward.leafCoin ? `${reward.leafCoin} xu` : "",
-    reward.geneCrystal ? `${reward.geneCrystal} tinh thể` : "",
-    reward.items ? `${reward.items} vật tư` : "",
-  ].filter(Boolean).join(" + ");
 }
 
 function loopStep(n: string, label: string): HTMLElement {
@@ -417,6 +620,7 @@ function lockedPlot(status: PlotStatus, onChange: () => void): HTMLElement {
       return;
     }
     sfx.play("buy");
+    markUnlock(status.index);
     toast(`Đã mở ô ${status.index}`);
     onChange();
   });
@@ -465,207 +669,140 @@ function doPlant(nav: Navigate, seedId: SpeciesId): void {
  * which is what the keyboard and the context-menu entry point use — a menu opened
  * without a pointer still has to appear somewhere.
  */
-function openSeedPicker(nav: Navigate, anchorEl?: HTMLElement): void {
+function openSeedPicker(nav: Navigate, _anchor?: HTMLElement): void {
   const held = SPECIES.filter((s) => (store.state.seeds[s.id] ?? 0) > 0);
-  const body = el("div", { class: "seed-picker" });
+  const today = featuredSpecies(
+    store.state.playerId,
+    Math.floor(Date.now() / 86400000),
+    store.state.breederLevel,
+    10,
+    store.unlockContext(),
+  );
+  // Owned seeds first, then today's shop stock — a player with an empty bag
+  // should still land on a chooser, not on a dead end.
+  const listed: SpeciesDef[] = [...held];
+  for (const sp of today) if (!listed.includes(sp) && listed.length < 16) listed.push(sp);
 
-  // Preview, filled by whichever card is focused or hovered.
-  const preview = el("div", { class: "seed-preview" });
-  const showPreview = (sp: SpeciesDef): void => {
-    preview.replaceChildren(
-      el("div", { class: "seed-preview-orb", style: `--seed:${seedColor(sp.id)}` }),
-      el("div", { class: "seed-preview-copy" }, [
-        el("b", {}, [sp.name]),
-        el("small", {}, [ARCHETYPE_ROLE[sp.archetype] ?? sp.archetype]),
-        el("p", {}, [sp.blurb]),
-        el(
-          "div",
-          { class: "seed-preview-stats" },
-          Object.entries(sp.statBias).map(([k, v]) =>
-            el("span", {}, [`${STAT_LABEL[k] ?? k} +${Math.round((v as number) * 100)}`]),
-          ),
-        ),
+  const content = el("div", { class: "seed-sheet" });
+  let pick: SpeciesId | null = held[0]?.id ?? listed[0]?.id ?? null;
+
+  const heroArt = el("div", { class: "seed-hero-art" });
+  const heroInfo = el("div", { class: "seed-hero-info" });
+  const cta = el("button", { class: "btn primary wide seed-cta" });
+  const rows = new Map<SpeciesId, HTMLElement>();
+
+  const showPick = (): void => {
+    const sp = listed.find((s) => s.id === pick);
+    for (const [id, row] of rows) row.classList.toggle("selected", id === pick);
+    if (!sp) {
+      heroArt.replaceChildren();
+      heroInfo.replaceChildren(el("b", {}, ["Túi hạt đang trống"]));
+      cta.textContent = "Vào Cửa hàng";
+      cta.onclick = () => { close(); nav("lab"); };
+      return;
+    }
+    const owned = store.state.seeds[sp.id] ?? 0;
+    const cur = currencyInfo(sp.currency);
+    // The hero shows the grown plant, not the seed: a preview plant built for
+    // the species and forced to mature, so "gieo hạt này" answers "ra cây gì".
+    const preview = createSeedPlant(sp.id, store.state.playerId, `preview-${sp.id}`, Date.now());
+    preview.growth.stage = "mature";
+    heroArt.innerHTML = renderPlantSvg(preview, 92);
+    heroInfo.replaceChildren(
+      el("b", {}, [sp.name]),
+      el("small", {}, [sp.blurb]),
+      el("div", { class: "seed-hero-chips" }, [
+        el("span", { class: "tag" }, [`⏱ ~${sp.growMinutes}p`]),
+        el("span", { class: "tag" }, [ARCHETYPE_ROLE[sp.archetype] ?? sp.archetype]),
+        owned > 0
+          ? el("span", { class: "tag ok" }, [`Còn ${owned} hạt`])
+          : el("span", { class: "tag gold" }, [`Mua ${sp.seedPrice.toLocaleString("vi-VN")}${cur.icon}`]),
       ]),
     );
-  };
-
-  const makeCard = (sp: SpeciesDef, count: number, price: number | null): HTMLElement => {
-    const card = seedChip(sp, count, { showPrice: false });
-    card.classList.add("picker-card");
-    if (price !== null) card.appendChild(el("span", { class: "buy-tag" }, [`Mua ${price} xu`]));
-    // Focus as well as hover: the whole grid is keyboard-reachable, and a preview
-    // that only appears under a mouse is a preview half the players never see.
-    card.addEventListener("pointerenter", () => showPreview(sp));
-    card.addEventListener("focus", () => showPreview(sp));
-    card.addEventListener("click", () => {
+    if (owned > 0) {
+      cta.textContent = `🌱 Trồng ${sp.name}`;
+      cta.removeAttribute("disabled");
+    } else {
+      const short = Math.max(0, sp.seedPrice - store.state[sp.currency]);
+      if (short > 0) {
+        cta.textContent = `Thiếu ${short.toLocaleString("vi-VN")}${cur.icon}`;
+        cta.setAttribute("disabled", "true");
+      } else {
+        cta.textContent = `🌱 Mua + Trồng · ${sp.seedPrice.toLocaleString("vi-VN")}${cur.icon}`;
+        cta.removeAttribute("disabled");
+      }
+    }
+    cta.onclick = () => {
       sfx.play("dig");
-      doPlant(nav, sp.id);
       close();
-    });
-    return card;
+      doPlant(nav, sp.id);
+    };
   };
 
-  const grid = el("div", { class: "picker-grid" });
-
-  if (held.length === 0) {
-    body.appendChild(el("p", { class: "picker-empty" }, ["Túi hạt đang trống — mua một hạt để gieo cây đầu tiên."]));
-    const today = featuredSpecies(store.state.playerId, Math.floor(Date.now() / 86400000), store.state.breederLevel, 8, store.unlockContext());
-    for (const sp of today) grid.appendChild(makeCard(sp, 0, sp.seedPrice));
-    const openShop = el("button", { class: "btn ghost wide", style: "margin-top:12px" }, ["🛒 Xem thêm ở Cửa hàng"]);
-    openShop.addEventListener("click", () => {
+  const list = el("div", { class: "seed-pick-list" });
+  for (const sp of listed) {
+    const owned = store.state.seeds[sp.id] ?? 0;
+    const cur = currencyInfo(sp.currency);
+    const row = el("button", { class: "seed-pick" });
+    row.append(
+      el("span", { class: "seed-orb", style: `--seed:${seedColor(sp.id)}` }, [String(owned)]),
+      el("span", { class: "seed-pick-info" }, [
+        el("b", {}, [sp.name]),
+        el("small", {}, [ARCHETYPE_ROLE[sp.archetype] ?? sp.archetype]),
+      ]),
+      el("span", { class: "seed-pick-meta" }, [
+        el("span", {}, [`⏱ ${sp.growMinutes}p`]),
+        el("span", {}, [owned > 0 ? `còn ${owned}` : `${sp.seedPrice.toLocaleString("vi-VN")}${cur.icon}`]),
+      ]),
+    );
+    row.addEventListener("click", () => {
+      pick = sp.id;
       sfx.play("tap");
-      close();
-      nav("lab");
+      showPick();
     });
-    body.appendChild(openShop);
-  } else {
-    for (const sp of held) grid.appendChild(makeCard(sp, store.state.seeds[sp.id] ?? 0, null));
-    const more = el("button", { class: "btn ghost wide", style: "margin-top:12px" }, ["🛒 Mua thêm hạt"]);
-    more.addEventListener("click", () => {
-      sfx.play("tap");
-      close();
-      nav("lab");
-    });
-    body.appendChild(more);
+    rows.set(sp.id, row);
+    list.appendChild(row);
   }
 
-  showPreview(held[0] ?? SPECIES[0]);
-  body.prepend(preview, el("h3", { class: "picker-title" }, [held.length ? "Chọn hạt để gieo" : "Hạt nổi bật hôm nay"]), grid);
+  const shopLink = el("button", { class: "btn ghost wide" }, ["🛒 Xem thêm ở Cửa hàng"]);
+  shopLink.addEventListener("click", () => {
+    sfx.play("tap");
+    close();
+    nav("lab");
+  });
 
-  const pop = el("div", { class: "seed-pop" });
-  pop.appendChild(body);
-  pop.setAttribute("role", "dialog");
-  pop.setAttribute("aria-label", "Chọn hạt để gieo");
+  content.append(
+    el("div", { class: "row between" }, [
+      el("h3", { class: "grow" }, [held.length ? "Chọn hạt để gieo" : "Hạt nổi bật hôm nay"]),
+      el("button", { class: "btn sm ghost", "aria-label": "Đóng" }, ["✕"]),
+    ]),
+    el("div", { class: "seed-hero" }, [heroArt, heroInfo]),
+    list,
+    cta,
+    shopLink,
+  );
+  content.querySelector(".row.between button")?.addEventListener("click", () => close());
 
-  // A scrim only when there is no anchor to point at. With one, the popover is
-  // close enough to its plot that a full-screen dim would be a lie about what is
-  // being interacted with.
-  const scrim = anchorEl ? null : el("div", { class: "seed-pop-scrim" });
-  scrim?.addEventListener("pointerdown", () => close());
-
+  const { overlay, sheet: s } = sheet(content, () => close());
   const close = (): void => {
     sfx.play("back");
-    anchorEl?.classList.remove("is-picking");
-    // Signals the ResizeObserver to disconnect. Fired before removal so the
-    // handler is still attached.
-    pop.dispatchEvent(new Event("pop:closed"));
-    pop.remove();
-    scrim?.remove();
+    overlay.remove();
+    s.remove();
     document.removeEventListener("keydown", onKey);
-    window.removeEventListener("resize", close);
-    window.removeEventListener("scroll", close, true);
-    document.removeEventListener("pointerdown", onOutside, true);
   };
-
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") close();
   };
-
-  const onOutside = (e: PointerEvent): void => {
-    const t = e.target as Node | null;
-    if (t && (pop.contains(t) || anchorEl?.contains(t))) return;
-    close();
-  };
-
-  const shell = document.querySelector(".shell")!;
-  if (scrim) shell.append(scrim);
-  shell.appendChild(pop);
-
-  if (anchorEl) {
-    placePopover(pop, anchorEl);
-    anchorEl.classList.add("is-picking");
-  }
-
   document.addEventListener("keydown", onKey);
-  document.addEventListener("pointerdown", onOutside, true);
-  // Not repositioned on scroll — closed. A popover that follows its anchor while
-  // the page scrolls under the player's thumb is a thing they are chasing.
-  window.addEventListener("resize", close);
-  window.addEventListener("scroll", close, true);
+  document.querySelector(".shell")!.append(overlay, s);
+  showPick();
 }
-
-/**
- * Put a popover next to its anchor, inside the viewport.
- *
- * `position: fixed` with a measured box, rather than CSS anchoring: the browser
- * support for `anchor-name` is still uneven, and the fallback for an unsupported
- * browser is usually "centre it", which is the exact thing this change exists to
- * stop happening.
- */
-function placePopover(pop: HTMLElement, anchor: HTMLElement): void {
-  const GAP = 10;
-  const MARGIN = 8;
-
-  let lastW = -1;
-  let lastH = -1;
-
-  const place = (force = false): void => {
-    const a = anchor.getBoundingClientRect();
-    // Measured after the popover is in the document, so this is its real size.
-    const p = pop.getBoundingClientRect();
-
-    // Placing writes `left`/`top`, so an observer that reacted to every change
-    // would be reacting to its own writes. Only a size change re-places, and the
-    // first pass always places.
-    if (!force && Math.abs(p.width - lastW) < 0.5 && Math.abs(p.height - lastH) < 0.5) return;
-    lastW = p.width;
-    lastH = p.height;
-    const vw = document.documentElement.clientWidth;
-    const vh = document.documentElement.clientHeight;
-
-    // Prefer below. Flip above only when below would genuinely not fit — a
-    // popover that flips while there is still room below reads as indecisive.
-    const roomBelow = vh - a.bottom;
-    const above = roomBelow < p.height + GAP && a.top > p.height + GAP;
-
-    let top = above ? a.top - p.height - GAP : a.bottom + GAP;
-    let left = a.left + a.width / 2 - p.width / 2;
-
-    // Clamp horizontally, and prefer aligning to whichever edge has more room so
-    // the popover's arrow still points at the plot.
-    if (left + p.width > vw - MARGIN) left = a.right - p.width;
-    if (left < MARGIN) left = MARGIN;
-    left = Math.max(MARGIN, Math.min(left, vw - p.width - MARGIN));
-
-    if (top + p.height > vh - MARGIN) top = Math.max(MARGIN, vh - p.height - MARGIN);
-
-    pop.style.left = `${Math.round(left)}px`;
-    pop.style.top = `${Math.round(top)}px`;
-    pop.classList.toggle("is-above", above);
-
-    // Where the arrow goes, in the popover's own coordinates. Clamped well inside
-    // so it can never slide off the rounded corner.
-    const cx = a.left + a.width / 2;
-    pop.style.setProperty("--arrow-x", `${Math.round(Math.max(14, Math.min(p.width - 14, cx - left)))}px`);
-  };
-
-  // Two frames: one to be in the document, one for the entry transition to have
-  // started. Measuring in the same frame it was inserted gives a stale height.
-  requestAnimationFrame(() => requestAnimationFrame(() => place(true)));
-
-  // Content that arrives late. The webfont is the case that actually bites — the
-  // preview text reflows after positioning and the box grows past the edge — but
-  // a longer species description does the same thing.
-  if (typeof ResizeObserver !== "undefined") {
-    const ro = new ResizeObserver(() => place());
-    ro.observe(pop);
-    // Disconnected on close, so a dismissed popover stops observing. Without this
-    // the observer outlives the popover and holds its whole subtree alive.
-    pop.addEventListener("pop:closed", () => ro.disconnect(), { once: true });
-  }
-
-  // Belt and braces for the one case the observer would catch late: fonts.
-  if (typeof document !== "undefined" && "fonts" in document) {
-    void (document as Document & { fonts: FontFaceSet }).fonts.ready.then(() => place(true));
-  }
-}
-
 
 function firstOwnedSeed(): SpeciesId | null {
   return (SPECIES.find((sp) => (store.state.seeds[sp.id] ?? 0) > 0)?.id ?? null);
 }
 
-function gardenPulse(nav: Navigate): HTMLElement {
+function gardenPulse(): HTMLElement {
   const day = store.state.gardenDay;
   const hero = el("section", { class: `garden-pulse weather-${day.weather}` });
   const ready = store.state.plants.filter((p) => canBattle(p)).length;
@@ -693,10 +830,6 @@ function gardenPulse(nav: Navigate): HTMLElement {
     pulseStat("Hiếm", `${rare}`),
   );
   hero.appendChild(stats);
-
-  const goals = el("div", { class: "goal-stack" });
-  for (const goal of day.goals) goals.appendChild(goalRow(goal, nav));
-  hero.appendChild(goals);
   return hero;
 }
 
@@ -705,65 +838,6 @@ function pulseStat(label: string, value: string): HTMLElement {
     el("span", {}, [label]),
     el("strong", { class: "mono" }, [value]),
   ]);
-}
-
-function goalRow(goal: DailyGoal, nav: Navigate): HTMLElement {
-  const done = goal.progress >= goal.target;
-  const row = el("button", { class: `goal-row ${done ? "done" : ""} ${goal.claimed ? "claimed" : ""}` });
-  const reward = [
-    goal.reward.leafCoin ? `${goal.reward.leafCoin}🪙` : "",
-    goal.reward.geneCrystal ? `${goal.reward.geneCrystal}💎` : "",
-    goal.reward.items ? `${goal.reward.items}🧺` : "",
-  ].filter(Boolean).join(" ");
-  const template = GOAL_POOL.find((t) => goal.id.endsWith(`-${t.id}`));
-  row.append(
-    el("span", { class: "goal-main" }, [
-      el("b", {}, [goal.label]),
-      el("small", {}, [
-        el("span", { class: "goal-count mono" }, [`${goal.progress}/${goal.target}`]),
-        ` · ${goal.claimed ? "Đã nhận" : reward}`,
-      ]),
-      !goal.claimed && template ? el("span", { class: "goal-hint tiny" }, [template.hint]) : null,
-      !goal.claimed ? el("span", { class: "goal-bar" }, [bar(Math.min(1, goal.progress / goal.target))]) : null,
-    ]),
-    el("span", { class: "goal-cta" }, [goal.claimed ? "✓" : done ? "Nhận" : actionHint(goal.kind)]),
-  );
-  row.addEventListener("click", () => {
-    if (goal.claimed) return;
-    if (done) {
-      const res = store.claimGoal(goal.id);
-      toast(res.ok ? "Đã nhận thưởng nhiệm vụ" : res.reason ?? "Chưa nhận được");
-      nav("garden");
-      return;
-    }
-    if (goal.kind === "plant") nav("lab");
-    if (goal.kind === "battle") nav("arena");
-    if (goal.kind === "breed") nav("breeding");
-    if (goal.kind === "care") nav("garden");
-  });
-  return row;
-}
-
-/**
- * What tapping a goal should send the player to do.
- *
- * Every kind needs an entry, and the union type is what forces that: five kinds
- * were added with the quest rewrite and the compiler flagged the gap rather than
- * leaving a goal whose hint silently sent you somewhere useless.
- */
-function actionHint(kind: DailyGoal["kind"]): string {
-  const map: Record<DailyGoal["kind"], string> = {
-    plant: "Mua hạt",
-    care: "Chăm cây",
-    battle: "Đấu",
-    win: "Đấu",
-    breed: "Lai",
-    sell: "Bán cây",
-    awaken: "Thức tỉnh",
-    openPlot: "Mở ô vườn",
-    unlock: "Xem loài mới",
-  };
-  return map[kind];
 }
 
 function weatherName(w: GardenWeather): string {
@@ -803,6 +877,31 @@ export function openDetail(plant: Plant, nav: Navigate, shell: Element) {
   vwrap.style.height = "176px";
   visualBox.replaceChildren(vwrap);
   content.appendChild(visualBox);
+
+  /*
+   * Growth, beside the art rather than buried in the table.
+   *
+   * "Tiến độ lớn và thời gian còn lại" is the sheet's farm read: stage chip,
+   * a bar, a countdown while it develops, and the water badge when it can
+   * drink. A mature plant says what it is for instead of a timer it no
+   * longer has.
+   */
+  {
+    const now = Date.now();
+    const mature = canBattle(plant);
+    const leftS = Math.max(0, Math.ceil((plant.growth.stageReadyAt - now) / 1000));
+    const left = leftS >= 60 ? `${Math.floor(leftS / 60)}:${String(leftS % 60).padStart(2, "0")}` : `${leftS}s`;
+    const growth = el("div", { class: "detail-growth" });
+    growth.append(
+      el("div", { class: "growline" }, [
+        el("span", { class: "chip dim stage-chip" }, [STAGE_LABEL[plant.growth.stage]]),
+        el("b", { class: "grow" }, [mature ? "Đã trưởng thành" : `Sẵn sàng sau ${left}`]),
+        !mature && canWaterNow(plant, now) ? el("span", { class: "tag" }, ["💧 Có thể tưới"]) : null,
+      ]),
+      el("div", {}, [bar(stageProgress(plant, now))]),
+    );
+    content.appendChild(growth);
+  }
 
   content.appendChild(el("div", { class: "divider" }));
 
@@ -863,7 +962,7 @@ export function openDetail(plant: Plant, nav: Navigate, shell: Element) {
       "aria-valuemax": "100",
       "aria-label": `${skill.name} cấp ${skill.level}, ${skillMasteryText(skill.level, skill.masteryXp)}`,
     });
-    bar.appendChild(el("i", { style: `width:${pct.toFixed(1)}%` }));
+    bar.appendChild(el("i", { style: `transform:scaleX(${(pct / 100).toFixed(3)})` }));
 
     sc.append(
       el("div", { class: "row between" }, [
@@ -905,7 +1004,9 @@ export function openDetail(plant: Plant, nav: Navigate, shell: Element) {
   actions.appendChild(careBtn);
 
   if (canBattle(plant)) {
-    const fight = el("button", { class: "btn gold grow" }, ["⚔ Đấu"]);
+    // The farm's "thu hoạch": a mature plant earns by fighting. Full-width and
+    // gold so the ready state has one obvious door.
+    const fight = el("button", { class: "harvest-cta grow" }, ["✨ Sẵn sàng — Mang đi đấu"]);
     fight.addEventListener("click", () => {
       s.remove();
       overlay.remove();
@@ -1093,4 +1194,50 @@ function descLabel(id: CareActionId): string {
 
 function capitalise(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * What the wide desktop rails show on the garden screen.
+ *
+ * Quests on the left, the day's weather and the seed bag on the right — the
+ * two panels a farm screen keeps at arm's reach. The phone never mounts these
+ * (`.side-panel` is hidden under 1024px), so the mobile path pays only the
+ * paint, not a second layout.
+ */
+export function gardenSidebars(nav: Navigate): { left: HTMLElement; right: HTMLElement } {
+  const left = el("div");
+  left.appendChild(
+    el("div", { class: "panel-title" }, [
+      el("b", {}, ["🎯 Nhiệm vụ"]),
+      el("span", { class: "tiny muted" }, ["chạm để mở"]),
+    ]),
+  );
+  left.appendChild(
+    questTracker(() => {
+      gardenTab = "quests";
+      nav("garden");
+    }),
+  );
+  // The rail keeps a short list: claimable first, then whatever is nearest.
+  const views = store.questViews();
+  const rank = (v: QuestView): number =>
+    v.status === "completed" ? 0 : v.status === "active" ? 1 : v.status === "locked" ? 2 : 3;
+  const top = [...views]
+    .sort((a, b) => rank(a) - rank(b) || b.fraction - a.fraction || a.def.priority - b.def.priority)
+    .slice(0, 6);
+  const list = el("div", { class: "side-quest-list" });
+  for (const v of top) list.appendChild(questCard(v, nav));
+  left.appendChild(list);
+  const more = el("button", { class: "btn ghost wide", style: "margin-top:8px" }, ["Xem tất cả nhiệm vụ ›"]);
+  more.addEventListener("click", () => {
+    gardenTab = "quests";
+    nav("garden");
+  });
+  left.appendChild(more);
+
+  const right = el("div");
+  right.appendChild(el("div", { class: "panel-title" }, [el("b", {}, ["🎒 Túi hạt & thời tiết"])]));
+  right.appendChild(gardenPulse());
+  right.appendChild(seedBelt(nav));
+  return { left, right };
 }

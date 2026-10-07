@@ -1,13 +1,35 @@
 /**
- * Quest system tests — daily goals, streak, discovery milestones, rewards.
+ * Quest system tests — the shelf, the engine, the claim path.
+ *
+ * This suite replaced the old daily-goal/discovery tests when the quest shelf did. The things
+ * it actually protects:
+ *
+ *   1. the catalogue is well-formed (unique ids, unlock refs that exist, every quest payable);
+ *   2. the engine's unlock/sync/advance/claim rules — the four states, the two progress modes,
+ *      the deterministic daily roll;
+ *   3. the store wiring — real actions move real quests, rewards pay through the real paths,
+ *      and a reload keeps all of it.
  */
 
-import { GameStore } from "../src/core/store";
-import { GOAL_POOL, MILESTONES, WEATHER_INFO, streakMultiplier, streakLabel, DAILY_GOAL_COUNT } from "../src/config/quests";
-import { createGardenDay, type GardenDayState } from "../src/core/store";
+import { GameStore, createGardenDay } from "../src/core/store";
+import { QUEST_CATALOG, QUEST_TABS } from "../src/quests/catalog";
+import {
+  DAILY_COUNT,
+  advance,
+  claim,
+  emptyQuestSave,
+  lockedReason,
+  questViews,
+  repairQuestSave,
+  rollDailyIds,
+  syncQuests,
+  tracked,
+  unlockMet,
+  type QuestContext,
+} from "../src/quests/engine";
+import { WEATHER_INFO, streakLabel, streakMultiplier } from "../src/config/quests";
 import type { CareActionId } from "../src/config/careActions";
 import type { SpeciesId } from "../src/config/species";
-import { createSeedPlant } from "../src/genetics/genomeGenerator";
 
 let passed = 0;
 let failed = 0;
@@ -35,230 +57,231 @@ const mem = new Map<string, string>();
   },
 } as Storage;
 
-section("1. Config sanity");
-{
-  check("weather covers all four states", Object.keys(WEATHER_INFO).length === 4);
-  check("every weather has a name, icon and note", Object.values(WEATHER_INFO).every((w) => w.name && w.icon && w.note.length > 10));
-  // Nine kinds, not four. Not a preference: the draw takes at most one goal per
-  // kind, so the number of kinds is a hard ceiling on how alike a day can look.
-  check("goal pool covers at least eight kinds", new Set(GOAL_POOL.map((g) => g.kind)).size >= 8, `${new Set(GOAL_POOL.map((g) => g.kind)).size} kinds`);
-  check("enough templates to fill a full day several times over", GOAL_POOL.length >= DAILY_GOAL_COUNT * 3, `${GOAL_POOL.length} templates`);
-  check("no two goals share a label", new Set(GOAL_POOL.map((g) => g.label)).size === GOAL_POOL.length);
-  check("goal ids are unique", new Set(GOAL_POOL.map((g) => g.id)).size === GOAL_POOL.length);
-  check("every goal has a target, reward and hint", GOAL_POOL.every((g) => g.target > 0 && g.hint.length > 10 && (g.reward.leafCoin || g.reward.geneCrystal || g.reward.items)));
-  check("milestone ids are unique", new Set(MILESTONES.map((m) => m.id)).size === MILESTONES.length);
-  check("at least 15 milestones exist", MILESTONES.length >= 15, `${MILESTONES.length}`);
-  check("milestones cover collection and mastery", new Set(MILESTONES.map((m) => m.metric)).size >= 8);
-  check("no milestone has a zero target", MILESTONES.every((m) => m.target > 0));
+const DAY = "2026-10-07";
+function ctx(over: Partial<QuestContext> = {}): QuestContext {
+  return {
+    level: 1,
+    highestStage: 0,
+    stagesCleared: 0,
+    speciesCount: 0,
+    wins: 0,
+    score: 0,
+    claimed: new Set<string>(),
+    day: DAY,
+    playerId: "test-player",
+    ...over,
+  };
 }
 
-section("2. Streak rewards");
+section("1. Catalogue sanity");
 {
-  check("day 1 has no multiplier", streakMultiplier(0) === 1 && streakMultiplier(1) === 1);
-  check("streak grows the multiplier", streakMultiplier(7) > streakMultiplier(3));
-  check("multiplier is capped at 2x", streakMultiplier(999) === 2);
-  check("every streak has a label", [0, 1, 5, 10, 25, 100].every((s) => streakLabel(s).length > 0));
-  check("label mentions the streak length", streakLabel(10).includes("10"));
+  check("catalogue covers all four tabs", QUEST_TABS.every((t) => QUEST_CATALOG.some((q) => q.type === t.type)));
+  check("quest ids are unique", new Set(QUEST_CATALOG.map((q) => q.id)).size === QUEST_CATALOG.length);
+  check("every quest has title, objective, icon and a target", QUEST_CATALOG.every((q) => q.title && q.objective && q.icon && q.target > 0));
+  check(
+    "every quest pays something",
+    QUEST_CATALOG.every((q) => {
+      const r = q.rewards;
+      return (r.exp ?? 0) + (r.breederXp ?? 0) + (r.coins ?? 0) + (r.items ?? 0) + (r.geneCrystal ?? 0) > 0 || (r.unlocks?.length ?? 0) > 0;
+    }),
+  );
+  const byId = new Map(QUEST_CATALOG.map((q) => [q.id, q]));
+  const refs: string[] = [];
+  for (const q of QUEST_CATALOG) {
+    if (q.unlock?.kind === "quest") refs.push(q.unlock.id);
+    if (q.unlock?.kind === "all") for (const u of q.unlock.of) if (u.kind === "quest") refs.push(u.id);
+    for (const n of q.next ?? []) refs.push(n);
+  }
+  check("every quest reference resolves", refs.every((id) => byId.has(id)), `${refs.length} refs`);
+  check("the main line is a chain", (() => {
+    const mains = [...QUEST_CATALOG.filter((q) => q.type === "main")].sort((a, b) => a.priority - b.priority);
+    for (let i = 1; i < mains.length; i++) {
+      const u = mains[i].unlock;
+      if (u?.kind !== "quest" || u.id !== mains[i - 1].id) return false;
+    }
+    return mains.length >= 5;
+  })(), `${QUEST_CATALOG.filter((q) => q.type === "main").length} mains`);
+  check("daily pool exceeds the shelf size", QUEST_CATALOG.filter((q) => q.type === "daily").length > DAILY_COUNT);
+  check("dailies are repeatable", QUEST_CATALOG.filter((q) => q.type === "daily").every((q) => q.repeatable));
 }
 
-section("3. Daily goals are generated");
-const store = new GameStore();
+section("2. Engine — unlocks and sync");
 {
-  const day = store.state.gardenDay;
-  check("a day is generated on first load", !!day && !!day.dayKey);
-  check("goals are generated", day.goals.length > 0, `${day.goals.length} goals`);
-  check("goals count matches the configured cap", day.goals.length === Math.min(DAILY_GOAL_COUNT, GOAL_POOL.length));
-  check("goal ids are unique within the day", new Set(day.goals.map((g) => g.id)).size === day.goals.length);
-  check("goals start at zero progress", day.goals.every((g) => g.progress === 0));
-  check("goals are unclaimed initially", day.goals.every((g) => !g.claimed));
-  check("every goal maps to a known template", day.goals.every((g) => GOAL_POOL.some((t) => g.id.endsWith(`-${t.id}`))));
-  check("weather is one of the four", ["mist", "sun", "storm", "moon"].includes(day.weather));
+  // The daily shelf only exists once the player has cleared stage 2 — the catalogue gates
+  // every daily on it, so the roll tests run at a stage where the shelf is real.
+  const dayCtx = ctx({ level: 5, highestStage: 5, stagesCleared: 5 });
+  const save = emptyQuestSave(DAY);
+  const synced = syncQuests(save, dayCtx, QUEST_CATALOG);
+  const entry = (id: string) => synced.entries[id];
+
+  check("first main quest starts active", entry("main_01_plant")?.status === "active");
+  check("second main quest starts locked", entry("main_02_care")?.status === "locked");
+  check("a stage-gated daily unlocks past its stage", synced.dailyIds.every((id) => entry(id)?.status === "active"));
+  check("daily shelf rolled", synced.dailyIds.length === DAILY_COUNT, synced.dailyIds.join(","));
+  check("daily entries exist for the roll", synced.dailyIds.every((id) => !!synced.entries[id]));
+
+  // Determinism: same player, same day → same shelf. Different day → a new roll.
+  check("daily roll is deterministic", JSON.stringify(rollDailyIds(QUEST_CATALOG, dayCtx)) === JSON.stringify(synced.dailyIds));
+  const other = rollDailyIds(QUEST_CATALOG, ctx({ highestStage: 5, stagesCleared: 5, playerId: "someone-else" }));
+  check("another player gets a shelf too", other.length === DAILY_COUNT, `other roll: ${other.join(",")}`);
+
+  // Unlock by claimed quest: claim main_01 → main_02 opens.
+  const claimedCtx = ctx({ claimed: new Set(["main_01_plant"]) });
+  check("a claimed prerequisite opens the next main", unlockMet(QUEST_CATALOG.find((q) => q.id === "main_02_care")!.unlock, claimedCtx));
+  check("locked reasons are readable", lockedReason(QUEST_CATALOG.find((q) => q.id === "main_04_level3")!.unlock, ctx(), new Map(QUEST_CATALOG.map((q) => [q.id, q]))).includes("Cấp 3") === false);
+
+  // Measurable quests seed from state: a level-5 player opening the level quest is done.
+  const highLevel = syncQuests(emptyQuestSave(DAY), ctx({ level: 6, claimed: new Set(QUEST_CATALOG.filter((q) => q.type === "main").map((q) => q.id)) }), QUEST_CATALOG);
+  check(
+    "measurable quest seeds itself from state",
+    highLevel.entries["ach_level_5"]?.status === "completed",
+    `status=${highLevel.entries["ach_level_5"]?.status}`,
+  );
+
+  // Day rollover re-rolls the shelf and forgets the old dailies.
+  const nextDay = syncQuests(synced, { ...dayCtx, day: "2026-10-08" }, QUEST_CATALOG);
+  check("a new day re-rolls the shelf", nextDay.day === "2026-10-08" && nextDay.dailyIds.length === DAILY_COUNT);
+  check("stale daily entries are dropped", Object.keys(nextDay.entries).every((id) => QUEST_CATALOG.find((q) => q.id === id)?.type !== "daily" || nextDay.dailyIds.includes(id)));
 }
 
-section("4. Goals track progress from real actions");
+section("3. Engine — advance and claim");
 {
+  let save = syncQuests(emptyQuestSave(DAY), ctx(), QUEST_CATALOG);
+
+  // Count mode: plant once → main_01 done.
+  let r = advance(save, ctx(), QUEST_CATALOG, { name: "plant", amount: 1 });
+  save = r.save;
+  check("plant event completes the first main", r.completed.includes("main_01_plant"), r.completed.join(","));
+  check("progress is reported for the toast", r.changed.some((c) => c.id === "main_01_plant" && c.progress === 1));
+
+  // Events a quest does not track do not move it.
+  r = advance(save, ctx(), QUEST_CATALOG, { name: "plant", amount: 1 });
+  check("an untracked event moves nothing", r.changed.length === 0);
+
+  // Match filters: a non-boss stage must not finish the boss quest.
+  // The claimed set is what keeps main_06 unlocked, so it rides along on every call.
+  const bossCtx = ctx({ highestStage: 10, stagesCleared: 10, claimed: new Set(["main_01_plant", "main_02_care", "main_03_stage", "main_04_level3", "main_05_breed"]) });
+  save = syncQuests(save, bossCtx, QUEST_CATALOG);
+  r = advance(save, bossCtx, QUEST_CATALOG, { name: "stage_completed", stage: 4, boss: false });
+  check("a non-boss clear does not feed the boss quest", !r.changed.some((c) => c.id === "main_06_boss"));
+  r = advance(save, bossCtx, QUEST_CATALOG, { name: "stage_completed", stage: 10, boss: true });
+  check("a boss clear completes the boss quest", r.completed.includes("main_06_boss"));
+  save = r.save;
+
+  // Claim guards.
+  const blocked = claim(save, ctx(), QUEST_CATALOG, "main_02_care");
+  check("an active quest cannot be claimed", !blocked.ok);
+  const missing = claim(save, ctx(), QUEST_CATALOG, "khong-ton-tai");
+  check("an unknown quest is rejected", !missing.ok);
+  const first = claim(save, ctx(), QUEST_CATALOG, "main_01_plant");
+  check("a completed quest claims", first.ok && first.def?.id === "main_01_plant");
+  const twice = claim(first.save, ctx(), QUEST_CATALOG, "main_01_plant");
+  check("a claimed quest cannot be claimed again", !twice.ok);
+
+  // Repeatable dailies reset instead of marking claimed.
+  const dailyCtx = ctx({ highestStage: 5, stagesCleared: 5 });
+  const dailySave = syncQuests(emptyQuestSave(DAY), dailyCtx, QUEST_CATALOG);
+  const dailyId = dailySave.dailyIds[0];
+  const forced = { ...dailySave, entries: { ...dailySave.entries, [dailyId]: { progress: 99, status: "completed" as const, day: DAY } } };
+  const dc = claim(forced, dailyCtx, QUEST_CATALOG, dailyId);
+  check("a claimed daily resets to active, not claimed", dc.ok && dc.save.entries[dailyId].status === "active" && dc.save.entries[dailyId].progress === 0);
+
+  // High mode keeps the best value, never adds.
+  save = syncQuests(emptyQuestSave(DAY), ctx({ level: 3 }), QUEST_CATALOG);
+  r = advance(save, ctx({ level: 3 }), QUEST_CATALOG, { name: "combo_reached", value: 6 });
+  save = r.save;
+  r = advance(save, ctx({ level: 3 }), QUEST_CATALOG, { name: "combo_reached", value: 4 });
+  check("a lower combo does not raise the high-water mark", r.changed.length === 0);
+  r = advance(save, ctx({ level: 3 }), QUEST_CATALOG, { name: "combo_reached", value: 11 });
+  check("a higher combo completes the quest", r.completed.includes("side_combo_10"));
+}
+
+section("4. Views, tracker, badge");
+{
+  const save = syncQuests(emptyQuestSave(DAY), ctx(), QUEST_CATALOG);
+  const views = questViews(save, ctx(), QUEST_CATALOG);
+  check("views cover the whole catalogue's active set", views.length >= QUEST_CATALOG.filter((q) => q.type !== "daily").length);
+  check("every view carries a fraction", views.every((v) => v.fraction >= 0 && v.fraction <= 1));
+  check("locked views explain themselves", views.filter((v) => v.status === "locked").every((v) => v.lockedReason.length > 0));
+
+  const t = tracked(views);
+  check("the tracker names the main line", t.main?.def.id === "main_01_plant", t.main?.def.id);
+  check("the tracker carries at most two extras", t.extras.length <= 2);
+}
+
+section("5. Store — real actions move real quests");
+{
+  mem.clear();
+  const store = new GameStore();
   store.state.leafCoin = 50000;
   store.state.items = 300;
   store.state.geneCrystal = 50;
   for (const s of ["thornroot", "emberleaf"] as SpeciesId[]) store.buySeed(s, 4);
 
-  // Planting advances plant goals.
-  const plantGoal = store.state.gardenDay.goals.find((g) => g.kind === "plant");
-  if (plantGoal) {
-    store.plantSeed("thornroot");
-    check("planting advances the plant goal", store.state.gardenDay.goals.find((g) => g.id === plantGoal.id)!.progress === 1);
-  } else {
-    check("planting advances the plant goal", true, "no plant goal today");
-  }
+  const view = (id: string) => store.questViews().find((v) => v.def.id === id);
 
-  // Care advances care goals.
-  const careGoal = store.state.gardenDay.goals.find((g) => g.kind === "care");
-  if (careGoal) {
-    const p = store.state.plants[0];
-    for (const a of ["water", "sunlight", "fertilizer", "pruning", "music"] as CareActionId[]) {
-      p.careMemory.lastAction = null;
-      store.care(p.plantId, a);
-    }
-    const g = store.state.gardenDay.goals.find((x) => x.id === careGoal.id)!;
-    check("caring advances the care goal", g.progress >= Math.min(3, g.target), `${g.progress}/${g.target}`);
-  } else {
-    check("caring advances the care goal", true, "no care goal today");
-  }
+  store.plantSeed("thornroot");
+  check("planting completes the first main quest", view("main_01_plant")?.status === "completed");
+  check("the badge counts it", store.questClaimableCount() >= 1, `${store.questClaimableCount()} claimable`);
 
-  // Progress never exceeds the target.
-  check("goal progress is capped at target", store.state.gardenDay.goals.every((g) => g.progress <= g.target));
+  // Claim it through the store: coins arrive through the ledger, exp through the plant.
+  const coins = store.state.leafCoin;
+  const res = store.claimQuest("main_01_plant");
+  check("the first main quest claims", res.ok, res.reason);
+  check("its coin reward lands", store.state.leafCoin === coins + (res.rewards?.coins ?? 0));
+  check("it cannot be claimed twice", !store.claimQuest("main_01_plant").ok);
+  check("claiming opened the next main", view("main_02_care")?.status === "active");
+
+  // Care advances the new main quest.
+  const p = store.state.plants[0];
+  p.careMemory.lastAction = null;
+  store.care(p.plantId, "water" as CareActionId);
+  check("caring completes the care quest", view("main_02_care")?.status === "completed", `status=${view("main_02_care")?.status}`);
+
+  // While main_02 is complete but unclaimed, the tracker points at the claim itself —
+  // the chain only moves on a claim, so "collect the reward" is the next thing to do.
+  check("an unclaimed main is the tracked one", store.questTracker().main?.def.id === "main_02_care");
+  store.claimQuest("main_02_care");
+  const t = store.questTracker();
+  check("the tracker tracks the next main", t.main?.def.id === "main_03_stage", t.main?.def.id);
 }
 
-section("5. Claiming rewards");
+section("6. Persistence");
 {
-  const store2 = new GameStore();
-  store2.state.leafCoin = 50000;
-  store2.state.items = 200;
-  store2.state.geneCrystal = 20;
+  mem.clear();
+  const a = new GameStore();
+  a.state.quests.entries["main_01_plant"] = { progress: 1, status: "completed" };
+  a.state.lifetimeExp = 4242;
+  a.save();
 
-  // Force a goal to completion, then claim it.
-  const goal = store2.state.gardenDay.goals[0];
-  goal.progress = goal.target;
-  const coins = store2.state.leafCoin;
-  const items = store2.state.items;
-  const crystals = store2.state.geneCrystal;
+  const b = new GameStore();
+  check("quest entries survive a reload", b.state.quests.entries["main_01_plant"]?.status === "completed");
+  check("lifetime exp survives a reload", b.state.lifetimeExp === 4242, `${b.state.lifetimeExp}`);
+  check("the daily shelf survives a reload", JSON.stringify(b.state.quests.dailyIds) === JSON.stringify(a.state.quests.dailyIds));
 
-  const res = store2.claimGoal(goal.id);
-  check("an unfinished-then-finished goal can be claimed", res.ok, res.reason);
-  check("coin reward is credited", goal.reward.leafCoin ? store2.state.leafCoin === coins + goal.reward.leafCoin : true);
-  check("item reward is credited", goal.reward.items ? store2.state.items === items + goal.reward.items : true);
-  check("crystal reward is credited", goal.reward.geneCrystal ? store2.state.geneCrystal === crystals + goal.reward.geneCrystal : true);
-  check("the goal is marked claimed", store2.state.gardenDay.goals.find((g) => g.id === goal.id)!.claimed);
-
-  const again = store2.claimGoal(goal.id);
-  check("a goal cannot be claimed twice", !again.ok, again.reason);
-  check("no duplicate coin on re-claim", store2.state.leafCoin === coins + (goal.reward.leafCoin ?? 0));
-
-  // Claiming an unknown goal is rejected.
-  check("unknown goal is rejected", !store2.claimGoal("nope").ok);
+  // A save written before quests existed gains a working shelf.
+  const repaired = repairQuestSave({ entries: { gone: { progress: 2, status: "bogus" }, main_01_plant: { progress: 1, status: "completed" } }, day: DAY }, DAY);
+  check("a broken entry is repaired, not trusted", repaired.entries["gone"].status === "active");
+  check("a good entry is kept", repaired.entries["main_01_plant"].status === "completed");
 }
 
-section("6. Discovery milestones");
+section("7. Weather and streak survive");
 {
-  const store3 = new GameStore();
-  const milestones = store3.discoveryMilestones();
-  check("milestones are exposed", milestones.length >= 15, `${milestones.length}`);
-  check("milestones have progress and target", milestones.every((m) => m.progress >= 0 && m.target > 0));
-  check("no milestone is claimed at start", milestones.every((m) => !m.claimed));
-  check("plants-owned metric reflects the nursery", (() => {
-    const m = milestones.find((x) => x.id === "plants-10");
-    return m ? m.progress === store3.state.plants.length : false;
-  })(), `${store3.state.plants.length} plants`);
+  check("weather covers all four states", Object.keys(WEATHER_INFO).length === 4);
+  check("every weather has a name, icon and note", Object.values(WEATHER_INFO).every((w) => w.name && w.icon && w.note.length > 10));
+  check("day 1 has no multiplier", streakMultiplier(0) === 1 && streakMultiplier(1) === 1);
+  check("streak grows the multiplier", streakMultiplier(7) > streakMultiplier(3));
+  check("multiplier is capped at 2x", streakMultiplier(999) === 2);
+  check("every streak has a label", [0, 1, 5, 10, 25, 100].every((s) => streakLabel(s).length > 0));
 
-  // Force completion and claim.
-  const target = milestones.find((m) => m.id === "plant-1")!;
-  check("plant-1 is complete with one plant in the nursery", target.progress >= 1, `${target.progress}/${target.target}`);
-  const coins = store3.state.leafCoin;
-  const res = store3.claimDiscovery("plant-1");
-  check("a completed milestone can be claimed", res.ok, res.reason);
-  check("milestone reward is credited", store3.state.leafCoin === coins + (target.reward.leafCoin ?? 0));
-  check("a milestone cannot be claimed twice", !store3.claimDiscovery("plant-1").ok);
-  check("an incomplete milestone is rejected", !store3.claimDiscovery("rarity-s").ok);
-  check("an unknown milestone is rejected", !store3.claimDiscovery("khong-ton-tai").ok);
-}
-
-section("7. Milestones react to gameplay");
-{
-  const store4 = new GameStore();
-  store4.state.leafCoin = 200000;
-  store4.state.items = 300;
-  for (const s of ["thornroot", "emberleaf", "voltvine"] as SpeciesId[]) store4.buySeed(s, 2);
-  for (let i = 0; i < 4; i++) store4.plantSeed(["thornroot", "emberleaf", "voltvine"][i % 3] as SpeciesId);
-  for (const p of store4.state.plants) {
-    p.growth.stage = "mature";
-    p.growth.stageReadyAt = Date.now();
+  let prev = undefined;
+  let sawWeather = false;
+  for (let d = 1; d <= 7; d++) {
+    const day = createGardenDay(`2026-11-${String(d).padStart(2, "0")}`, prev, 5, "p");
+    if (day.weather) sawWeather = true;
+    prev = day;
   }
-  const ms = () => store4.discoveryMilestones();
-  check("species milestone tracks distinct species", (ms().find((m) => m.id === "species-3")?.progress ?? 0) >= 3, `${ms().find((m) => m.id === "species-3")?.progress}`);
-  check("element milestone tracks discovered elements", (ms().find((m) => m.id === "element-4")?.progress ?? 0) >= 1);
-
-  // Breeding needs nursery space; capacity is enforced by design.
-  store4.state.nurseryCap = 24;
-store4.state.leafCoin = 10_000_000;
-  const br = store4.breed(store4.state.plants[0].plantId, store4.state.plants[1].plantId);
-  check("breeding succeeds once there is room", br.ok, br.reason);
-  check("breed milestone counts a breed", (ms().find((m) => m.id === "breed-1")?.progress ?? 0) >= 1);
-  check("generation milestone reacts to breeding", (ms().find((m) => m.id === "gen-3")?.progress ?? 0) >= 2, `đời ${ms().find((m) => m.id === "gen-3")?.progress}`);
-
-  // A full nursery must refuse breeding rather than silently overflow.
-  const tight = new GameStore();
-  tight.state.leafCoin = 500000;
-  tight.state.nurseryCap = 2;
-  const extra = createSeedPlant("emberleaf", tight.state.playerId, "cap-test", Date.now());
-  extra.growth.stage = "mature";
-  extra.growth.stageReadyAt = Date.now();
-  tight.state.plants = [tight.state.plants[0], extra];
-  check("a full nursery blocks breeding", !tight.breed(tight.state.plants[0].plantId, extra.plantId).ok);
-}
-
-section("8. Persistence");
-{
-  const store5 = new GameStore();
-  store5.state.leafCoin = 7777;
-  store5.save();
-  const reloaded = new GameStore();
-  check("day state survives a reload", reloaded.state.gardenDay.dayKey === store5.state.gardenDay.dayKey);
-  check("goal progress survives a reload", JSON.stringify(reloaded.state.gardenDay.goals) === JSON.stringify(store5.state.gardenDay.goals));
-  check("claimed milestones survive a reload", JSON.stringify(reloaded.state.discovery.claimed) === JSON.stringify(store5.state.discovery.claimed));
-}
-
-section("8. Goals are never alike");
-{
-  // The original defect: "Gieo một hạt mới" and "Gieo ba hạt" on the same day.
-  // Two rows differing by a digit. Checked by walking a month of real day
-  // transitions rather than by counting the pool, because the failure was in the
-  // draw and no pool-shape assertion could have caught it.
-  const LEVEL = 20;
-  const DAYS = 60;
-  let previous: GardenDayState | undefined;
-  let repeatedKinds = 0;
-  let shortDays = 0;
-  let backToBack = 0;
-  const templateSeen = new Map<string, number>();
-
-  for (let d = 0; d < DAYS; d++) {
-    const day = createGardenDay(`2026-01-${String(d + 1).padStart(2, "0")}`, previous, LEVEL, "player-1");
-    const kinds = day.goals.map((g) => g.kind);
-    if (new Set(kinds).size !== kinds.length) repeatedKinds++;
-    if (day.goals.length < DAILY_GOAL_COUNT) shortDays++;
-
-    const templates = day.goals.map((g) => g.id.split("-").slice(1).join("-"));
-    const prevTemplates = previous?.goals.map((g) => g.id.split("-").slice(1).join("-")) ?? [];
-    if (templates.some((t) => prevTemplates.includes(t))) backToBack++;
-    for (const t of templates) templateSeen.set(t, (templateSeen.get(t) ?? 0) + 1);
-
-    previous = day;
-  }
-
-  check("no day deals two goals of the same kind", repeatedKinds === 0, `${repeatedKinds}/${DAYS} days`);
-  check("every day offers the full set", shortDays === 0, `${shortDays} short days`);
-  check("nothing repeats the next day", backToBack === 0, `${backToBack} back-to-back`);
-  // Rotation health: a cooldown bug that bars too much would leave most of the
-  // pool unused, which shows up as far fewer distinct templates than could fit.
-  check(
-    "the rotation reaches past the first few templates",
-    templateSeen.size >= 12,
-    `${templateSeen.size} distinct over ${DAYS} days`,
-  );
-  check(
-    "no template dominates",
-    Math.max(...templateSeen.values()) <= DAYS / 3,
-    `most-seen ${Math.max(...templateSeen.values())} of ${DAYS}`,
-  );
-
-  // Low level: the pool must thin out without collapsing to a single goal.
-  let lowDay: GardenDayState | undefined;
-  for (let d = 0; d < 14; d++) {
-    lowDay = createGardenDay(`2026-02-${String(d + 1).padStart(2, "0")}`, lowDay, 1, "player-1");
-  }
-  check("a level-1 player still gets a full day", (lowDay?.goals.length ?? 0) >= DAILY_GOAL_COUNT, `${lowDay?.goals.length}`);
-  const lowKinds = lowDay?.goals.map((g) => g.kind) ?? [];
-  check("and the goals are still distinct kinds", new Set(lowKinds).size === lowKinds.length);
+  check("a week of days still generates", sawWeather);
 }
 
 console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m\n`);

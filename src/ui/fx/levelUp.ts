@@ -148,7 +148,7 @@ export function celebrateLevelUp(options: LevelUpOptions): Promise<void> {
   /* The bar animates from empty, because "your bar filled" is the fact the celebration is
      reporting and a bar that was already full when the panel appeared reports nothing. */
   requestAnimationFrame(() => {
-    fill.style.width = `${options.after.pct.toFixed(1)}%`;
+    fill.style.transform = `scaleX(${(options.after.pct / 100).toFixed(3)})`;
     /*
      * The full-bar flash, fired once the fill has landed rather than with it.
      *

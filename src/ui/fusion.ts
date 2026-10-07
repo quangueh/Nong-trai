@@ -22,6 +22,7 @@ import { el } from "./components";
 import { sfx, reducedMotion } from "../audio/audio";
 import { store } from "./app";
 import { renderPlantSvg } from "../render/plantRenderer";
+import { RARITY_META, RARITY_POINT } from "../config/rarity";
 import type { Plant } from "../core/types";
 
 /** How long the whole thing runs if nobody touches anything. */
@@ -58,6 +59,20 @@ export function playFusion(child: Plant, onDone: () => void): void {
   const overlay = el("div", { class: "overlay fusion-overlay", role: "dialog", "aria-label": "Hợp nhất hai cây" });
   const stage = el("div", { class: "fusion-stage" + (calm ? " is-calm" : "") });
 
+  /*
+   * The rarity is a property of the result, and the ceremony is the result's
+   * arrival — so the stage wears it. A common pull gets the same motion but a
+   * quieter burst; an S-and-up gets the flare ring and the halo in the rarity's
+   * own colour, because the moment should tell the player what they pulled
+   * before the caption does.
+   */
+  const tier = RARITY_POINT[child.rarity] ?? 0;
+  const rare = tier >= 3; // S, SS, SSS
+  /* On the overlay rather than the stage: the caption lives in the panel, a
+     sibling of the stage, and both need the colour. */
+  overlay.style.setProperty("--rar", RARITY_META[child.rarity].colour);
+  if (rare) stage.classList.add("is-rare");
+
   const art = (p: Plant, cls: string): HTMLElement => {
     const box = el("div", { class: cls });
     box.innerHTML = renderPlantSvg(p, 128, { anim: !calm });
@@ -66,6 +81,7 @@ export function playFusion(child: Plant, onDone: () => void): void {
 
   const core = el("div", { class: "fusion-core" });
   stage.append(core);
+  if (rare && !calm) stage.append(el("div", { class: "fusion-flare" }));
 
   if (parent && !calm) {
     const a = art(parent, "fusion-parent is-left");
@@ -75,13 +91,18 @@ export function playFusion(child: Plant, onDone: () => void): void {
     stage.append(a, b);
     // Gene motes thrown out of the contact point. Spawned now and left to run
     // on their own timeline, so the caller is not holding a timer per particle.
-    for (let i = 0; i < 18; i++) {
+    // The count follows the pull's tier — still capped, a rare result is bigger
+    // but never a particle storm.
+    const motes = 14 + tier * 3;
+    for (let i = 0; i < motes; i++) {
       const mote = el("i", { class: "fusion-mote" });
-      const a2 = (i / 18) * Math.PI * 2 + Math.random();
-      const reach = 46 + Math.random() * 74;
+      const a2 = (i / motes) * Math.PI * 2 + Math.random();
+      const reach = (rare ? 60 : 46) + Math.random() * (rare ? 96 : 74);
       mote.style.setProperty("--dx", `${(Math.cos(a2) * reach).toFixed(0)}px`);
       mote.style.setProperty("--dy", `${(Math.sin(a2) * reach - 18).toFixed(0)}px`);
-      mote.style.setProperty("--hue", String(Math.round(Math.random() * 70 + 60)));
+      // Rare pulls widen the palette past leaf-green toward violet/gold.
+      const hue = rare ? Math.random() * 220 + 40 : Math.random() * 70 + 60;
+      mote.style.setProperty("--hue", String(Math.round(hue)));
       mote.style.animationDelay = `${620 + Math.round(Math.random() * 220)}ms`;
       stage.appendChild(mote);
     }
@@ -91,10 +112,12 @@ export function playFusion(child: Plant, onDone: () => void): void {
   childBox.innerHTML = renderPlantSvg(child, 168, { anim: !calm });
   stage.appendChild(childBox);
 
+  /* The caption is the child's name alone — tests assert on it verbatim. */
   const caption = el("div", { class: "fusion-caption" }, [child.name]);
+  const rarityChip = el("span", { class: "fusion-rarity" }, [`${child.rarity} · ${RARITY_META[child.rarity].label}`]);
   const hint = el("div", { class: "fusion-hint" }, ["Chạm để tiếp tục"]);
 
-  const panel = el("div", { class: "fusion-panel" }, [caption, hint]);
+  const panel = el("div", { class: "fusion-panel" }, [rarityChip, caption, hint]);
   overlay.append(stage, panel);
   shell.appendChild(overlay);
 

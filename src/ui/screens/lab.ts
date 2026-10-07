@@ -1,6 +1,7 @@
 /** Shop / lab screen: seeds, items, land, NPC orders (docs/05, docs/16 §21). */
 
 import { sfx } from "../../audio/audio";
+import { spendChip } from "../fx/gardenFx";
 import { MAX_PLOTS, RULE_LABEL, checkUnlock, plotStatuses } from "../../config/unlocks";
 import { el, toast, fmt, seedChip, seedIcon } from "../components";
 import { store } from "../app";
@@ -300,9 +301,11 @@ function paintSeeds(body: HTMLElement, nav: Navigate) {
     for (const sp of picks) {
       rail.appendChild(
         seedChip(sp, store.state.seeds[sp.id] ?? 0, {
-          onPick: () => {
+          onPick: (chip) => {
             const r = store.buySeed(sp.id);
             if (r.ok) {
+              if (chip) spendChip(chip, `-${fmt(sp.seedPrice)}🪙`);
+              sfx.play("buy");
               toast(`Đã mua hạt ${sp.name}`);
               nav("lab");
             } else toast(r.reason ?? "Không mua được");
@@ -449,9 +452,14 @@ function seedCard(sp: SpeciesDef, nav: Navigate, ownedOverride?: number): HTMLEl
   buy.addEventListener("click", () => {
     const r = store.buySeed(sp.id);
     if (r.ok) {
+      spendChip(buy, `-${fmt(sp.seedPrice)}🪙`);
+      sfx.play("buy");
       toast(`Đã mua hạt ${sp.name}`);
       nav("lab");
-    } else toast(r.reason ?? "Không mua được");
+    } else {
+      deny(card);
+      toast(r.reason ?? "Không mua được");
+    }
   });
 
   const packPrice = Math.floor(sp.seedPrice * 10 * 0.95);
@@ -465,9 +473,14 @@ function seedCard(sp: SpeciesDef, nav: Navigate, ownedOverride?: number): HTMLEl
   pack.addEventListener("click", () => {
     const r = store.buySeed(sp.id, 10);
     if (r.ok) {
+      spendChip(pack, `-${fmt(packPrice)}🪙`);
+      sfx.play("buy");
       toast(`Đã mua 10 hạt ${sp.name}`);
       nav("lab");
-    } else toast(r.reason ?? "Không đủ tiền");
+    } else {
+      deny(card);
+      toast(r.reason ?? "Không đủ tiền");
+    }
   });
 
   row.append(icon, info, el("div", { class: "col", style: "gap:4px;flex:none" }, [buy, pack]));
@@ -495,6 +508,7 @@ function paintItems(body: HTMLElement, nav: Navigate) {
     buy.disabled = store.state.leafCoin < it.price;
     buy.addEventListener("click", () => {
       if (store.state.leafCoin < it.price) {
+        deny(row);
         toast("Không đủ tiền");
         return;
       }
@@ -503,6 +517,8 @@ function paintItems(body: HTMLElement, nav: Navigate) {
       if (it.id === "serum") store.state.geneCrystal += 1;
       else store.state.items += 5;
       store.save();
+      spendChip(buy, `-${it.price}🪙`);
+      sfx.play("buy");
       toast(`+5 ${it.name === "Tinh chất gene" ? "💎" : "🧺"}`);
       nav("lab");
     });
@@ -666,4 +682,15 @@ function paintOrders(body: HTMLElement, nav: Navigate) {
     }
     body.appendChild(card);
   }
+}
+
+/**
+ * Refused purchase: the row shakes once, the toast explains why.
+ * A disabled button cannot be tapped to learn the reason — this is the answer
+ * for the failures that survive to a click anyway.
+ */
+function deny(el: HTMLElement): void {
+  el.classList.remove("shop-deny");
+  void el.offsetWidth;
+  el.classList.add("shop-deny");
 }

@@ -287,7 +287,7 @@ export function statGainFloat(target: HTMLElement, text: string): void {
  * need it, and the two drifting apart is how you end up with a `.card` squeezed
  * into a 154px flex slot and one word per line.
  */
-export function seedChip(sp: SpeciesDef, count: number, opts: { active?: boolean; onPick?: () => void; showPrice?: boolean } = {}): HTMLElement {
+export function seedChip(sp: SpeciesDef, count: number, opts: { active?: boolean; onPick?: (chip: HTMLElement) => void; showPrice?: boolean } = {}): HTMLElement {
   const role = ARCHETYPE_ROLE[sp.archetype] ?? sp.archetype;
   const b = el("button", {
     class: `seed-card ${opts.active ? "active" : ""} ${count <= 0 ? "empty-seed" : ""}`,
@@ -301,7 +301,9 @@ export function seedChip(sp: SpeciesDef, count: number, opts: { active?: boolean
       el("small", {}, [opts.showPrice === false ? role : `${role} · ${sp.seedPrice} xu`]),
     ]),
   );
-  if (opts.onPick) b.addEventListener("click", opts.onPick);
+  /* The chip itself is handed to the picker: a buy wants the spend chip to rise
+     off the card that was tapped, not off a remembered coordinate. */
+  if (opts.onPick) b.addEventListener("click", () => opts.onPick!(b));
   return b;
 }
 

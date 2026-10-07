@@ -5,6 +5,9 @@ import "./styles.css";
 import "./ui/fx/levelUp.css";
 import "./ui/fx/levelStrip.css";
 import "./ui/fx/stageOverlay.css";
+// Garden feel: watering, stage pops, unlock veils and reward flights. Own file
+// for the same reason as the level-up celebration — it is animation, not layout.
+import "./ui/fx/gardenFx.css";
 import { boot } from "./ui/app";
 import { sfx } from "./audio/audio";
 import { music } from "./audio/music";

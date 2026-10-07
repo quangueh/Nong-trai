@@ -3,7 +3,7 @@
 import { GameStore, resetSave, type Notice } from "../core/store";
 import { motionPref, setMotionPref, type MotionPref } from "../core/prefs";
 import { el, toast, seedIcon } from "./components";
-import { renderGarden } from "./screens/garden";
+import { renderGarden, gardenSidebars } from "./screens/garden";
 import { renderCollection } from "./screens/collection";
 import { renderBreeding } from "./screens/breeding";
 import { renderArena, currentBattleView } from "./screens/arena";
@@ -67,6 +67,7 @@ function plantMilestonesBetween(from: number, to: number): Milestone[] {
 }
 import { celebrateLevelUp, rewardsFromMilestones } from "./fx/levelUp";
 import { celebrateExpGain, expGainSound } from "./fx/expGain";
+import { markStageUp } from "./fx/gardenFx";
 
 import type { Screen } from "./screens/types";
 
@@ -99,6 +100,9 @@ let noticeHost: HTMLElement | null = null;
 let current: Screen = "garden";
 let screenHost: HTMLElement;
 let navHost: HTMLElement;
+/** The wide-layout rails beside the screen. Empty panels collapse in CSS. */
+let sideLeft: HTMLElement;
+let sideRight: HTMLElement;
 let emberPill: HTMLElement;
 let pairPill: HTMLElement;
 /** The last balances updatePills wrote, so it can tell which pill changed. */
@@ -166,6 +170,22 @@ function paint(params?: unknown) {
     lab: renderLab,
   }[current];
   screenHost.appendChild(view(navigate, params));
+
+  /*
+   * The desktop rails. Only the garden fills them — quests on the left, the
+   * day's weather and the seed bag on the right — because it is the screen the
+   * player lives on. Everywhere else they stay empty, and `:empty` collapses
+   * the column so a narrower screen is not paying rent for space it does not
+   * use. Below 1024px the stylesheet hides the panels entirely, so filling
+   * them here costs the phone nothing.
+   */
+  sideLeft?.replaceChildren();
+  sideRight?.replaceChildren();
+  if (current === "garden" && sideLeft && sideRight) {
+    const { left, right } = gardenSidebars(navigate);
+    sideLeft.appendChild(left);
+    sideRight.appendChild(right);
+  }
   updatePills();
 }
 
@@ -439,7 +459,7 @@ function updateLevelBadge(): void {
         "aria-valuemax": "100",
         "aria-label": `Cấp ${snap.level}, ${xpRemainingText(snap)}`,
       },
-      [el("i", { style: `width:${snap.pct.toFixed(1)}%` })],
+      [el("i", { style: `transform:scaleX(${(snap.pct / 100).toFixed(3)})` })],
     ),
     el("span", { class: "levelbadge-xp mono" }, [
       snap.capped
@@ -462,7 +482,7 @@ function updateLevelBadge(): void {
 const NOTICE_MS: Record<Notice["kind"], number> = {
   level: 4200,
   unlock: 5200,
-  goal: 3000,
+  quest: 3200,
   plot: 3000,
   milestone: 4000,
 };
@@ -470,7 +490,7 @@ const NOTICE_MS: Record<Notice["kind"], number> = {
 const NOTICE_SOUND: Partial<Record<Notice["kind"], Parameters<typeof sfx.play>[0]>> = {
   level: "levelUp",
   unlock: "buy",
-  goal: "tap",
+  quest: "questProgress",
   plot: "dig",
   milestone: "levelUp",
 };
@@ -495,17 +515,46 @@ const NOTICE_SOUND: Partial<Record<Notice["kind"], Parameters<typeof sfx.play>[0
  * that fires mid-animation leaves a half-faded banner, and the animation can be
  * skipped by the player tapping it away, which the timer cannot know about.
  */
+/**
+ * Cards on screen, by dedup key. A burst of ticks on one quest refreshes its
+ * banner in place instead of stacking identical cards over the garden.
+ */
+const liveNotices = new Map<string, { card: HTMLElement; refresh: (n: Notice) => void; dismiss: () => void }>();
+
 function showNotice(notice: Notice): void {
   if (!noticeHost) return;
   const host = noticeHost;
 
+  /* Level-ups carry no key of their own — each is a distinct event — but a
+     reward that levels five plants at once should be one banner that counts,
+     not five cards walling off the garden. The modal queue still plays each
+     celebration in full; the banner is only the ambient ping. */
+  const key = notice.key ?? (notice.levelUp ? "lvlup" : undefined);
+  if (key) {
+    const live = liveNotices.get(key);
+    if (live && live.card.isConnected) {
+      live.refresh(notice);
+      return;
+    }
+    liveNotices.delete(key);
+    /* A completion retires the same quest's in-progress banner — "928/10000"
+       hanging on under "Hoàn thành!" is last tick's news. */
+    if (key.startsWith("quest-done:")) {
+      const progress = liveNotices.get(`quest:${key.slice(11)}`);
+      if (progress && progress.card.isConnected) progress.dismiss();
+    }
+  }
+
   const card = el("div", { class: `notice notice-${notice.kind}` });
-  card.append(el("div", { class: "notice-title" }, [notice.title]));
+  const titleEl = el("div", { class: "notice-title" }, [notice.title]);
+  card.append(titleEl);
 
   // The body line is only worth printing when there are no chips to carry the
   // names. With chips it says the same three words twice.
+  let bodyEl: HTMLElement | null = null;
   if (notice.body && !(notice.species && notice.species.length > 0)) {
-    card.append(el("div", { class: "notice-body" }, [notice.body]));
+    bodyEl = el("div", { class: "notice-body" }, [notice.body]);
+    card.append(bodyEl);
   }
 
   if (notice.species && notice.species.length > 0) {
@@ -543,19 +592,51 @@ function showNotice(notice: Notice): void {
 
   const life = NOTICE_MS[notice.kind];
   let done = false;
-  const timer = setTimeout(() => dismiss(), life);
+  let timer = setTimeout(() => dismiss(), life);
   // A hidden tab throttles timers, so the banner would sit there when the player
   // came back. The animation-end path is the primary one; this is the backstop.
   function dismiss(): void {
     if (done) return;
     done = true;
     clearTimeout(timer);
+    if (key) liveNotices.delete(key);
     card.classList.remove("is-in");
     card.classList.add("is-out");
     card.addEventListener("animationend", () => card.remove(), { once: true });
     // If the animation never fires (reduced motion kills it), the node must still
     // go away or it accumulates for the rest of the session.
     setTimeout(() => card.remove(), 600);
+  }
+
+  /*
+   * A keyed notice that is already on screen refreshes rather than duplicates:
+   * the body line moves to the new value, the life timer restarts so the player
+   * can still read it, and a small pulse marks that something changed — the same
+   * information a second card would have carried, without the pile.
+   */
+  if (key) {
+    let merged = 0;
+    liveNotices.set(key, {
+      card,
+      dismiss,
+      refresh(next) {
+        if (done || !card.isConnected) return;
+        /* A level-up refresh shows the newest subject and how many more the
+           same banner has absorbed — "X lên cấp 2 · +2 nữa". */
+        if (next.levelUp) {
+          merged += 1;
+          titleEl.textContent = next.title;
+          if (bodyEl) bodyEl.textContent = `${next.body ?? ""}${merged > 0 ? ` · +${merged} nữa` : ""}`;
+        } else if (bodyEl && next.body) {
+          bodyEl.textContent = next.body;
+        }
+        clearTimeout(timer);
+        timer = setTimeout(() => dismiss(), life);
+        card.classList.remove("is-bump");
+        void card.offsetWidth;
+        card.classList.add("is-bump");
+      },
+    });
   }
 
   const sound = NOTICE_SOUND[notice.kind];
@@ -694,6 +775,18 @@ export function boot(root: HTMLElement) {
   // --- screen ---
   screenHost = el("div", { class: "screen" });
 
+  /*
+   * The workspace: screen plus two side panels in a flex row.
+   *
+   * At phone widths this is indistinguishable from the old direct append —
+   * the panels are `display:none` and the screen takes the whole row. At
+   * 1024px and up the shell widens and the rails open, which is what makes
+   * the desktop layout a game screen rather than a stretched phone.
+   */
+  sideLeft = el("aside", { class: "side-panel left", "aria-label": "Nhiệm vụ" });
+  sideRight = el("aside", { class: "side-panel right", "aria-label": "Túi hạt và thời tiết" });
+  const workspace = el("div", { class: "workspace" }, [sideLeft, screenHost, sideRight]);
+
   // --- nav ---
   navHost = el("div", { class: "bottomnav" });
   // Published so the stylesheet can size its columns from the tab count. Hard-coding the
@@ -712,7 +805,7 @@ export function boot(root: HTMLElement) {
   // flickers instead of arriving.
   noticeHost = el("div", { class: "notice-host", role: "status", "aria-live": "polite" });
 
-  shell.append(topbar, noticeHost, screenHost, navHost);
+  shell.append(topbar, noticeHost, workspace, navHost);
   root.appendChild(shell);
 
   store.subscribe(() => {
@@ -730,8 +823,56 @@ export function boot(root: HTMLElement) {
    *
    * Serialised, because a stage clear can cross three levels and three celebrations stacking
    * on one another is the single most reliable way to make a reward feel cheap.
+   *
+   * Queued, not dropped: the celebration that arrived while one was on screen used to be
+   * discarded outright — the level went up, the banner said so, and the modal that owes the
+   * player the new unlocks never came. And held, not just queued: a fusion ceremony or a
+   * stage-result overlay is already the screen's event, so a level-up fired mid-ceremony
+   * waits for the stage to clear rather than covering the thing the player is watching.
    */
   let celebrating = false;
+  const levelUpQueue: Array<() => void> = [];
+  let queuePoll: number | undefined;
+
+  const celebrationBlocked = (): boolean =>
+    Boolean(document.querySelector(".fusion-overlay, .breed-report, .stagelive, .fight-live"));
+
+  const pumpLevelUps = (): void => {
+    if (celebrating || celebrationBlocked() || levelUpQueue.length === 0) {
+      // A blocker is transient — poll it away rather than hanging a listener off
+      // every overlay that could be up. The interval stops when the queue drains.
+      if (levelUpQueue.length > 0 && queuePoll == null) {
+        queuePoll = window.setInterval(() => {
+          if (levelUpQueue.length === 0) {
+            window.clearInterval(queuePoll!);
+            queuePoll = undefined;
+            return;
+          }
+          pumpLevelUps();
+        }, 400);
+      }
+      return;
+    }
+    const next = levelUpQueue.shift()!;
+    celebrating = true;
+    /*
+     * Deferred one frame: the notice fires synchronously inside the action that
+     * earned it (breed, settle), and the ceremony that should hold it mounts in
+     * the same tick — a pump that checked only now would start the celebration
+     * just before the overlay it was meant to wait for exists. The re-check on
+     * the frame catches the mount and hands the job back to the queue.
+     */
+    requestAnimationFrame(() => {
+      if (celebrationBlocked()) {
+        celebrating = false;
+        levelUpQueue.unshift(next);
+        pumpLevelUps();
+        return;
+      }
+      next();
+    });
+  };
+
   store.onNotice((notice) => {
     if (!notice.levelUp) {
       showNotice(notice);
@@ -769,19 +910,21 @@ export function boot(root: HTMLElement) {
       : info.crossed.map((level) => milestoneForLevel(level));
     const rewards = rewardsFromMilestones(milestones);
 
-    if (celebrating) return;
-    celebrating = true;
-    void celebrateLevelUp({
-      level: info.level,
-      levelsGained: info.levelsGained,
-      subject: info.subjectName,
-      subjectIcon: info.subject === "plant" ? "🌱" : "🧑‍🌾",
-      expGained: info.expGained,
-      after: snap,
-      rewards,
-    }).then(() => {
-      celebrating = false;
+    levelUpQueue.push(() => {
+      void celebrateLevelUp({
+        level: info.level,
+        levelsGained: info.levelsGained,
+        subject: info.subjectName,
+        subjectIcon: info.subject === "plant" ? "🌱" : "🧑‍🌾",
+        expGained: info.expGained,
+        after: snap,
+        rewards,
+      }).then(() => {
+        celebrating = false;
+        pumpLevelUps();
+      });
     });
+    pumpLevelUps();
   });
   // Drawn once at boot: the subscription only fires on a change, so without this
   // the badge would be blank until the player happened to gain a coin.
@@ -896,6 +1039,9 @@ export function boot(root: HTMLElement) {
   setInterval(() => {
     const res = store.tickAll();
     for (const up of res.stageUps) {
+      // Mark first, so the garden repaint the toast triggers below arrives
+      // with the stage-pop waiting on the new card.
+      markStageUp(up.plant.plantId);
       if (up.stage === "mature") {
         toast(`${up.plant.name} đã trưởng thành! Có thể chiến đấu và lai tạo.`, 3200);
         // Growing is a pentatonic ladder, so repeated growth climbs instead of
@@ -906,6 +1052,9 @@ export function boot(root: HTMLElement) {
         sfx.play("sprout");
       }
     }
+    // A stage that turns over while the garden is on screen repaints it, so
+    // the new stage art and the pop arrive without waiting for a tap.
+    if (res.stageUps.length && current === "garden") paint();
   }, 2000).unref?.();
 
   paint();

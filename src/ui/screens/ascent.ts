@@ -381,7 +381,10 @@ export function renderAscent(_nav: Navigate): HTMLElement {
        they could still lose. So the view is told to hide them rather than having this screen
        reach into its DOM, which keeps the decision where the markup is. */
     listHost.hidden = true;
-    const sheet = el("div", { class: "card pop", style: "margin-bottom:12px" });
+    /* `fight-live` marks a ceremony in progress for the celebration queue: the
+       XP the settled fight pays lands the moment it starts, and its level-up
+       modal must not cover the replay it was earned in. */
+    const sheet = el("div", { class: "card pop fight-live", style: "margin-bottom:12px" });
     const stageTitle = el("div", { class: "small", style: "font-weight:700;margin-bottom:2px" }, [
       `Ải ${stage} · ${monster.name}`,
     ]);
