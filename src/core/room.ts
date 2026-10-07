@@ -1,11 +1,16 @@
 /**
  * Multiplayer room (docs/04). Server-authoritative battle.
  *
- * MVP transport is BroadcastChannel (real-time across two browser tabs on the
- * same machine). One tab is elected host and runs the authoritative simulation;
- * the guest sends intents and receives state. The message contract is
- * transport-agnostic, so swapping BroadcastChannel for a WebSocket worker is a
- * drop-in (see docs/11).
+ * Two transports carry the same message contract:
+ *
+ *   BroadcastChannel — instant, but only between tabs of one browser on one machine.
+ *   The Worker relay (`/api/room`, worker/src/room.ts) — a KV mailbox polled by both
+ *   sides, which is what lets two different devices share a room at all.
+ *
+ * Every outgoing message is published to both, and `mid` dedupe means whichever copy
+ * arrives second is dropped. Without the relay the room still works — it just cannot
+ * reach past the browser it is open in. One tab is elected host and runs the
+ * authoritative simulation; the guest sends intents and receives state.
  */
 
 import { Rng, seedToken } from "./rng";
@@ -20,6 +25,24 @@ import { BattleSession, type BattleEvent, type Stance } from "../battle/engine";
  */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CHANNEL = "mutant-sprout-room-v1";
+
+/**
+ * The relay shares the account Worker's address rather than taking a second variable —
+ * one `VITE_ACCOUNT_API` turns on friends, cloud saves and remote rooms together.
+ */
+const RELAY_BASE =
+  (import.meta.env?.VITE_ACCOUNT_API as string | undefined)?.replace(/\/$/, "") ?? "";
+
+/** Whether rooms can reach another device. BroadcastChannel alone covers one browser. */
+export const roomRelayAvailable = RELAY_BASE !== "";
+
+/**
+ * How far below the newest key seen a poll still accepts. Two devices' clocks can sit
+ * seconds apart, and a strict "newer than the last message" cursor would then skip a
+ * message written by the slower clock — permanently. The window returns a little
+ * history on every poll and the client dedupes by key name instead.
+ */
+const RELAY_SKEW_MS = 10_000;
 
 export type RoomState =
   | "waiting"
@@ -96,7 +119,15 @@ export function resultForPlayer(
   return { won, draw, mine: mySide === "a" ? m.mine : m.theirs, theirs: mySide === "a" ? m.theirs : m.mine };
 }
 
-export type RoomMessage =
+export type RoomMessage = {
+  /**
+   * Sender-minted dedupe id. A message travels on BroadcastChannel and the relay at
+   * once, so the second copy has to be droppable — and a relayed copy of a client's
+   * own send has to be too. Absent on hand-forged messages, which are let through so
+   * tests can inject them.
+   */
+  mid?: string;
+} & (
   | { kind: "create"; code: string; hostId: string; hostName: string }
   | { kind: "join"; code: string; playerId: string; name: string }
   | { kind: "state"; code: string; snapshot: RoomSnapshot }
@@ -108,7 +139,8 @@ export type RoomMessage =
   | { kind: "input"; code: string; playerId: string; intent: RoomIntent }
   | { kind: "result"; code: string; playerId: string; winner: string; mine: SideResult; theirs: SideResult }
   | { kind: "leave"; code: string; playerId: string }
-  | { kind: "req_state"; code: string; playerId: string };
+  | { kind: "req_state"; code: string; playerId: string }
+);
 
 export function generateRoomCode(rng: Rng): string {
   let code = "";
@@ -120,6 +152,14 @@ function randomCode(): string {
   return generateRoomCode(new Rng(`${Date.now()}:${Math.random()}`));
 }
 
+/** Knobs a test can turn; production callers never pass this. */
+export interface RoomClientOptions {
+  /** Override the relay base URL. Empty string disables the relay. */
+  relay?: string;
+  /** Poll interval in ms. The default suits a human-speed lobby and a relayed intent. */
+  pollMs?: number;
+}
+
 export class RoomClient {
   private channel: BroadcastChannel | null = null;
   private code: string | null = null;
@@ -127,11 +167,25 @@ export class RoomClient {
   private messageHandlers = new Set<(m: RoomMessage) => void>();
   private stateHandlers = new Set<(s: RoomSnapshot) => void>();
   private intentHandlers = new Set<(i: RoomIntent) => void>();
+  /** mids already dispatched — second copies and own relayed sends stop here. */
+  private seen = new Set<string>();
+  /** Relay key names already delivered, for the skew-window overlap. */
+  private seenKeys = new Set<string>();
+  private relayTimer: ReturnType<typeof setInterval> | null = null;
+  /** Highest message timestamp seen, for the `afterTs` cursor. */
+  private relayTs = 0;
+  private seq = 0;
+  private readonly relay: string;
+  private readonly pollMs: number;
 
   constructor(
     private readonly playerId: string,
     private readonly playerName: string,
-  ) {}
+    options: RoomClientOptions = {},
+  ) {
+    this.relay = (options.relay ?? RELAY_BASE).replace(/\/$/, "");
+    this.pollMs = options.pollMs ?? 650;
+  }
 
   get host(): boolean {
     return this.isHostRole;
@@ -148,11 +202,109 @@ export class RoomClient {
     return this.channel;
   }
 
-  private handle(m: RoomMessage) {
+  private dispatch(m: RoomMessage) {
     for (const h of this.messageHandlers) h(m);
     if (m.kind === "state") for (const h of this.stateHandlers) h(m.snapshot);
     if (m.kind === "input" && m.playerId !== this.playerId) {
       for (const h of this.intentHandlers) h(m.intent);
+    }
+  }
+
+  private handle(m: RoomMessage) {
+    if (m.mid) {
+      if (this.seen.has(m.mid)) return;
+      this.remember(m.mid);
+    }
+    this.dispatch(m);
+  }
+
+  private remember(mid: string) {
+    this.seen.add(mid);
+    // Set order is insertion order; a room lives for minutes, so a cap and a trim of
+    // the oldest half is all the bound this needs.
+    if (this.seen.size > 400) {
+      let n = 200;
+      for (const k of this.seen) {
+        this.seen.delete(k);
+        if (--n <= 0) break;
+      }
+    }
+  }
+
+  /**
+   * One send, both wires. BroadcastChannel is free and instant when the other player
+   * is a second tab; the relay is the only path that reaches another device. The mid
+   * is marked seen up front so the relayed copy of our own message is dropped on poll.
+   */
+  private publish(m: RoomMessage) {
+    m.mid = `${this.playerId}:${++this.seq}:${Math.random().toString(36).slice(2, 6)}`;
+    this.remember(m.mid);
+    this.ensureChannel()?.postMessage(m);
+    this.relaySend(m);
+  }
+
+  private relaySend(m: RoomMessage) {
+    const code = this.code;
+    if (!this.relay || !code) return;
+    // Fire and forget: if the relay is unreachable the BroadcastChannel copy still
+    // stands, which is exactly the same-browser case it covers.
+    void fetch(`${this.relay}/api/room`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "send", code, msg: m }),
+    }).catch(() => {});
+  }
+
+  /**
+   * Clear a recycled code's mailbox. Codes are six characters and live fifteen
+   * minutes, so two matches can share one — the reset means the new lobby cannot trip
+   * over the last one's leftovers. The worker keeps anything newer than the reset
+   * moment, so a join that landed already is safe.
+   */
+  private relayReset() {
+    const code = this.code;
+    if (!this.relay || !code) return;
+    void fetch(`${this.relay}/api/room`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "reset", code }),
+    }).catch(() => {});
+  }
+
+  private startRelay() {
+    if (!this.relay || this.relayTimer !== null) return;
+    const tick = async () => {
+      const code = this.code;
+      if (!code) return;
+      try {
+        const res = await fetch(`${this.relay}/api/room`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          // The cursor asks for "newer than the newest I have seen, minus a clock-skew
+          // window" — see RELAY_SKEW_MS for why the window exists.
+          body: JSON.stringify({ action: "poll", code, afterTs: Math.max(0, this.relayTs - RELAY_SKEW_MS) }),
+        });
+        if (!res.ok) return;
+        const body = (await res.json().catch(() => null)) as { msgs?: { k: string; m: RoomMessage }[] } | null;
+        for (const row of body?.msgs ?? []) {
+          if (this.seenKeys.has(row.k)) continue;
+          this.seenKeys.add(row.k);
+          const ts = Number(row.k.slice(`room:${code}:m:`.length, `room:${code}:m:`.length + 13));
+          if (Number.isFinite(ts) && ts > this.relayTs) this.relayTs = ts;
+          this.handle(row.m);
+        }
+      } catch {
+        // A dead relay costs the remote half of the room, not the local one.
+      }
+    };
+    void tick();
+    this.relayTimer = setInterval(tick, this.pollMs);
+  }
+
+  private stopRelay() {
+    if (this.relayTimer !== null) {
+      clearInterval(this.relayTimer);
+      this.relayTimer = null;
     }
   }
 
@@ -173,71 +325,68 @@ export class RoomClient {
     const code = randomCode();
     this.code = code;
     this.isHostRole = true;
+    this.relayReset();
     const msg: RoomMessage = { kind: "create", code, hostId: this.playerId, hostName: this.playerName };
-    this.ensureChannel()?.postMessage(msg);
-    this.handle(msg);
+    this.publish(msg);
+    // Local echo, bypassing dedupe — the publish already marked the mid, and the host's
+    // own listeners still expect to see the room they just made.
+    this.dispatch(msg);
+    this.startRelay();
     return code;
   }
 
   join(code: string) {
     this.code = code.toUpperCase();
     this.isHostRole = false;
-    this.ensureChannel()?.postMessage({ kind: "join", code: this.code, playerId: this.playerId, name: this.playerName } satisfies RoomMessage);
+    this.publish({ kind: "join", code: this.code, playerId: this.playerId, name: this.playerName });
+    this.startRelay();
   }
 
   broadcastState(snapshot: RoomSnapshot) {
-    const code = this.code;
-    if (!code) return;
-    this.ensureChannel()?.postMessage({ kind: "state", code, snapshot } satisfies RoomMessage);
+    if (!this.code) return;
+    this.publish({ kind: "state", code: this.code, snapshot });
   }
 
   requestState() {
-    const code = this.code;
-    if (!code) return;
-    this.ensureChannel()?.postMessage({ kind: "req_state", code, playerId: this.playerId } satisfies RoomMessage);
+    if (!this.code) return;
+    this.publish({ kind: "req_state", code: this.code, playerId: this.playerId });
   }
 
   sendPlant(plant: Plant) {
-    const code = this.code;
-    if (!code) return;
-    this.ensureChannel()?.postMessage({ kind: "plant_data", code, playerId: this.playerId, plant } satisfies RoomMessage);
+    if (!this.code) return;
+    this.publish({ kind: "plant_data", code: this.code, playerId: this.playerId, plant });
   }
 
   sendSelect(plantId: string) {
-    const code = this.code;
-    if (!code) return;
-    this.ensureChannel()?.postMessage({ kind: "select", code, playerId: this.playerId, plantId } satisfies RoomMessage);
+    if (!this.code) return;
+    this.publish({ kind: "select", code: this.code, playerId: this.playerId, plantId });
   }
 
   sendReady(ready: boolean) {
-    const code = this.code;
-    if (!code) return;
-    this.ensureChannel()?.postMessage({ kind: "ready", code, playerId: this.playerId, ready } satisfies RoomMessage);
+    if (!this.code) return;
+    this.publish({ kind: "ready", code: this.code, playerId: this.playerId, ready });
   }
 
   sendStance(stance: Stance) {
-    const code = this.code;
-    if (!code) return;
-    this.ensureChannel()?.postMessage({ kind: "stance", code, playerId: this.playerId, stance } satisfies RoomMessage);
+    if (!this.code) return;
+    this.publish({ kind: "stance", code: this.code, playerId: this.playerId, stance });
   }
 
   sendIntent(intent: RoomIntent) {
-    const code = this.code;
-    if (!code) return;
-    this.ensureChannel()?.postMessage({ kind: "input", code, playerId: this.playerId, intent } satisfies RoomMessage);
+    if (!this.code) return;
+    this.publish({ kind: "input", code: this.code, playerId: this.playerId, intent });
   }
 
   /** Host-only: the authoritative result, fanned out to the guest. */
   sendResult(winner: string, mine: SideResult, theirs: SideResult) {
-    const code = this.code;
-    if (!code) return;
-    this.ensureChannel()?.postMessage({ kind: "result", code, playerId: this.playerId, winner, mine, theirs } satisfies RoomMessage);
+    if (!this.code) return;
+    this.publish({ kind: "result", code: this.code, playerId: this.playerId, winner, mine, theirs });
   }
 
   leave() {
-    const code = this.code;
-    if (code) this.ensureChannel()?.postMessage({ kind: "leave", code, playerId: this.playerId } satisfies RoomMessage);
+    if (this.code) this.publish({ kind: "leave", code: this.code, playerId: this.playerId });
     this.code = null;
+    this.stopRelay();
   }
 
   destroy() {

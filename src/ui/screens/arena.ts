@@ -7,7 +7,7 @@ import { canBattle } from "../../growth/stages";
 import { BattleView, type BattleIntent, type BattleSummary } from "../../battle/battleView";
 import { createSeedPlant, breedPlants, estimatePower, validateGenome } from "../../genetics/genomeGenerator";
 import { Rng, seedToken, clamp } from "../../core/rng";
-import { RoomClient, HostRoom, resultForPlayer, type RoomSnapshot, type RoomMessage } from "../../core/room";
+import { RoomClient, HostRoom, resultForPlayer, roomRelayAvailable, type RoomSnapshot, type RoomMessage } from "../../core/room";
 import { addSkillXp } from "../../genetics/skillGenerator";
 import type { Stance } from "../../battle/engine";
 import { advanceStreak, battleStreakBonus, streakCoinPreview, STREAK_CAP } from "../../core/streak";
@@ -146,7 +146,9 @@ function renderMenu(nav: Navigate): HTMLElement {
     }
     pickPlant(nav, (plant) => renderRoomGuest(nav, code, plant));
   });
-  joinBox.append(input, joinBtn, el("div", { class: "callout", style: "margin-top:8px" }, ["Mở game ở tab hoặc cửa sổ khác rồi nhập mã để vào phòng. Máy chủ quyết định toàn bộ kết quả trận."]));
+  joinBox.append(input, joinBtn, el("div", { class: "callout", style: "margin-top:8px" }, [roomRelayAvailable
+    ? "Nhập mã của đối thủ để vào phòng — đấu qua mạng, không cần cùng thiết bị. Chủ phòng quyết định toàn bộ kết quả trận."
+    : "Chưa cấu hình máy chủ: phòng chỉ nối được giữa hai tab CÙNG trình duyệt. Đặt VITE_ACCOUNT_API rồi deploy Worker để đấu qua mạng."]));
   root.appendChild(joinBox);
 
   // --- the fighters, and what fighting is worth --------------------------
@@ -597,7 +599,9 @@ function renderRoomHost(nav: Navigate, myPlant: Plant): HTMLElement {
 
   const lobby = el("div", { class: "card", style: "margin-top:12px" });
   root.appendChild(lobby);
-  const status = el("div", { class: "tiny muted", style: "margin-top:10px;line-height:1.6" }, ["Đang chờ người chơi thứ hai. Mở game ở tab/cửa sổ khác rồi nhập mã phòng."]);
+  const status = el("div", { class: "tiny muted", style: "margin-top:10px;line-height:1.6" }, [roomRelayAvailable
+    ? "Đang chờ người chơi thứ hai. Gửi mã phòng cho đối thủ — họ nhập mã là vào được, kể cả thiết bị khác."
+    : "Đang chờ người chơi thứ hai. Chưa có máy chủ nên chỉ nối được tab khác của trình duyệt này."]);
   root.appendChild(status);
 
   const readyBtn = el("button", { class: "btn primary block", style: "margin-top:12px" }, ["✅ Sẵn sàng"]);
@@ -780,6 +784,13 @@ function renderRoomGuest(nav: Navigate, code: string, myPlant: Plant): HTMLEleme
   const statusCard = el("div", { class: "card" });
   statusCard.appendChild(el("div", { class: "small muted" }, ["Đang kết nối với chủ phòng..."]));
   root.appendChild(statusCard);
+  if (!roomRelayAvailable) {
+    // The guest joins blind: if the host is on another device and there is no relay,
+    // this is the only place the silence can be explained.
+    root.appendChild(el("div", { class: "callout warn", style: "margin-top:10px" }, [
+      "Chưa cấu hình máy chủ — chỉ vào được phòng mở trong tab khác của trình duyệt này.",
+    ]));
+  }
 
   const stanceRow = el("div", { class: "row", style: "gap:6px;margin-top:12px;justify-content:center;flex-wrap:wrap" });
   for (const [id, label] of STANCES) {

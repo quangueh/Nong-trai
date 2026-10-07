@@ -34,6 +34,7 @@
  */
 
 import { googleAccountKey, googleSaveKey, verifyGoogleIdToken } from "./google";
+import { routeRoom } from "./room";
 import {
   handleDuelAccept,
   handleDuelDecline,
@@ -551,6 +552,10 @@ export default {
         else res = await handleFriend(req, env, me);
       } else if (path === "/api/duel" && req.method === "POST") {
         res = await routeDuel(req, env);
+      } else if (path === "/api/room" && req.method === "POST") {
+        // Unauthenticated by design: the room code is the capability, matching the
+        // BroadcastChannel transport it replaces for players on different machines.
+        res = await routeRoom(req, env);
       } else if (path === "/api/health") {
         res = ROK({ ok: true, at: Date.now() });
       } else {

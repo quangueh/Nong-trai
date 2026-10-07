@@ -22,8 +22,16 @@ const check = (name: string, ok: boolean, info = "") => {
   ok ? pass++ : fail++;
 };
 
-const snap = () =>
-  page.evaluate(`(() => { const s = (window).__game.store.state; return { coins: s.leafCoin, items: s.items, seeds: JSON.stringify(s.seeds), plants: s.plants.length, sheets: document.querySelectorAll(".sheet").length, overlays: document.querySelectorAll(".overlay").length }; })()`);
+interface Snap {
+  coins: number;
+  items: number;
+  seeds: string;
+  plants: number;
+  sheets: number;
+  overlays: number;
+}
+const snap = (): Promise<Snap> =>
+  page.evaluate(`(() => { const s = (window).__game.store.state; return { coins: s.leafCoin, items: s.items, seeds: JSON.stringify(s.seeds), plants: s.plants.length, sheets: document.querySelectorAll(".sheet").length, overlays: document.querySelectorAll(".overlay").length }; })()`) as Promise<Snap>;
 
 // --- 1. spam the seed-buy button ---------------------------------------------
 await page.locator(".navitem", { hasText: "Cửa hàng" }).first().click().catch(() => {});
@@ -98,7 +106,6 @@ check("Escape storm on bare garden is a no-op", s5.plants >= 0 && s5.sheets === 
 // --- 6. two pickers: plant while a sheet is already open -----------------------
 // Tap two different empty plots fast — two pickers may race; planting must still
 // obey the seed bag.
-const s6a = await snap();
 await page.locator(".plot").nth(1).click().catch(() => {});
 await page.waitForTimeout(150);
 await page.locator(".plot").nth(2).click().catch(() => {});

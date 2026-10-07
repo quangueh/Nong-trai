@@ -1,8 +1,10 @@
 # Account Worker
 
 The game is a static site. This Worker is the only server-side part, and it does
-four things: create accounts, sign in, store a save under an account, and change a
-password.
+five things: create accounts, sign in, store a save under an account, change a
+password, and **relay room messages between two devices** (`/api/room` — see
+§Room relay below). Without the relay a room only reaches tabs of the same
+browser, which is why two players on different machines saw nothing.
 
 ## Why it is a Worker and not part of the site
 
@@ -54,7 +56,27 @@ Without that variable the account UI says so and everything else works unchanged
 | `GET /api/save` | bearer → `{ savedAt, state }`, or 404 |
 | `PUT /api/save` | bearer, `{ savedAt, state }` → `{ savedAt, kept }` |
 | `POST /api/password` | bearer, `{ current, next }` |
+| `POST /api/friend` | bearer, `{ action, ... }` — add/remove/list |
+| `POST /api/duel` | `{ action: send/inbox/sent/accept/decline/result }` |
+| `POST /api/room` | `{ action: send/poll/reset }` — room message relay |
 | `GET /api/health` | liveness |
+
+## Room relay
+
+`/api/room` is a keyed mailbox, not a referee. The game writes messages to
+`room:{CODE}:m:{ts}:{rand}` keys and polls the prefix for keys newer than its
+cursor minus a 10 s clock-skew window; dedupe happens client-side by key name and
+by message `mid`. `reset` wipes a recycled code's leftovers at room creation.
+
+There is no auth — the six-character room code is the capability, the same
+contract BroadcastChannel already had. Bounds are structural instead: a message
+caps at 32 KB, a room at 240 messages, and every key dies after 15 minutes.
+
+Polling is roughly one `list` per client per 650 ms. KV `list` reads the central
+metadata rather than the edge cache, so a message is visible within about a
+second of its write — acceptable for lobby traffic and battle intents, because
+the host's own simulation stays authoritative and its `result` is the only thing
+that settles anything.
 
 `kept` is `"yours"` or `"theirs"`. `"theirs"` means the server already held a newer
 save and refused this one — the client shows a conflict prompt rather than

@@ -7,7 +7,8 @@
  */
 
 import { GameStore } from "../src/core/store";
-import { RoomClient, HostRoom, resultForPlayer } from "../src/core/room";
+import { RoomClient, HostRoom, resultForPlayer, type RoomSnapshot } from "../src/core/room";
+import { routeRoom } from "../worker/src/room";
 import { simulateBattle } from "../src/battle/engine";
 import type { Plant } from "../src/core/types";
 
@@ -223,6 +224,96 @@ section("6. Room lifecycle");
   hostClient.destroy();
   guestClient.destroy();
   check("clients destroy cleanly", true);
+}
+
+section("7. The relay carries a room between two devices");
+{
+  // BroadcastChannel is switched off entirely, so nothing below can travel tab-to-tab.
+  // Every byte goes through `routeRoom` — the real Worker code — backed by an
+  // in-memory KV, which is the same arrangement the friend/duel tests use.
+  const savedBC = (globalThis as { BroadcastChannel?: unknown }).BroadcastChannel;
+  const savedFetch = globalThis.fetch;
+  (globalThis as { BroadcastChannel?: unknown }).BroadcastChannel = undefined;
+
+  const kv = new Map<string, string>();
+  const fakeDb = {
+    get: async (k: string) => kv.get(k) ?? null,
+    put: async (k: string, v: string) => void kv.set(k, v),
+    delete: async (k: string) => void kv.delete(k),
+    list: async (o: { prefix: string }) => ({
+      keys: [...kv.keys()].filter((k) => k.startsWith(o.prefix)).sort().map((name) => ({ name })),
+    }),
+  };
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
+    routeRoom(new Request(String(input), init), { DB: fakeDb })) as typeof fetch;
+
+  const relayHost = new RoomClient("pl_remote_host", "RemoteHost", { relay: "http://relay.test", pollMs: 30 });
+  const relayGuest = new RoomClient("pl_remote_guest", "RemoteGuest", { relay: "http://relay.test", pollMs: 30 });
+
+  const rCode = relayHost.create();
+  const relayRoom = new HostRoom(rCode, "pl_remote_host", "RemoteHost");
+
+  let sawJoin = "";
+  let gotPlant = false;
+  let guestSnap: RoomSnapshot | null = null;
+  let guestResultCount = 0;
+  let guestSawOwnJoin = false;
+
+  relayHost.onMessage((m) => {
+    if (m.kind === "join") {
+      sawJoin = m.name;
+      relayRoom.addGuest(m.playerId, m.name);
+      relayHost.broadcastState(relayRoom.snapshot);
+    }
+    if (m.kind === "plant_data") {
+      gotPlant = true;
+      relayRoom.registerPlant(m.plant);
+      relayRoom.setPlant(m.playerId, m.plant.plantId);
+    }
+  });
+  relayGuest.onState((s) => {
+    guestSnap = s;
+  });
+  relayGuest.onMessage((m) => {
+    if (m.kind === "join" && m.playerId === "pl_remote_guest") guestSawOwnJoin = true;
+    if (m.kind === "result") guestResultCount++;
+  });
+
+  relayGuest.join(rCode);
+  relayGuest.sendPlant(guestPlant);
+  await wait(400);
+
+  check("host received the join over the relay alone", sawJoin === "RemoteGuest", sawJoin);
+  check("host received the guest's plant over the relay", gotPlant);
+  check("guest received the room state over the relay", (guestSnap as RoomSnapshot | null)?.players.length === 2, `${(guestSnap as RoomSnapshot | null)?.players.length}`);
+  check("the guest's own join is not echoed back at it", !guestSawOwnJoin);
+
+  relayHost.sendResult("a", result.a as never, result.b as never);
+  await wait(250);
+  check("guest received the authoritative result over the relay", guestResultCount === 1, `${guestResultCount}`);
+
+  relayHost.destroy();
+  relayGuest.destroy();
+
+  section("8. Both transports at once deliver exactly once");
+  // Same-process clients share BroadcastChannel AND poll the same mailbox — the mid
+  // dedupe is the only thing standing between a player and every action firing twice.
+  (globalThis as { BroadcastChannel?: unknown }).BroadcastChannel = savedBC;
+  const bothHost = new RoomClient("pl_both_host", "BothHost", { relay: "http://relay.test", pollMs: 30 });
+  const bothGuest = new RoomClient("pl_both_guest", "BothGuest", { relay: "http://relay.test", pollMs: 30 });
+  const bCode = bothHost.create();
+  await wait(80); // let the host's reset land before the join
+  let joins = 0;
+  bothHost.onMessage((m) => {
+    if (m.kind === "join") joins++;
+  });
+  bothGuest.join(bCode);
+  await wait(400);
+  check("one join reaches the host exactly once", joins === 1, `${joins}`);
+
+  bothHost.destroy();
+  bothGuest.destroy();
+  globalThis.fetch = savedFetch;
 }
 
 console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m\n`);

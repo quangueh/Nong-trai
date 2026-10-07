@@ -11,6 +11,8 @@
  */
 
 // Minimal localStorage shim so the store can persist in-process.
+export {};
+
 const mem = new Map<string, string>();
 (globalThis as unknown as { localStorage: unknown }).localStorage = {
   getItem: (k: string) => mem.get(k) ?? null,
@@ -53,7 +55,7 @@ function invariants(store: InstanceType<typeof GameStore>, opIdx: number): void 
     if (!Number.isFinite(v) || v < 0) fail(`op#${opIdx}: ${k}=${v} (negative or non-finite)`);
   }
   for (const [sp, n] of Object.entries(s.seeds)) {
-    if (!Number.isFinite(n) || n < 0) fail(`op#${opIdx}: seeds.${sp}=${n}`);
+    if (n === undefined || !Number.isFinite(n) || n < 0) fail(`op#${opIdx}: seeds.${sp}=${n}`);
   }
   if (s.plants.length > s.nurseryCap) fail(`op#${opIdx}: plants ${s.plants.length} > nurseryCap ${s.nurseryCap}`);
   for (const p of s.plants) {
@@ -88,7 +90,7 @@ const ops = [
     const p = store.state.plants[Math.floor(rng() * store.state.plants.length)];
     if (p) store.addPlantXp(p, hostileNum());
   },
-  () => store.buyPlot(),
+  () => store.buyPlot(Math.floor(hostileNum())),
   () => store.claimQuest(pick(["q_daily_care", "q_grow", "nope", ""]) as never),
   () => store.awardDrops(pick(["win", "loss", "draw"] as const)),
   () => {
