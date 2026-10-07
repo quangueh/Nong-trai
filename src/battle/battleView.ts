@@ -973,12 +973,21 @@ class FighterView {
   refresh(): void {
     const max = this.state.snap.maxHp;
     const hpPct = clampPct((this.state.hp / max) * 100);
+    /* A live fighter keeps a visible sliver of bar. Sub-1 damage (a poison or
+       burn tick is not clamped to 1) can leave a plant standing on 0.3 HP —
+       and 0.4% of a bar renders as a fully empty one, which is exactly the
+       "0 máu trước mà vẫn thắng" complaint: the eye reads an empty bar as a
+       corpse. So the bar's floor is a hair of colour, and empty means dead. */
+    const shownPct = this.state.died ? 0 : Math.max(hpPct, 2.4);
     // The ghost bar lags behind the real one, so a big hit shows as a pale slab
     // draining away rather than the bar simply being shorter. Without it a
     // 40-point hit and a 4-point hit look identical at a glance.
-    this.ghostFill.style.transform = `scaleX(${hpPct / 100})`;
-    this.hpFill.style.transform = `scaleX(${hpPct / 100})`;
+    this.ghostFill.style.transform = `scaleX(${shownPct / 100})`;
+    this.hpFill.style.transform = `scaleX(${shownPct / 100})`;
     this.hpFill.classList.toggle("low", hpPct < 30);
+    // The last sliver burns: under 8% the bar flares so "a hair of HP" reads as
+    // "about to die", distinct from both a healthy bar and a dead one.
+    this.hpFill.classList.toggle("crisis", !this.state.died && hpPct < 8);
     // A fighter under 30% wears a danger rim: the fight should announce "about
     // to fall" before the KO lands, otherwise the ending reads as a jump cut.
     this.root.classList.toggle("lowhp", !this.state.died && hpPct < 30);

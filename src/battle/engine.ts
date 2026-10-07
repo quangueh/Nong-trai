@@ -439,8 +439,8 @@ function sideSummary(s: BattleSideState) {
   return {
     /* Same rounding rule as the live bar: a survivor at 0.4 HP is reported as 1,
        never 0 — a winner that "had 0 HP left" reads as a corpse. */
-    hp: s.died ? 0 : Math.max(1, Math.round(s.hp)),
-    hpPct: round2(clamp((s.hp / s.snap.maxHp) * 100, 0, 100)),
+    hp: shownHp(s),
+    hpPct: s.died ? 0 : Math.max(0.5, round2(clamp((s.hp / s.snap.maxHp) * 100, 0, 100))),
     damageDealt: Math.round(s.damageDealt),
     damageTaken: Math.round(s.damageTaken),
     shields: Math.round(s.shields),
@@ -497,7 +497,7 @@ function tickStatuses(
          * the "remaining HP%" tiebreak both read 0 instead of a nonsense value.
          */
         if (self.hp <= 0) fellOrRevive(self, side, time, events, seq, ` vì ${statusName(st.kind)} lan`);
-        events.push({ seq: seq.v++, type: "STATUS_TICK", t: round2(time), side, other: foeSide, amount: round2(dmg), status: st.kind, hpAfter: Math.max(0, Math.round(self.hp)), text: `${statusName(st.kind)} gây ${Math.round(dmg)} sát thương` });
+        events.push({ seq: seq.v++, type: "STATUS_TICK", t: round2(time), side, other: foeSide, amount: round2(dmg), status: st.kind, hpAfter: shownHp(self), text: `${statusName(st.kind)} gây ${Math.round(dmg)} sát thương` });
       }
     }
     if (st.kind === "regen") {
@@ -506,7 +506,7 @@ function tickStatuses(
         st.tickAccum -= 1;
         const heal = st.power;
         self.hp = Math.min(self.snap.maxHp, self.hp + heal);
-        events.push({ seq: seq.v++, type: "HEAL_APPLIED", t: round2(time), side, amount: round2(heal), hpAfter: Math.round(self.hp), text: `Tái tạo +${Math.round(heal)}` });
+        events.push({ seq: seq.v++, type: "HEAL_APPLIED", t: round2(time), side, amount: round2(heal), hpAfter: shownHp(self), text: `Tái tạo +${Math.round(heal)}` });
       }
     }
     if (st.kind === "stun" && time < self.stunnedUntil) {
@@ -612,6 +612,16 @@ export function morphFormName(element: ElementId | undefined): string {
 }
 
 /**
+ * `hpAfter` on every event goes through `shownHp`: `Math.round(0.4)` is 0, and
+ * a 0 in that field read as "dead" downstream — the view drew kill-weight
+ * impact on a hit that did not kill, and result cards printed "HP 0%" for the
+ * winner. A live plant reports at least 1; 0 means actually down.
+ */
+function shownHp(s: BattleSideState): number {
+  return s.died ? 0 : Math.max(1, Math.round(s.hp));
+}
+
+/**
  * The single way a fighter goes down.
  *
  * Four places can kill — a clean hit, a poison or burn tick, reflection, a
@@ -641,7 +651,7 @@ function fellOrRevive(
       t: round2(time),
       side,
       amount: round2(self.hp),
-      hpAfter: Math.round(self.hp),
+      hpAfter: shownHp(self),
       revived: true,
       text: `Hơi Thở Thứ Hai — ${self.snap.name} đứng dậy lại!`,
     });
@@ -691,7 +701,11 @@ function applyDamage(
     other: foeSide,
     amount: Math.round(amount),
     isCrit,
-    hpAfter: Math.max(0, Math.round(defender.hp)),
+    /* Lethality, not the died flag: `fellOrRevive` runs below this push, so
+       `died` is not set yet. hp<=0 here means the hit kills — which is also
+       what the view reads for kill-weight impact. A survivor on 0.4 HP still
+       reports 1, never 0. */
+    hpAfter: defender.hp <= 0 ? 0 : Math.max(1, Math.round(defender.hp)),
     text: `${sourceLabel} gây ${Math.round(amount)} sát thương${isCrit ? " (chí mạng)" : ""}`,
   });
 
@@ -710,7 +724,7 @@ function applyDamage(
      * which is arguably correct, and is left alone deliberately, but only once death is
      * actually recorded.
      */
-    events.push({ seq: seq.v++, type: "REFLECT", t: round2(time), side: foeSide, amount: round2(reflect), hpAfter: Math.max(0, Math.round(attacker.hp)), text: `Vỏ Cứng phản lại ${Math.round(reflect)}` });
+    events.push({ seq: seq.v++, type: "REFLECT", t: round2(time), side: foeSide, amount: round2(reflect), hpAfter: attacker.hp <= 0 ? 0 : Math.max(1, Math.round(attacker.hp)), text: `Vỏ Cứng phản lại ${Math.round(reflect)}` });
     if (attacker.hp <= 0) fellOrRevive(attacker, side, time, events, seq, " vì phản sát thương");
   }
 
@@ -718,7 +732,7 @@ function applyDamage(
   if (attacker.snap.traits.includes("greedy_root") && !attacker.died) {
     const heal = amount * 0.22;
     attacker.hp = Math.min(attacker.snap.maxHp, attacker.hp + heal);
-    events.push({ seq: seq.v++, type: "LEECH", t: round2(time), side, amount: round2(heal), hpAfter: Math.round(attacker.hp), text: `Hút máu +${Math.round(heal)}` });
+    events.push({ seq: seq.v++, type: "LEECH", t: round2(time), side, amount: round2(heal), hpAfter: shownHp(attacker), text: `Hút máu +${Math.round(heal)}` });
   }
 
   // Crit heal.
@@ -726,7 +740,7 @@ function applyDamage(
     const heal = amount * 0.35;
     attacker.hp = Math.min(attacker.snap.maxHp, attacker.hp + heal);
     attacker.heals += heal;
-    events.push({ seq: seq.v++, type: "HEAL_APPLIED", t: round2(time), side, amount: round2(heal), hpAfter: Math.round(attacker.hp), text: `Chí mạng hồi máu +${Math.round(heal)}` });
+    events.push({ seq: seq.v++, type: "HEAL_APPLIED", t: round2(time), side, amount: round2(heal), hpAfter: shownHp(attacker), text: `Chí mạng hồi máu +${Math.round(heal)}` });
   }
 
   if (defender.hp <= 0) fellOrRevive(defender, foeSide, time, events, seq, "");

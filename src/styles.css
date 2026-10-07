@@ -1152,6 +1152,22 @@ h4 {
 .hpstack > i.low {
   background: linear-gradient(90deg, #ff7a5c, #ffb457);
 }
+/* Crisis: the last sliver of bar burns. Under ~8% the fill flares hot and
+   bright — "a hair of HP" reads as "about to die", distinct from both a
+   healthy bar and an empty (dead) one. */
+.hpstack > i.crisis {
+  background: linear-gradient(90deg, #ff4d4d, #ff9a3d);
+  animation: crisisFlare 0.7s ease-in-out infinite;
+}
+@keyframes crisisFlare {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.65);
+  }
+}
 .hpstack > u {
   position: absolute;
   inset: 0;
