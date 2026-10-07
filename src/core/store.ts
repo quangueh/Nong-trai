@@ -592,7 +592,17 @@ export class GameStore {
    * the game is worse than no gate.
    */
   unlockContext(): UnlockContext {
-    return contextFrom(this.state.plants, this.state.breederLevel, this.state.seeds, this.state.leafCoin);
+    let questClaims = 0;
+    for (const e of Object.values(this.state.quests.entries)) {
+      if (e.status === "claimed") questClaims++;
+    }
+    return contextFrom(this.state.plants, this.state.breederLevel, this.state.seeds, this.state.leafCoin, {
+      ascentHighest: this.state.ascent.highest,
+      battleCount: this.state.discovery.battles,
+      breedCount: this.state.discovery.breeds,
+      questClaims,
+      elementCount: this.state.discovery.elements.length,
+    });
   }
 
     /**

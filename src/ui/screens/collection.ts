@@ -1,4 +1,4 @@
-/** Collection screen: list + filters + sell (docs/05 §5, docs/16). */
+/** Collection screen: the species dex, then the live plants + sell (docs/05 §5, docs/16). */
 
 import { el, plantCard, toast, rarityTag, fmt, plantThumb } from "../components";
 import { store, navigate } from "../app";
@@ -10,6 +10,12 @@ import { canSell } from "../../growth/stages";
 import { plantDisplayName } from "../../core/plantNames";
 import { sellPrice } from "../../economy/shop";
 import { openDetail } from "./garden";
+import { SPECIES, getSpecies, type SpeciesId } from "../../config/species";
+import { createSeedPlant } from "../../genetics/genomeGenerator";
+import { renderPlantSvg } from "../../render/plantRenderer";
+import { dominantElement, ELEMENT_INFO } from "../../config/elements";
+import { ARCHETYPE_ROLE } from "../../config/balance";
+import type { Plant } from "../../core/types";
 import type { Navigate } from "./types";
 
 type Filter = "all" | "ready" | "breed" | Rarity;
@@ -18,9 +24,115 @@ export function renderCollection(nav: Navigate): HTMLElement {
   const root = el("div", { class: "fadein" });
   const shell = document.querySelector(".shell")!;
 
-  const title = el("div", { class: "sec-title" });
-  title.append(el("span", {}, [`Bộ sưu tập (${store.state.plants.length})`]));
-  root.appendChild(title);
+  /* --- the species dex -----------------------------------------------------
+   *
+   * A collection is what has ever been opened, not what is on hand — a plant
+   * spent as a breeding parent leaves the garden but does not un-discover its
+   * species. `discovery.species` is rebuilt from every plant's lineage, so a
+   * consumed parent still counts. The inventory (and the sell table) lives below.
+   */
+  const discovered = new Set(store.state.discovery.species as string[]);
+  const ownedBySpecies = new Map<string, number>();
+  for (const p of store.state.plants) {
+    for (const sp of p.baseLineage) ownedBySpecies.set(sp, (ownedBySpecies.get(sp) ?? 0) + 1);
+  }
+
+  const dexTitle = el("div", { class: "sec-title" });
+  dexTitle.append(
+    el("span", {}, [`Bộ sưu tập loài`]),
+    el("span", { class: "tiny muted" }, [` đã mở ${discovered.size}/${SPECIES.length}`]),
+  );
+  root.appendChild(dexTitle);
+
+  let dexFilter: "all" | "owned" | "gone" = "all";
+  const dexChips = el("div", { class: "scrollx", style: "margin-bottom:12px" });
+  const dexGrid = el("div", { class: "shelf" });
+  root.appendChild(dexChips);
+  root.appendChild(dexGrid);
+
+  // Species are rendered through a representative plant built on demand — the
+  // dex shows what the species *is*, so the portrait is synthesised rather than
+  // borrowed from whichever live plant happens to carry the blood.
+  const portraits = new Map<string, Plant>();
+  const portrait = (id: string): Plant => {
+    let p = portraits.get(id);
+    if (!p) {
+      p = createSeedPlant(id as SpeciesId, store.state.playerId, `dex:${id}`, 0);
+      portraits.set(id, p);
+    }
+    return p;
+  };
+
+  const paintDex = () => {
+    const shown = store.state.discovery.species
+      .map((id) => getSpecies(id as SpeciesId))
+      .filter((sp): sp is NonNullable<typeof sp> => Boolean(sp))
+      .filter((sp) => {
+        const has = (ownedBySpecies.get(sp.id) ?? 0) > 0;
+        if (dexFilter === "owned") return has;
+        if (dexFilter === "gone") return !has;
+        return true;
+      });
+    dexGrid.replaceChildren();
+    if (!shown.length) {
+      dexGrid.appendChild(
+        el("div", { class: "empty" }, [
+          el("div", { class: "big" }, ["📭"]),
+          el("div", {}, [dexFilter === "all" ? "Chưa mở loài nào — trồng hoặc lai cây để ghi vào bộ sưu tập." : "Không có loài phù hợp."]),
+        ]),
+      );
+      return;
+    }
+    for (const sp of shown) {
+      const owned = ownedBySpecies.get(sp.id) ?? 0;
+      const rep = portrait(sp.id);
+      const card = el("div", { class: "plantcard" + (owned === 0 ? " dex-gone" : "") });
+      const bed = el("div", { class: "bed" });
+      bed.innerHTML = renderPlantSvg(rep, 150);
+      card.appendChild(bed);
+      card.appendChild(el("div", { class: "pname" }, [sp.name]));
+      const dom = dominantElement(rep.dna.elementGenes);
+      const meta = el("div", { class: "prow" });
+      const tierChip = el("span", { class: "chip dim" }, [`Bậc ${"I".repeat(sp.tier + 1)}`]);
+      const elemChip = el("span", { class: "chip dim" }, [ELEMENT_INFO[dom.id].name]);
+      elemChip.style.color = ELEMENT_INFO[dom.id].ink;
+      meta.append(tierChip, elemChip);
+      card.appendChild(meta);
+      card.appendChild(
+        el("div", { class: "tiny " + (owned > 0 ? "" : "muted"), style: owned > 0 ? "font-weight:700" : "" }, [
+          owned > 0 ? `Đang có ×${owned}` : "Đã mở · hiện không còn",
+        ]),
+      );
+      card.title = `${sp.name} — ${ARCHETYPE_ROLE[sp.archetype]} · ${owned > 0 ? `còn ${owned} trong vườn` : "đã từng mở, hiện không còn cây nào"}`;
+      // Clicking a species that is still in the garden opens that plant; a species
+      // whose plants were all spent has nothing to open — its entry is the record.
+      const live = store.state.plants.find((p) => p.baseLineage.includes(sp.id));
+      card.addEventListener("click", () => {
+        if (live) openDetail(live, nav, shell);
+        else toast("Loài này đã từng mở — hiện không còn cây nào trong vườn");
+      });
+      dexGrid.appendChild(card);
+    }
+  };
+
+  for (const [id, label] of [
+    ["all", "Tất cả"],
+    ["owned", "Đang có"],
+    ["gone", "Đã lai mất"],
+  ] as const) {
+    const b = el("button", { class: "btn sm" + (id === "all" ? " primary" : "") }, [label]);
+    b.addEventListener("click", () => {
+      dexFilter = id;
+      for (const other of dexChips.querySelectorAll(".btn")) other.classList.remove("primary");
+      b.classList.add("primary");
+      paintDex();
+    });
+    dexChips.appendChild(b);
+  }
+  paintDex();
+
+  // --- the live inventory -----------------------------------------------------
+  root.appendChild(el("div", { class: "sec-title", style: "margin-top:18px" }, [`Cây trong vườn (${store.state.plants.length})`]));
 
   // --- filters ---
   const filters: Filter[] = ["all", "ready", "breed", "C", "B", "A", "S", "SS", "SSS"];

@@ -535,6 +535,11 @@ const l1Ctx = {
   awakenedCount: 0,
   topGeneration: 1,
   leafCoin: 500,
+  ascentHighest: 0,
+  battleCount: 0,
+  breedCount: 0,
+  questClaims: 0,
+  elementCount: 0,
 };
 const l1Open = queryCatalogue({ playerId: "p", breederLevel: 1, progress: l1Ctx, locked: "open", perPage: 24 });
 check(
@@ -548,7 +553,18 @@ check(
   featuredSpecies("p", 0, 1, 10, l1Ctx).map((s) => s.name).join(", "),
 );
 
-const tier2Species = gated[Math.floor(gated.length * 0.5)];
+/* A coin rule is an honest alternative route — the fresh store holds 10,000,000
+   xu on purpose so "cannot afford" is never the reason a buy fails — so the
+   specimen for the locked-buy check has to be one without a coin gate. */
+const rulesOf = (sp: (typeof SPECIES)[number]) => {
+  const req = sp.unlock;
+  if (!req) return [];
+  return "k" in req ? [req] : [...(req.all ?? []), ...(req.any ?? [])];
+};
+const midStart = Math.floor(gated.length * 0.45);
+const tier2Species = gated
+  .slice(midStart, Math.floor(gated.length * 0.7))
+  .find((s) => !rulesOf(s).some((r) => r.k === "coin"))!;
 const blocked = fresh.buySeed(tier2Species.id);
 check("a level-1 player cannot buy a mid-registry seed", !blocked.ok, blocked.reason ?? "allowed");
 check("and the refusal says how far off they are", /·\s*\d/.test(blocked.reason ?? ""), blocked.reason ?? "");
@@ -605,6 +621,31 @@ function satisfy(species: (typeof SPECIES)[number]): void {
         const p = fresh.state.plants[0] ?? makeDummyPlant(0);
         if (!fresh.state.plants.includes(p)) fresh.state.plants.push(p);
         p.generation = Math.max(p.generation, rule.n);
+        break;
+      }
+      case "stage":
+        fresh.state.ascent.highest = Math.max(fresh.state.ascent.highest, rule.n);
+        break;
+      case "battles":
+        fresh.state.discovery.battles = Math.max(fresh.state.discovery.battles, rule.n);
+        break;
+      case "breeds":
+        fresh.state.discovery.breeds = Math.max(fresh.state.discovery.breeds, rule.n);
+        break;
+      case "quests": {
+        // Fake claims rather than walking the quest engine — the store only
+        // counts `claimed` entries, so marking entries is the honest shortcut.
+        const entries = fresh.state.quests.entries;
+        while (Object.values(entries).filter((e) => e.status === "claimed").length < rule.n) {
+          const id = `fake_${Object.keys(entries).length}`;
+          entries[id] = { status: "claimed", progress: 0 };
+        }
+        break;
+      }
+      case "elements": {
+        while (fresh.state.discovery.elements.length < rule.n) {
+          fresh.state.discovery.elements.push(`el${fresh.state.discovery.elements.length}`);
+        }
         break;
       }
     }

@@ -33,7 +33,17 @@ export type UnlockRule =
   /** Own any plant of generation `n` or above. */
   | { k: "generation"; n: number }
   /** Hold at least `n` coins. */
-  | { k: "coin"; n: number };
+  | { k: "coin"; n: number }
+  /** Have cleared ascent stage `n`. */
+  | { k: "stage"; n: number }
+  /** Have fought `n` battles (arena or ladder, win or loss — a fight fought). */
+  | { k: "battles"; n: number }
+  /** Have bred `n` times. */
+  | { k: "breeds"; n: number }
+  /** Have claimed `n` quest rewards. */
+  | { k: "quests"; n: number }
+  /** Have discovered `n` distinct elements. */
+  | { k: "elements"; n: number };
 
 /**
  * A gate.
@@ -68,6 +78,16 @@ export interface UnlockContext {
   awakenedCount: number;
   topGeneration: number;
   leafCoin: number;
+  /** Highest ascent stage ever cleared. */
+  ascentHighest: number;
+  /** Battles fought, win or lose. */
+  battleCount: number;
+  /** Times bred. */
+  breedCount: number;
+  /** Quest rewards claimed. */
+  questClaims: number;
+  /** Distinct elements ever discovered. */
+  elementCount: number;
 }
 
 /** One rule, resolved. */
@@ -96,15 +116,39 @@ export const RULE_LABEL: Record<UnlockRule["k"], (n: number) => string> = {
   growthLevel: (n) => `Có cây đạt cấp ${n}`,
   awakened: (n) => `Thức tỉnh ${n} cây`,
   generation: (n) => `Có cây thế hệ ${n}`,
-  coin: (n) => `Có ${n} xu`,
+  coin: (n) => `Có ${n.toLocaleString("vi-VN")} xu`,
+  stage: (n) => `Vượt ải ${n}`,
+  battles: (n) => `Đánh ${n} trận`,
+  breeds: (n) => `Lai tạo ${n} lần`,
+  quests: (n) => `Nhận thưởng ${n} nhiệm vụ`,
+  elements: (n) => `Khám phá ${n} hệ`,
 };
 
 function progress(n: number): string {
   return n.toLocaleString("vi-VN");
 }
 
+/**
+ * The parts of a context that are not derivable from the plants and seeds alone —
+ * the ladder record, the discovery tallies and the quest claims all live elsewhere
+ * in the save, and a rule that measures them would read zero without being told.
+ */
+export interface ProgressExtras {
+  ascentHighest?: number;
+  battleCount?: number;
+  breedCount?: number;
+  questClaims?: number;
+  elementCount?: number;
+}
+
 /** Build a context from the live game state. */
-export function contextFrom(plants: Plant[], breederLevel: number, seeds: Partial<Record<string, number>>, leafCoin: number): UnlockContext {
+export function contextFrom(
+  plants: Plant[],
+  breederLevel: number,
+  seeds: Partial<Record<string, number>>,
+  leafCoin: number,
+  extras: ProgressExtras = {},
+): UnlockContext {
   let topGrowthLevel = 0;
   let awakenedCount = 0;
   let topGeneration = 0;
@@ -121,7 +165,20 @@ export function contextFrom(plants: Plant[], breederLevel: number, seeds: Partia
     if (p.growth.stage === "awakened") awakenedCount++;
     if (p.generation > topGeneration) topGeneration = p.generation;
   }
-  return { breederLevel, plantCount: plants.length, speciesCount, topGrowthLevel, awakenedCount, topGeneration, leafCoin };
+  return {
+    breederLevel,
+    plantCount: plants.length,
+    speciesCount,
+    topGrowthLevel,
+    awakenedCount,
+    topGeneration,
+    leafCoin,
+    ascentHighest: extras.ascentHighest ?? 0,
+    battleCount: extras.battleCount ?? 0,
+    breedCount: extras.breedCount ?? 0,
+    questClaims: extras.questClaims ?? 0,
+    elementCount: extras.elementCount ?? 0,
+  };
 }
 
 function measure(ctx: UnlockContext, rule: UnlockRule): { have: number; need: number } {
@@ -140,6 +197,16 @@ function measure(ctx: UnlockContext, rule: UnlockRule): { have: number; need: nu
       return { have: ctx.topGeneration, need: rule.n };
     case "coin":
       return { have: ctx.leafCoin, need: rule.n };
+    case "stage":
+      return { have: ctx.ascentHighest, need: rule.n };
+    case "battles":
+      return { have: ctx.battleCount, need: rule.n };
+    case "breeds":
+      return { have: ctx.breedCount, need: rule.n };
+    case "quests":
+      return { have: ctx.questClaims, need: rule.n };
+    case "elements":
+      return { have: ctx.elementCount, need: rule.n };
     default:
       return { have: 0, need: 1 };
   }

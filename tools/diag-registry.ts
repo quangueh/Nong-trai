@@ -45,10 +45,16 @@ console.log("\n[1mUnlock ladder[0m");
 const filler = (): Plant =>
   ({ growth: { level: 30, stage: "mature" }, generation: 1 }) as unknown as Plant;
 
-const openAt = (level: number, plants: Plant[], seedCount: number): number => {
+/* A player who only levels is not a player who plays — the species gates now ask
+   for fights, stage clears, breeds and quest claims too, so the "active" profile
+   carries the tallies a level-60 garden would actually have. */
+const IDLE_EXTRAS = { ascentHighest: 0, battleCount: 0, breedCount: 0, questClaims: 0, elementCount: 0 };
+const ACTIVE_EXTRAS = { ascentHighest: 48, battleCount: 400, breedCount: 25, questClaims: 60, elementCount: 8 };
+
+const openAt = (level: number, plants: Plant[], seedCount: number, extras = IDLE_EXTRAS): number => {
   const seeds: Record<string, number> = {};
   for (let i = 0; i < seedCount; i++) seeds[`s${i}`] = 1;
-  const ctx = contextFrom(plants, level, seeds, 500_000);
+  const ctx = contextFrom(plants, level, seeds, 500_000, extras);
   let open = 0;
   for (const sp of SPECIES) if (checkUnlock(ctx, sp.unlock).met) open++;
   return open;
@@ -62,7 +68,7 @@ let pidle = 0;
 let pactive = 0;
 for (const lvl of [1, 5, 10, 15, 20, 25, 30, 35, 40, 46, 60]) {
   const o = openAt(lvl, idle, 0);
-  const a = openAt(lvl, active, 20);
+  const a = openAt(lvl, active, 20, ACTIVE_EXTRAS);
   console.log(`  ${String(lvl).padStart(5)}  ${String(o).padStart(6)}  ${String(o - pidle).padStart(7)}  ${String(a).padStart(8)}  ${String(a - pactive).padStart(7)}`);
   pidle = o;
   pactive = a;
@@ -71,7 +77,7 @@ for (const lvl of [1, 5, 10, 15, 20, 25, 30, 35, 40, 46, 60]) {
 // The design intent, stated as assertions: levelling alone must not open the
 // registry, and playing must open most of it.
 const idleEnd = openAt(60, idle, 0);
-const activeEnd = openAt(60, active, 20);
+const activeEnd = openAt(60, active, 20, ACTIVE_EXTRAS);
 check("levelling alone leaves most of the registry shut", idleEnd < SPECIES.length * 0.2, `${idleEnd}/${SPECIES.length} (${((idleEnd / SPECIES.length) * 100).toFixed(0)}%)`);
 check("playing opens most of it", activeEnd > SPECIES.length * 0.85, `${activeEnd}/${SPECIES.length} (${((activeEnd / SPECIES.length) * 100).toFixed(0)}%)`);
 check("something is open from the start", openAt(1, idle, 0) > 50, `${openAt(1, idle, 0)} open at level 1`);

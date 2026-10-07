@@ -6801,6 +6801,13 @@ body.planting {
   border-color: rgba(159, 105, 26, 0.4);
 }
 
+/* A species that has been discovered but is no longer in the garden — the entry
+   is a record, not a plant, so it reads as a shade rather than a card. */
+.plantcard.dex-gone {
+  opacity: 0.62;
+  filter: grayscale(0.65);
+}
+
 /* The shared plant picker: square tiles that wrap into rows and scroll downward
    inside the sheet, instead of a strip the player drags sideways. */
 .pickgrid {

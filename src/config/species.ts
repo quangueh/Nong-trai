@@ -793,17 +793,17 @@ export let blurbFallbackCount = 0;
  * Pure function of the index, so a species keeps the same gate forever and the
  * shop can be reasoned about without replaying the game.
  *
- * Reads as a progression rather than a list:
+ * Reads as a progression rather than a list — the index still sets how deep the
+ * gate sits, but the *kind* of gate varies per species:
  *
  *   0-4%      open from the start. A new player is not shown an empty shelf.
- *   4-14%     level 2-4, or a handful of plants in the ground.
- *   14-30%    level 5-9, and either a wider collection or a plant at growth level.
- *   30-52%    level 11-16, and a real collection.
- *   52-74%    level 19-25, and an awakened plant or a high generation.
- *   74-88%    level 28-34, and mastery of some kind.
- *   88-100%   level 38-46, and two of the three mastery milestones at once.
+ *   early     a few plants grown, a low breeder level, or a couple of fights.
+ *   mid       level asks mixed with stage clears, breed counts, quest claims and
+ *             collections — and a share that skip level entirely.
+ *   late      awakened plants, high generations, deep stage clears, a wallet
+ *             worth showing, or a wide element tally — often two of them.
  *
- * Roughly a quarter of every band has no level requirement at all, which is the
+ * Roughly a third of every band has no level requirement at all, which is the
  * point: the shop should answer "do something" at least as often as "wait".
  */
 function speciesUnlock(i: number): UnlockReq | undefined {
@@ -821,44 +821,80 @@ function speciesUnlock(i: number): UnlockReq | undefined {
   if (i < OPEN_AT_START) return undefined;
   const f = (i - OPEN_AT_START) / (GENERATED_SPECIES_COUNT - OPEN_AT_START);
 
+  /*
+   * Every band picks from several mechanisms rather than always the same level-plus-stat
+   * shape: some species ask for fights, some for the ladder, some for breeding, some for a
+   * wider collection, and roughly a third of every band skips the level ask entirely.
+   * Six thousand identical "reach level N and pay" cards is not a shelf of goals, it is a
+   * paywall — the catalogue is a collection to fill, so the gates should point at the
+   * different things the game has to do.
+   */
+  const m = r.next();
+  const scale = (lo: number, hi: number) => Math.round(lo + f * (hi - lo));
+
   if (f < 0.14) {
-    const level = 2 + Math.floor(f * 50);
-    const plants = 3 + Math.floor(f * 12);
-    // Two routes, picked per species. An earlier version of this had a
-    // placeholder in the else branch that typed as `never`, which `checkUnlock`
-    // read as "no requirement" — so half of this band was silently open from the
-    // start. Every branch has to be a real requirement.
-    return r.bool(0.5) ? { any: [{ k: "level", n: level }, { k: "plants", n: plants }] } : { k: "plants", n: plants };
+    const level = scale(2, 7);
+    const plants = scale(2, 7);
+    // Every branch has to be a real requirement — a placeholder here once typed as
+    // `never` and `checkUnlock` read it as "no requirement", so half this band was
+    // silently open from the start.
+    if (m < 0.35) return { k: "plants", n: plants };
+    if (m < 0.7) return { k: "level", n: level };
+    if (m < 0.9) return { any: [{ k: "level", n: level }, { k: "battles", n: scale(3, 8) }] };
+    return { k: "battles", n: scale(3, 8) };
   }
   if (f < 0.3) {
-    const level = 5 + Math.floor((f - 0.14) * 25);
-    return { all: [{ k: "level", n: level }], any: [{ k: "species", n: 3 + Math.floor((f - 0.14) * 14) }, { k: "growthLevel", n: 8 + Math.floor((f - 0.14) * 18) }] };
+    const level = scale(5, 11);
+    if (m < 0.45)
+      return { all: [{ k: "level", n: level }], any: [{ k: "species", n: scale(3, 8) }, { k: "growthLevel", n: scale(8, 20) }] };
+    if (m < 0.7) return { any: [{ k: "battles", n: scale(6, 15) }, { k: "quests", n: scale(2, 5) }] };
+    if (m < 0.9) return { all: [{ k: "level", n: level }, { k: "battles", n: scale(5, 12) }] };
+    return { k: "stage", n: scale(2, 6) };
   }
   if (f < 0.52) {
-    const level = 11 + Math.floor((f - 0.3) * 23);
-    return { all: [{ k: "level", n: level }], any: [{ k: "species", n: 8 + Math.floor((f - 0.3) * 16) }, { k: "plants", n: 6 + Math.floor((f - 0.3) * 14) }] };
+    const level = scale(11, 20);
+    if (m < 0.4)
+      return { all: [{ k: "level", n: level }], any: [{ k: "species", n: scale(8, 18) }, { k: "plants", n: scale(6, 16) }] };
+    if (m < 0.6) return { k: "stage", n: scale(5, 15) };
+    if (m < 0.8) return { all: [{ k: "level", n: level }, { k: "breeds", n: scale(1, 4) }] };
+    return { any: [{ k: "battles", n: scale(15, 40) }, { k: "quests", n: scale(4, 10) }, { k: "coin", n: scale(2000, 6000) }] };
   }
   if (f < 0.74) {
-    const level = 19 + Math.floor((f - 0.52) * 27);
-    return {
-      all: [{ k: "level", n: level }],
-      any: [{ k: "awakened", n: 1 }, { k: "generation", n: 2 + Math.floor((f - 0.52) * 6) }, { k: "growthLevel", n: 20 + Math.floor((f - 0.52) * 12) }],
-    };
+    const level = scale(19, 31);
+    if (m < 0.45)
+      return {
+        all: [{ k: "level", n: level }],
+        any: [{ k: "awakened", n: 1 }, { k: "generation", n: scale(2, 6) }, { k: "growthLevel", n: scale(20, 30) }],
+      };
+    if (m < 0.65) return { all: [{ k: "level", n: level }], any: [{ k: "stage", n: scale(12, 26) }, { k: "breeds", n: scale(3, 8) }] };
+    if (m < 0.85) return { any: [{ k: "stage", n: scale(12, 28) }, { k: "awakened", n: 1 }] };
+    return { all: [{ k: "quests", n: scale(8, 14) }], any: [{ k: "level", n: level }, { k: "battles", n: scale(40, 70) }] };
   }
   if (f < 0.88) {
-    const level = 28 + Math.floor((f - 0.74) * 43);
+    const level = scale(28, 38);
+    if (m < 0.5)
+      return {
+        all: [{ k: "level", n: level }],
+        any: [{ k: "awakened", n: scale(1, 6) }, { k: "generation", n: scale(3, 8) }, { k: "species", n: scale(14, 30) }],
+      };
+    if (m < 0.7) return { all: [{ k: "level", n: level }, { k: "stage", n: scale(20, 35) }] };
+    if (m < 0.85) return { any: [{ k: "stage", n: scale(22, 38) }, { k: "elements", n: scale(5, 7) }, { k: "breeds", n: scale(8, 14) }] };
+    return { any: [{ k: "awakened", n: scale(2, 5) }, { k: "quests", n: scale(10, 16) }, { k: "coin", n: scale(8000, 15000) }] };
+  }
+  const level = scale(38, 50);
+  if (m < 0.5)
     return {
       all: [{ k: "level", n: level }],
-      any: [{ k: "awakened", n: 1 + Math.floor((f - 0.74) * 8) }, { k: "generation", n: 3 + Math.floor((f - 0.74) * 8) }, { k: "species", n: 14 + Math.floor((f - 0.74) * 20) }],
+      any: [
+        { k: "awakened", n: scale(2, 10) },
+        { k: "generation", n: scale(4, 12) },
+        { k: "species", n: scale(20, 40) },
+      ],
     };
-  }
+  if (m < 0.75) return { all: [{ k: "level", n: level }, { k: "stage", n: scale(30, 45) }] };
   return {
-    all: [{ k: "level", n: 38 + Math.floor((f - 0.88) * 66) }],
-    any: [
-      { k: "awakened", n: 2 + Math.floor((f - 0.88) * 20) },
-      { k: "generation", n: 4 + Math.floor((f - 0.88) * 24) },
-      { k: "species", n: 20 + Math.floor((f - 0.88) * 30) },
-    ],
+    all: [{ k: "level", n: level }],
+    any: [{ k: "stage", n: scale(35, 45) }, { k: "elements", n: scale(7, 8) }, { k: "awakened", n: scale(3, 8) }],
   };
 }
 

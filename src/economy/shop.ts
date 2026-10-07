@@ -252,6 +252,11 @@ export function queryCatalogue(q: CatalogueQuery): CataloguePage {
     awakenedCount: 0,
     topGeneration: 0,
     leafCoin: 0,
+    ascentHighest: 0,
+    battleCount: 0,
+    breedCount: 0,
+    questClaims: 0,
+    elementCount: 0,
   };
 
   // The whole registry, not `availableSpecies`. That helper is `tier <=
