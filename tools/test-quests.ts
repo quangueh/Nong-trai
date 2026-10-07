@@ -28,6 +28,7 @@ import {
   type QuestContext,
 } from "../src/quests/engine";
 import { WEATHER_INFO, streakLabel, streakMultiplier } from "../src/config/quests";
+import { generatedMainQuests } from "../src/quests/generated";
 import type { CareActionId } from "../src/config/careActions";
 import type { SpeciesId } from "../src/config/species";
 
@@ -69,6 +70,8 @@ function ctx(over: Partial<QuestContext> = {}): QuestContext {
     claimed: new Set<string>(),
     day: DAY,
     playerId: "test-player",
+    seeds: {},
+    discovered: new Set<string>(),
     ...over,
   };
 }
@@ -282,6 +285,79 @@ section("7. Weather and streak survive");
     prev = day;
   }
   check("a week of days still generates", sawWeather);
+}
+
+section("8. The generated main line — it never runs out");
+{
+  const fixedMain = QUEST_CATALOG.filter((q) => q.type === "main").map((q) => q.id);
+  const doneAll = new Set(fixedMain);
+  let save = emptyQuestSave(DAY);
+  const base = ctx({ level: 6, claimed: doneAll });
+  const cat = () => [...QUEST_CATALOG, ...generatedMainQuests(save, base)];
+
+  const gen0 = generatedMainQuests(save, base);
+  check("a cycle appears once the fixed line is done", gen0.length === 4, `${gen0.length}`);
+  check("the opener unlocks off the last fixed main", unlockMet(gen0[0].unlock, base));
+  check("the rest wait on the chain", gen0.slice(1).every((q) => !unlockMet(q.unlock, base)));
+  const sp = gen0[0].id.slice("mx0a_".length);
+  check("all four quests are about one species", gen0.every((q) => q.id.endsWith(`_${sp}`)), gen0.map((q) => q.id).join(","));
+  check("and its rewards pay something real", gen0.every((q) => (q.rewards.exp ?? 0) + (q.rewards.coins ?? 0) > 0));
+
+  save = syncQuests(save, base, cat());
+  check("sync creates the cycle's entries", gen0.every((q) => save.entries[q.id]));
+  check("the opener is active, the rest locked", save.entries[gen0[0].id].status === "active" && save.entries[gen0[1].id].status === "locked");
+  check("the species pick is pinned by the entry", generatedMainQuests(save, base).find((q) => q.id.startsWith("mx0a"))?.id === gen0[0].id);
+
+  // 'a' measures state, not an event: owning the seed completes it on the next sync.
+  const seeded = ctx({ level: 6, claimed: doneAll, seeds: { [sp]: 2 } });
+  save = syncQuests(save, seeded, cat());
+  check("already owning the seed finishes the opener", save.entries[gen0[0].id].status === "completed");
+  const claimedA = claim(save, seeded, cat(), gen0[0].id);
+  check("and it claims", claimedA.ok);
+  save = claimedA.save;
+
+  const afterA = ctx({ level: 6, claimed: new Set([...doneAll, gen0[0].id]), seeds: { [sp]: 2 } });
+  save = syncQuests(save, afterA, cat());
+  check("claiming it opens the planting ask", save.entries[gen0[1].id].status === "active");
+
+  // Species matching is by bloodline: other species do not move it, the right one does.
+  let adv = advance(save, afterA, cat(), { name: "plant", amount: 1, species: ["unrelated_sp"] });
+  check("a different species does not count", adv.save.entries[gen0[1].id].progress === 0);
+  adv = advance(adv.save, afterA, cat(), { name: "plant", amount: 1, species: [sp] });
+  check("the right species counts", adv.save.entries[gen0[1].id].progress === 1);
+  save = adv.save;
+
+  // Claim the rest of the cycle by marking it done — the mechanics of *earning* are
+  // covered above; what is on trial here is that the chain keeps handing out work.
+  const walkCycle = (gen: typeof gen0, fromSave: typeof save, fromCtx: QuestContext) => {
+    let s = fromSave;
+    const claimedSoFar = new Set(fromCtx.claimed);
+    for (const q of gen) {
+      s = { ...s, entries: { ...s.entries, [q.id]: { progress: q.target, status: "completed" } } };
+      const r = claim(s, ctx({ level: 6, claimed: claimedSoFar, seeds: { [sp]: 2 } }), cat(), q.id);
+      if (r.ok) {
+        s = r.save;
+        claimedSoFar.add(q.id);
+      }
+    }
+    return { s, claimedSoFar };
+  };
+  const after0 = walkCycle(gen0, save, afterA);
+  check("a full cycle can be claimed through", after0.claimedSoFar.size === doneAll.size + 4, `${after0.claimedSoFar.size}`);
+  save = after0.s;
+
+  const ctxAfter0 = ctx({ level: 6, claimed: after0.claimedSoFar, seeds: { [sp]: 2 } });
+  const gen1 = generatedMainQuests(save, ctxAfter0);
+  check("claiming the last quest opens the next cycle", gen1.some((q) => q.id.startsWith("mx1a_")), gen1.map((q) => q.id).join(","));
+  check("the old cycle keeps its definitions", gen1.length >= 8, `${gen1.length}`);
+  const sp1 = gen1.find((q) => q.id.startsWith("mx1a_"))!.id.slice("mx1a_".length);
+  const c1Open = gen1.find((q) => q.id === `mx1a_${sp1}`)!;
+  check("the new cycle's opener is unlocked", unlockMet(c1Open.unlock, ctxAfter0));
+  check("and the work got heavier", gen1[2].target >= gen0[2].target, `${gen0[2].target} -> ${gen1[2].target}`);
+
+  // Before the fixed line is done, nothing is generated — the tutorial runs first.
+  const early = generatedMainQuests(emptyQuestSave(DAY), ctx());
+  check("the generated line waits for the tutorial", early.length === 0 || early.every((q) => !unlockMet(q.unlock, ctx())), `${early.length}`);
 }
 
 console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m\n`);

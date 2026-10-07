@@ -101,6 +101,14 @@ export interface QuestEvent {
   boss?: boolean;
   /** Whether the stage had already been cleared before this fight. */
   replay?: boolean;
+  /**
+   * The species bloodlines on the plant the event is about.
+   *
+   * A plant carries every species in its lineage, not one, so a bred descendant of a
+   * species still counts for "win with this species" quests — the match checks membership,
+   * not equality.
+   */
+  species?: string[];
 }
 
 /**
@@ -116,7 +124,7 @@ export interface QuestTrack {
   event: QuestEventName;
   mode: QuestMode;
   /** Only events matching every key here advance the quest. */
-  match?: { boss?: boolean; replay?: boolean; stage?: number };
+  match?: { boss?: boolean; replay?: boolean; stage?: number; species?: string };
 }
 
 export interface QuestDef {
@@ -197,6 +205,16 @@ export interface QuestContext {
   day: string;
   /** Seeds the daily rotation, so two players do not get the same three quests. */
   playerId: string;
+  /**
+   * Seed counts by species — what the "own a seed of X" quests measure.
+   *
+   * Read live rather than remembered, the same reason `current` exists at all: the
+   * generated chain asks about a species the player may already hold, and the answer
+   * has to be right the moment the quest appears, not after the next purchase.
+   */
+  seeds: Partial<Record<string, number>>;
+  /** Species ever discovered — the dex. A species a player already tamed is no quest. */
+  discovered: Set<string>;
 }
 
 /** A quest, resolved against the save, ready for the UI. */

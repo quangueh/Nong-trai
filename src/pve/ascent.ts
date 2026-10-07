@@ -135,7 +135,8 @@ import type { CombatTier } from "../config/balance";
 import type { MutationTier, Rarity } from "../config/rarity";
 import type { CurrencyId } from "../core/currency";
 import type { Archetype, BodyGeneId, SkillGeneId, StatGeneId } from "../config/species";
-import type { ElementId } from "../config/elements";
+import { dominantElement, ELEMENT_INFO, ELEMENTS, type ElementId } from "../config/elements";
+import type { Plant } from "../core/types";
 import type { EffectKind } from "../config/skills";
 
 /** How a stage is coloured on the ladder. */
@@ -625,6 +626,99 @@ export const LOOKAHEAD = 4;
 
 export function stageIsOpen(stage: number, highestCleared: number): boolean {
   return stage >= 1 && stage <= highestCleared + LOOKAHEAD;
+}
+
+/* -------------------------------------------------------------------------- gates */
+
+/**
+ * What a stage asks of the plant that enters it.
+ *
+ * A stage is not only a bigger monster: milestone stages carry an *entry* condition, so
+ * climbing the ladder is also a question of what the garden is growing, not only how
+ * strong the best plant got. Three kinds of gate, each on its own beat so a stage never
+ * asks two things at once:
+ *
+ *   boss (every 10th)   the plant's growth level — the ladder's own measure.
+ *   every 15th non-boss an element trial — the plant's dominant element must be one of
+ *                       two, seeded per stage, so a one-element garden eventually meets a
+ *                       stage it has to grow sideways for.
+ *   every 25th rest     a generation floor — a stage asking for a bred plant, which is
+ *                       what ties the ladder back to the breeding table.
+ *
+ * The beats are deliberately sparse: most stages stay gate-free because the wall is
+ * already the difficulty, and a gate on every stage would read as lockout rather than
+ * challenge.
+ */
+export interface StageGate {
+  kind: "level" | "elements" | "generation";
+  /** `level`/`generation`: the floor. */
+  n?: number;
+  /** `elements`: the two elements that may enter. */
+  of?: ElementId[];
+}
+
+export function stageGate(stage: number): StageGate | null {
+  const n = Math.max(1, Math.floor(stage));
+  if (isBossStage(n)) {
+    // Level 2 at the first boss, rising slowly — 4 at ải 30, 8 at ải 100 — capped so the
+    // tail never asks for a level the growth curve cannot actually reach.
+    return { kind: "level", n: Math.min(20, 2 + Math.floor(n / 15)) };
+  }
+  if (n % 15 === 0) {
+    const h = hashStage(n, "elements");
+    const a = ELEMENTS[h % ELEMENTS.length];
+    const b = ELEMENTS[(h * 7 + 3) % ELEMENTS.length];
+    return { kind: "elements", of: a === b ? [a, ELEMENTS[(h * 7 + 4) % ELEMENTS.length]] : [a, b] };
+  }
+  if (n % 25 === 0) {
+    // Bred, not just grown: thế hệ 2 means the plant is someone's offspring.
+    return { kind: "generation", n: Math.max(2, Math.floor(n / 50) + 1) };
+  }
+  return null;
+}
+
+/** One tiny deterministic hash — the element trial picks are a property of the stage. */
+function hashStage(stage: number, salt: string): number {
+  let h = 0x811c9dc5;
+  for (const ch of `${stage}:${salt}`) h = Math.imul(h ^ ch.charCodeAt(0), 0x01000193) >>> 0;
+  return (h ^ (h >>> 13)) >>> 0;
+}
+
+/** Whether a plant may enter a gated stage, and if not, why — in the player's words. */
+export function gateCheck(plant: Plant, gate: StageGate | null): { ok: boolean; reason?: string } {
+  if (!gate) return { ok: true };
+  switch (gate.kind) {
+    case "level":
+      return plant.growth.level >= (gate.n ?? 0)
+        ? { ok: true }
+        : { ok: false, reason: `Ải này cần cây đạt cấp ${gate.n} — cây này mới cấp ${plant.growth.level}` };
+    case "elements": {
+      const dom = dominantElement(plant.dna.elementGenes).id;
+      return (gate.of ?? []).includes(dom)
+        ? { ok: true }
+        : { ok: false, reason: `Ải này chỉ nhận cây hệ ${gate.of?.map((e) => ELEMENT_INFO[e].name).join(" hoặc ")}` };
+    }
+    case "generation":
+      return plant.generation >= (gate.n ?? 0)
+        ? { ok: true }
+        : { ok: false, reason: `Ải này cần cây thế hệ ${gate.n} trở lên — hãy lai tạo thêm` };
+    default:
+      return { ok: true };
+  }
+}
+
+/** The gate as one line, for the stage card. */
+export function gateLabel(gate: StageGate): string {
+  switch (gate.kind) {
+    case "level":
+      return `Cây đạt cấp ${gate.n}`;
+    case "elements":
+      return `Chỉ cây hệ ${gate.of?.map((e) => ELEMENT_INFO[e].name).join(" hoặc ")}`;
+    case "generation":
+      return `Cây thế hệ ${gate.n} trở lên`;
+    default:
+      return "";
+  }
 }
 
 /** What a stage pays on a win, before the random part. */

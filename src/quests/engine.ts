@@ -248,6 +248,9 @@ function matches(def: QuestDef, ev: QuestEvent): boolean {
   if (m.boss !== undefined && Boolean(ev.boss) !== m.boss) return false;
   if (m.replay !== undefined && Boolean(ev.replay) !== m.replay) return false;
   if (m.stage !== undefined && ev.stage !== m.stage) return false;
+  // A species filter asks whether the bloodline is present, not whether the plant is
+  // exactly that species — a bred descendant still counts for "win with this species".
+  if (m.species !== undefined && !(ev.species ?? []).includes(m.species)) return false;
   return true;
 }
 

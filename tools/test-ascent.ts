@@ -12,7 +12,10 @@ import {
   LOOKAHEAD,
   STAT_LADDER_END,
   describeStage,
+  gateCheck,
+  gateLabel,
   stageAffixes,
+  stageGate,
   stageIsOpen,
   stageTargetPower,
 } from "../src/pve/ascent";
@@ -335,6 +338,40 @@ check(
   stageTargetPower(30, ap, 30) / stageTargetPower(30, ap, 0) < 1.7,
   `x${(stageTargetPower(30, ap, 30) / stageTargetPower(30, ap, 0)).toFixed(2)}`,
 );
+
+/* --- entry gates ------------------------------------------------------------ */
+
+console.log("\nentry gates");
+check("ordinary stages are open to any plant", [1, 3, 7, 11, 22, 33, 44].every((s) => stageGate(s) === null));
+check("every boss asks for a growth level", [10, 20, 30, 60, 100].every((s) => stageGate(s)?.kind === "level"));
+check("and the ask climbs with depth", (stageGate(10)?.n ?? 0) < (stageGate(60)?.n ?? 0) && (stageGate(60)?.n ?? 0) < (stageGate(200)?.n ?? 0));
+check(
+  "trial stages ask for an element",
+  [15, 45, 105].every((s) => {
+    const g = stageGate(s);
+    return g?.kind === "elements" && (g.of?.length ?? 0) === 2;
+  }),
+);
+check(
+  "bred-plant beats ask for a generation",
+  [25, 125, 175].every((s) => stageGate(s)?.kind === "generation" && (stageGate(s)?.n ?? 0) >= 2),
+);
+check("gates are a property of the stage, not the clock", JSON.stringify(stageGate(45)) === JSON.stringify(stageGate(45)));
+check("every gate can be said out loud", [10, 15, 25, 60, 100].every((s) => gateLabel(stageGate(s)!).length > 4));
+
+{
+  // A gate is a real check, not a hint: a level-1 seedling cannot walk into the first boss.
+  const sprout = createSeedPlant(SPECIES[0].id, ME, seedToken("gate"), 0);
+  check("a level-1 plant fails the first boss", !gateCheck(sprout, stageGate(10)).ok, gateCheck(sprout, stageGate(10)).reason);
+  sprout.growth.level = 99;
+  check("a grown plant passes it", gateCheck(sprout, stageGate(10)).ok);
+  sprout.generation = 0;
+  const gen = stageGate(25)!;
+  check("a seed plant fails the generation beat", !gateCheck(sprout, gen).ok, gateCheck(sprout, gen).reason);
+  sprout.generation = 3;
+  check("a bred descendant passes it", gateCheck(sprout, gen).ok);
+  check("a refusal says what is missing", Boolean(gateCheck(createSeedPlant(SPECIES[0].id, ME, seedToken("g2"), 0), stageGate(25)).reason));
+}
 
 console.log(bad ? `\n${bad} failed` : "\nthe ladder measures up");
 if (bad) process.exit(1);

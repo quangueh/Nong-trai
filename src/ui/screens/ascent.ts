@@ -30,7 +30,7 @@ import { store } from "../app";
 import { ELEMENT_INFO } from "../../config/elements";
 import { ARCHETYPE_ROLE, TIER_META } from "../../config/balance";
 import { RARITY_META } from "../../config/rarity";
-import { BAND_LABEL, LOOKAHEAD, type MonsterSpec, type StageBrief } from "../../pve";
+import { BAND_LABEL, LOOKAHEAD, gateCheck, gateLabel, stageGate, type MonsterSpec, type StageBrief } from "../../pve";
 import type { Navigate } from "./types";
 
 /** How many stage rows to draw. The list is long by design; scrolling it is the point. */
@@ -253,6 +253,21 @@ export function renderAscent(_nav: Navigate): HTMLElement {
 
     row.appendChild(monsterStrip(monster, brief));
 
+    /* Milestone stages carry an entry condition — printed on the card rather than
+       discovered on a refused click, because a gate nobody can see is just a button
+       that does nothing. */
+    const gate = stageGate(stage);
+    const fighter = chosen ? store.get(chosen) : null;
+    const gateResult = gate && fighter ? gateCheck(fighter, gate) : { ok: true };
+    if (gate) {
+      const met = gateResult.ok;
+      row.appendChild(
+        el("div", { class: "tiny", style: `margin-top:6px;font-weight:600;color:${met ? "var(--muted)" : "#c9821f"}` }, [
+          `Điều kiện: ${gateLabel(gate)}` + (fighter && !met ? ` — ${gateResult.reason}` : ""),
+        ]),
+      );
+    }
+
     if (cleared) {
       row.appendChild(
         el("div", { class: "tiny muted", style: "margin-top:6px" }, [
@@ -275,12 +290,13 @@ export function renderAscent(_nav: Navigate): HTMLElement {
        * lands on. Same action, correct weight.
        */
       const isNext = stage === ascent.highest + 1;
+      const gated = !gateResult.ok;
       const fight = el(
         "button",
         {
           class: cleared ? "btn ghost sm replaybtn" : isNext ? "btn primary block" : "btn block",
           style: "margin-top:10px",
-          title: cleared ? `Đánh lại ải ${stage} — đã vượt rồi` : `Vượt ải ${stage}`,
+          title: gated ? gateResult.reason! : cleared ? `Đánh lại ải ${stage} — đã vượt rồi` : `Vượt ải ${stage}`,
           /*
            * A stable hook to the action.
            *
@@ -291,8 +307,9 @@ export function renderAscent(_nav: Navigate): HTMLElement {
            */
           "data-stage-fight": String(stage),
         },
-        [cleared ? `Đánh lại ải ${stage}` : `Vượt ải ${stage}`],
+        [cleared ? `Đánh lại ải ${stage}` : gated ? `Chưa đủ điều kiện` : `Vượt ải ${stage}`],
       );
+      if (gated) fight.disabled = true;
       /*
        * The brief comes first.
        *

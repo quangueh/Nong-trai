@@ -17,8 +17,11 @@ export {
   LOOKAHEAD,
   STAT_LADDER_END,
   describeStage,
+  gateCheck,
+  gateLabel,
   isBossStage,
   stageAffixes,
+  stageGate,
   stageBand,
   stageExtraDrop,
   stageIsOpen,
@@ -31,6 +34,7 @@ export {
   type AscentBand,
   type StageBrief,
   type StageConsolation,
+  type StageGate,
   type StageReward,
 } from "./ascent";
 

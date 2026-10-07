@@ -22,9 +22,11 @@ import {
 import { EMBER_DAILY_CAP, rollDrops, type DropRoll } from "./drops";
 import {
   describeStage,
+  gateCheck,
   isBossStage,
   monsterFor,
   stageExtraDrop,
+  stageGate,
   stageIsOpen,
   stageReward,
   type MonsterSpec,
@@ -47,8 +49,8 @@ import type { SpeciesId } from "../config/species";
 import { SPECIES, SPECIES_BY_ID } from "../config/species";
 import { PLOT_DEFS, checkUnlock, contextFrom, type UnlockContext } from "../config/unlocks";
 import { QUEST_CATALOG } from "../quests/catalog";
-import { advance as questAdvance, claim as questClaim, emptyQuestSave, questViews as computeQuestViews, repairQuestSave, tracked as questTracked, type QuestContext, type QuestEvent, type QuestSave, type QuestView } from "../quests/engine";
-import type { QuestReward } from "../quests/types";
+import { generatedMainQuests } from "../quests/generated";
+import { advance as questAdvance, claim as questClaim, emptyQuestSave, questViews as computeQuestViews, repairQuestSave, tracked as questTracked, type QuestContext, type QuestDef, type QuestEvent, type QuestReward, type QuestSave, type QuestView } from "../quests/engine";
 import { finalRarityWeights } from "../config/rarity";
 import { simulateBattle, type BattleConfig, type BattleResult } from "../battle/engine";
 
@@ -717,8 +719,8 @@ export class GameStore {
      * event a "mở khoá một loài" quest would listen to. Emitting it on every purchase would make
      * it a synonym for "buy a seed", which is a different and worse thing to measure.
      */
-    this.questEvent({ name: "item_collected", amount: count });
-    if (!def.unlock) this.questEvent({ name: "skill_unlocked", amount: 1 });
+    this.questEvent({ name: "item_collected", amount: count, species: [species] });
+    if (!def.unlock) this.questEvent({ name: "skill_unlocked", amount: 1, species: [species] });
     this.commit("buySeed");
     return { ok: true };
   }
@@ -731,7 +733,7 @@ export class GameStore {
     plant.economy.purchaseCost = SPECIES_BY_ID[species].seedPrice;
     this.state.plants.push(plant);
     this.recordPlantDiscovery(plant);
-    this.questEvent({ name: "plant", amount: 1 });
+    this.questEvent({ name: "plant", amount: 1, species: [species] });
     this.commit("plantSeed");
     return { ok: true, plantId: plant.plantId };
   }
@@ -915,7 +917,9 @@ export class GameStore {
     );
     this.state.discovery.breeds++;
     this.recordPlantDiscovery(result.plant);
-    this.questEvent({ name: "breed", amount: 1 });
+    // The child's lineage and generation ride the event: a "lai được thế hệ N" quest is a
+    // measurement, and a "trồng dòng X" quest should count a bred descendant too.
+    this.questEvent({ name: "breed", amount: 1, species: result.plant.baseLineage, value: result.plant.generation });
     // Pollen, from breeding. Paid for the act rather than for the result, because the
     // result is already standing in the garden as the child plant.
     this.creditCurrency("pollen", POLLEN_PER_BREED, `Lai tạo: ${a.name} × ${b.name}`);
@@ -1221,6 +1225,15 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
       return { ok: false, reason: `Ải ${stage} chưa mở. Hãy vượt ải ${ascent.highest + 1} trước.` };
     }
 
+    /*
+     * Milestone stages carry an entry condition — a growth level on bosses, an element
+     * on trial stages, a generation on the bred-plant beats. Enforced here rather than
+     * only on the button, because the store is the one place every entry path (screen,
+     * test, future client) has to pass through.
+     */
+    const gateFail = gateCheck(me, stageGate(stage));
+    if (!gateFail.ok) return { ok: false, reason: gateFail.reason };
+
     const monster = this.stageMonster(stage);
     // Simulated here and the result handed back, so the store is the only thing that decides
     // an outcome. The screen replays this event log rather than running its own battle - two
@@ -1336,12 +1349,12 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
        * can tell a first clear from a repeat without the quest needing to know the ladder's rules.
        */
       if (won) {
-        this.questEvent({ name: "stage_completed", stage, boss: isBossStage(stage), replay: alreadyCleared });
-        this.questEvent({ name: "enemy_defeated", amount: 1 });
+        this.questEvent({ name: "stage_completed", stage, boss: isBossStage(stage), replay: alreadyCleared, species: me.baseLineage });
+        this.questEvent({ name: "enemy_defeated", amount: 1, species: me.baseLineage });
         const combo = readCombo(result.events, "a").best;
         if (combo >= 2) this.questEvent({ name: "combo_reached", value: combo });
       } else {
-        this.questEvent({ name: "stage_failed", stage });
+        this.questEvent({ name: "stage_failed", stage, species: me.baseLineage });
       }
       this.commit("ascent");
       this.pushNotice({
@@ -1384,7 +1397,7 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     this.recordPlantDiscovery(me);
     // A quick battle is not a ladder stage, so it counts as an enemy defeated and nothing else.
     // Folding it into `stage_completed` would let a player farm the ladder quests in the arena.
-    if (won) this.questEvent({ name: "enemy_defeated", amount: 1 });
+    if (won) this.questEvent({ name: "enemy_defeated", amount: 1, species: me.baseLineage });
     this.commit("battle");
     return { result, won };
   }
@@ -1544,12 +1557,31 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
       claimed,
       day: dayKey(Date.now()),
       playerId: this.state.playerId,
+      seeds: this.state.seeds,
+      discovered: new Set<string>(this.state.discovery.species),
     };
+  }
+
+  /**
+   * The fixed catalogue plus the generated main chain.
+   *
+   * The generated half is a pure function of the save and the context — same inputs, same
+   * quests — so rebuilding it on every call is what keeps the chain's species pinned to
+   * the entry that already exists instead of drifting under the player.
+   */
+  private questCatalog(): QuestDef[] {
+    const ctx = this.questContext();
+    // One unlock context for the whole pick: the generator probes the registry for a
+    // species whose shop gate is already met, and rebuilding the context per candidate
+    // would make "what is my next quest" cost a full sweep per event.
+    const unlockCtx = this.unlockContext();
+    const isOpen = (id: SpeciesId) => checkUnlock(unlockCtx, SPECIES_BY_ID[id]?.unlock).met;
+    return [...QUEST_CATALOG, ...generatedMainQuests(this.state.quests, ctx, isOpen)];
   }
 
   /** Every quest, resolved for the UI. Syncs first, so a new quest appears without a migration. */
   questViews(): QuestView[] {
-    return computeQuestViews(this.state.quests, this.questContext(), QUEST_CATALOG);
+    return computeQuestViews(this.state.quests, this.questContext(), this.questCatalog());
   }
 
   /** The main quest to track, plus a couple of optional ones worth showing beside it. */
@@ -1572,16 +1604,17 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
    * advanced twice by two screens that both noticed the same thing.
    */
   questEvent(ev: QuestEvent): void {
-    const result = questAdvance(this.state.quests, this.questContext(), QUEST_CATALOG, ev);
+    const catalog = this.questCatalog();
+    const result = questAdvance(this.state.quests, this.questContext(), catalog, ev);
     if (result.changed.length === 0 && result.completed.length === 0) return;
     this.state.quests = result.save;
     for (const c of result.changed) {
       if (result.completed.includes(c.id)) continue; // announced below, and once
-      const def = QUEST_CATALOG.find((q) => q.id === c.id);
+      const def = catalog.find((q) => q.id === c.id);
       this.pushNotice({ kind: "quest", title: def?.title ?? c.id, body: `${c.progress}/${c.target}`, key: `quest:${c.id}` });
     }
     for (const id of result.completed) {
-      const def = QUEST_CATALOG.find((q) => q.id === id);
+      const def = catalog.find((q) => q.id === id);
       this.pushNotice({ kind: "quest", title: "Hoàn thành nhiệm vụ!", body: def?.title ?? id, key: `quest-done:${id}` });
     }
     this.commit("quest");
@@ -1597,7 +1630,7 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
    * about.
    */
   claimQuest(id: string): { ok: boolean; reason?: string; title?: string; levels?: number; rewards?: QuestReward } {
-    const result = questClaim(this.state.quests, this.questContext(), QUEST_CATALOG, id);
+    const result = questClaim(this.state.quests, this.questContext(), this.questCatalog(), id);
     if (!result.ok || !result.def) return { ok: false, reason: result.reason };
     const def = result.def;
     const r = def.rewards;
