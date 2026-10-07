@@ -187,3 +187,34 @@ export function setMusicVolume(v: number): void {
 export function defaultVolume(): number {
   return systemPrefersReduced() ? 0.45 : 0.75;
 }
+
+/* -------------------------------------------------------------------- hints */
+/*
+ * One-shot UI hints ("you can pause with Space") earn their pixels only until
+ * the player has used the verb they teach. Once used, the hint has done its
+ * job and should stop drawing — a tutorial that never leaves is just chrome.
+ * Stored per hint id so future hints reuse the same pocket.
+ */
+const HINT_KEY = "nongtrai.hints";
+
+function hintBag(): Set<string> {
+  const raw = read(HINT_KEY);
+  if (!raw) return new Set();
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    return Array.isArray(arr) ? new Set(arr.filter((x): x is string => typeof x === "string")) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function hintSeen(id: string): boolean {
+  return hintBag().has(id);
+}
+
+export function markHintSeen(id: string): void {
+  const bag = hintBag();
+  if (bag.has(id)) return;
+  bag.add(id);
+  write(HINT_KEY, JSON.stringify([...bag]));
+}

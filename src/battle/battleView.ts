@@ -9,6 +9,7 @@ import { ELEMENT_INFO, type ElementId } from "../config/elements";
 import { FxLayer, deliveryGlyph, elementColour, type FxSide } from "./battleFx";
 import { CombatJuice, weightFor } from "./juice";
 import { sfx } from "../audio/audio";
+import { hintSeen, markHintSeen } from "../core/prefs";
 import { dominantElement } from "../config/elements";
 import type { Delivery, EffectKind } from "../config/skills";
 
@@ -334,13 +335,17 @@ estartTimer. */
      * is typing in a field.
      */
     const pauseBtn = el("button", { class: "btn sm ghost", title: "Tạm dừng (cách)" }, ["⏸"]);
-    pauseBtn.addEventListener("click", () => this.togglePause());
+    pauseBtn.addEventListener("click", () => {
+      markHintSeen("battle-pause");
+      this.togglePause();
+    });
     this.pauseBtn = pauseBtn;
     this.onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (e.code === "Space" || e.code === "Escape") {
         e.preventDefault();
+        markHintSeen("battle-pause");
         this.togglePause();
       }
     };
@@ -355,10 +360,16 @@ estartTimer. */
        viewer has none. */
     if (this.opts.hideControls) {
       controls.replaceChildren();
-      const watch = el("div", { class: "row", style: "gap:8px;align-items:center" }, [
-        el("span", { class: "tiny muted grow" }, ["Trận tự diễn — bạn có thể tạm dừng bất cứ lúc nào."]),
-        pauseBtn,
-      ]);
+      /* The pause hint is a tutorial, not chrome: it renders only until the
+         player has paused a fight themselves, and even before that it fades
+         once the action has had time to read it. A lesson that never leaves
+         is just noise over the arena. */
+      const hint = el("span", { class: "tiny muted grow" });
+      if (!hintSeen("battle-pause")) {
+        hint.classList.add("fight-hint");
+        hint.textContent = "Trận tự diễn — bạn có thể tạm dừng bất cứ lúc nào.";
+      }
+      const watch = el("div", { class: "row", style: "gap:8px;align-items:center" }, [hint, pauseBtn]);
       controls.appendChild(watch);
       this.focusBtn.remove();
       this.autoBtn.remove();

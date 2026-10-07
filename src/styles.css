@@ -3670,6 +3670,20 @@ body.planting {
   color: rgba(255, 248, 226, 0.78);
 }
 
+/* Transient tutorial hint: reads once, then steps out of the way. Only
+   rendered while the player has never paused a fight themselves — see
+   `hintSeen("battle-pause")`. Reduced-motion disables the animation, which
+   leaves the text visible: hiding information from a player who asked for
+   less motion would be the wrong way to honour that. */
+.fight-hint {
+  animation: fightHintFade 0.8s ease 9s forwards;
+}
+@keyframes fightHintFade {
+  to {
+    opacity: 0;
+  }
+}
+
 .fx-ring {
   position: absolute;
   width: calc(var(--r) * 2);
