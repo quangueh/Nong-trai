@@ -659,11 +659,16 @@ const PRICE_BAND: Record<CurrencyId, [number, number]> = {
      purpose: at 3 a day it is the prestige shelf, and a price nobody can pay
      this month is a goal, not a bug. */
   /* Bands sized for a 20,000-strong registry: leafCoin needs ~1.95x of one
-     tier (~7,800 unique prices) so it had to grow; nectar (~5,000 into 5,360
-     slots) stays inside its old band so early-game nectar seeds do not jump
-     in price; pollen (~5,400) had to widen rather than probe at ~97% fill. */
+     tier (~7,800 unique prices) so it had to grow; pollen (~5,400) had to
+     widen rather than probe at ~97% fill.
+     Nectar (~5,000 species) cannot do either: a band wide enough to keep the
+     probe healthy also prices tier-0 seeds above the daily exchange cap, and
+     the old band at 93% fill let tier-4 prices probe back down to ~680. So
+     nectar draws inside a per-tier slice instead — see NECTAR_TIER_BAND; the
+     value here is only the union of those slices, kept so the record type
+     stays total. */
   leafCoin: [60, 14000],
-  nectar: [40, 5400],
+  nectar: [40, 9139],
   pollen: [15, 11000],
   /* Ember earns 3/day and the shop is the only sink — at [4,4200] the top of
      the shelf asked for 1400 days of drops. 21–63 is 7–21 days: a real goal,
@@ -673,6 +678,22 @@ const PRICE_BAND: Record<CurrencyId, [number, number]> = {
   ember: [21, 63],
 };
 
+/* Nectar's slices, one per tier, sized to the bucket they serve ([1220, 1032,
+   1383, 814, 564] species at ~54% fill). Slices ascend with the tier so the
+   price ladder is structural — a tier-4 nectar seed cannot probe below the
+   whole of tier 3 — while the tier-0 ceiling (2,139🍯 ≈ 2,670 xu converted)
+   stays inside the 3,000/day exchange cap so the first nectar seed remains a
+   day-one purchase. Sizing is a balance decision: if a future mix change
+   pushes a tier's nectar count near its slice, uniquePrice throws loudly at
+   build time rather than silently duplicating. */
+const NECTAR_TIER_BAND: [number, number][] = [
+  [40, 2139],
+  [2140, 4039],
+  [4040, 6589],
+  [6590, 8089],
+  [8090, 9139],
+];
+
 function uniquePrice(
   currency: CurrencyId,
   tier: number,
@@ -680,12 +701,19 @@ function uniquePrice(
   rng: Rng,
   used: Set<string>,
 ): number {
-  const [lo, hi] = PRICE_BAND[currency];
   /* Deeper species are dearer inside whichever currency they landed in. The
      spread term fills the band rather than clumping at the top: an earlier
      version concentrated a whole tier into a ~5% window, which turned
      collision resolution into the price. */
-  const w = clamp(0.06 + tier * 0.175 + strength * 0.14 + rng.float(0, 0.22), 0.02, 0.995);
+  let w = clamp(0.06 + tier * 0.175 + strength * 0.14 + rng.float(0, 0.22), 0.02, 0.995);
+  let [lo, hi] = PRICE_BAND[currency];
+  if (currency === "nectar") {
+    [lo, hi] = NECTAR_TIER_BAND[tier] ?? NECTAR_TIER_BAND[4];
+    /* The slice already encodes the tier — re-adding the tier term would push
+       every draw to the slice's ceiling. What remains is the plant's own
+       strength and a jitter. */
+    w = clamp(0.06 + strength * 0.55 + rng.float(0, 0.35), 0.02, 0.995);
+  }
   const price = Math.round(lo + w * (hi - lo));
   /* Ember's band is intentionally narrow (a fixed 7–21 days of drops) — shared
      prices there are a feature, and probing would hit the throw below on every

@@ -119,6 +119,9 @@ export class BattleView {
 
   /** Live skill buttons, built once. See `renderSkills`. */
   private readonly skillBtns = new Map<string, { btn: HTMLButtonElement; cd: Element | null; total: number; cost: number }>();
+  private energyMeter!: HTMLElement;
+  private energyFill!: HTMLElement;
+  private energyNum!: HTMLElement;
   private timer: number | null = null;
   private finished = false;
   private speed = 1;
@@ -293,9 +296,19 @@ estartTimer. */
 
     // --- action bar ---
     const controls = el("div", { class: "card", style: "padding:12px" });
+    /* docs/23 §5.5 — the skill buttons now carry an energy cost chip, so the
+       meter that pays them has to be visible: a thin ⚡ track over the skill
+       row, not a third bar competing with HP and shield on the field. */
+    this.energyFill = el("i");
+    this.energyNum = el("span", { class: "em-num mono" }, ["0"]);
+    this.energyMeter = el("div", { class: "energymeter", "aria-hidden": "true" }, [
+      el("span", { class: "em-ico" }, ["⚡"]),
+      el("span", { class: "em-track" }, [this.energyFill]),
+      this.energyNum,
+    ]);
     this.skillRow = el("div", { class: "actionbar" });
     this.stanceRow = el("div", { class: "segmented" });
-    controls.append(this.skillRow, this.stanceRow);
+    controls.append(this.energyMeter, this.skillRow, this.stanceRow);
 
     const tools = el("div", { class: "row", style: "gap:6px;justify-content:center;margin-top:10px;flex-wrap:wrap" });
     this.focusBtn = el("button", { class: "btn sm gold" }, ["✨ Bản năng"]) as HTMLButtonElement;
@@ -921,6 +934,15 @@ estartTimer. */
    */
   private refreshSkillBar(): void {
     const side = this.session.side(this.opts.mySide);
+    /* The meter writes are compared before they land: this runs every tick and
+       an unguarded textContent invalidates layout for nothing. */
+    const en = Math.floor(side.energy);
+    const eFrac = side.maxEnergy > 0 ? side.energy / side.maxEnergy : 0;
+    const wTxt = `${(eFrac * 100).toFixed(1)}%`;
+    if (this.energyFill.style.width !== wTxt) this.energyFill.style.width = wTxt;
+    const eTxt = `${en}/${Math.floor(side.maxEnergy)}`;
+    if (this.energyNum.textContent !== eTxt) this.energyNum.textContent = eTxt;
+    this.energyMeter.classList.toggle("is-full", eFrac >= 0.99);
     if (!this.opts.interactive) {
       this.focusBtn.disabled = side.focusUsed;
       return;

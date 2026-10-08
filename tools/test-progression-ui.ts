@@ -287,7 +287,7 @@ const b = await chromium.launch();
   /* The settings button has to stay reachable — the level badge grew, and the XP figures
      were the first thing to push it off a 390px bar. */
   const reach = (await page.evaluate(`(() => {
-    const b = [...document.querySelectorAll(".topbar button")].find((x) => x.className.includes("ghost"));
+    const b = [...document.querySelectorAll(".topbar button")].find((x) => x.getAttribute("aria-label") === "Cài đặt" || x.className.includes("ghost"));
     if (!b) return null;
     const r = b.getBoundingClientRect();
     return { left: Math.round(r.left), right: Math.round(r.right), win: window.innerWidth };

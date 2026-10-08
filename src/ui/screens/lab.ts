@@ -52,14 +52,18 @@ export function renderLab(_nav: Navigate, params?: unknown): HTMLElement {
   ];
   let active: Tab = "seeds";
 
-  const chipRow = el("div", { class: "scrollx", style: "margin-bottom:12px" });
+  const chipRow = el("div", { class: "seg", role: "tablist", style: "margin-bottom:12px;overflow-x:auto" });
   const body = el("div");
   for (const t of tabs) {
-    const b = el("button", { class: "btn sm" + (t.id === active ? " primary" : "") }, [t.label]);
+    const b = el("button", { class: t.id === active ? "on" : "", role: "tab", "aria-selected": String(t.id === active) }, [t.label]);
     b.addEventListener("click", () => {
       active = t.id;
-      for (const other of chipRow.querySelectorAll(".btn")) other.classList.remove("primary");
-      b.classList.add("primary");
+      for (const other of chipRow.querySelectorAll("button")) {
+        other.classList.remove("on");
+        other.setAttribute("aria-selected", "false");
+      }
+      b.classList.add("on");
+      b.setAttribute("aria-selected", "true");
       paint();
     });
     chipRow.appendChild(b);

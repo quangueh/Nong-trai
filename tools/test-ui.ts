@@ -443,12 +443,12 @@ await render("lab renders", () => navigate("lab"));
   await render("buy a seed", () => click(buyable!));
   check("buying deducts coins", store.state.leafCoin < coinsBefore, `${coinsBefore} -> ${store.state.leafCoin}`);
 
-  await render("switch to items tab", () => click(byText(".screen .btn", "Vật tư")));
+  await render("switch to items tab", () => click(byText(".screen .seg button", "Vật tư")));
   t = $(".screen")?.textContent ?? "";
   check("items tab lists supplies", t.includes("Bình nước tưới") && t.includes("Phân hữu cơ"));
   check("items tab explains the refund sink", t.includes("vật tư") || t.includes("Vật tư"));
 
-  await render("switch to land tab", () => click(byText(".screen .btn", "Vườn")));
+  await render("switch to land tab", () => click(byText(".screen .seg button", "Vườn")));
   t = $(".screen")?.textContent ?? "";
   // The tab is now the plot ladder rather than a single "+2 plots" button.
   // What is worth asserting is that a plot, its price and its blocker are all on
@@ -465,7 +465,7 @@ await render("lab renders", () => navigate("lab"));
   check("land tab has no ungated shortcut", !t.includes("+2 ô đất"), "the old +2 button is still there");
   check("land tab shows converted prices", /≈ .*🍯.*Quy đổi/.test(t), "no equivalent price line");
 
-  await render("switch to exchange tab", () => click(byText(".screen .btn", "Quy đổi")));
+  await render("switch to exchange tab", () => click(byText(".screen .seg button", "Quy đổi")));
   t = $(".screen")?.textContent ?? "";
   check("exchange tab shows the rate table", /1 Mật ong/.test(t) && /1 Phấn hoa/.test(t) && /1 Mảnh lửa/.test(t), t.slice(0, 140));
   check("the rates come from the table", /= 8 🪙/.test(t) && /= 300 🪙/.test(t), t.slice(0, 140));
@@ -487,7 +487,7 @@ await render("lab renders", () => navigate("lab"));
     check("and the cap counted it", store.exchangeAllowanceLeft() < 3000, `${store.exchangeAllowanceLeft()}`);
   }
 
-  await render("switch to orders tab", () => click(byText(".screen .btn", "Đơn hàng")));
+  await render("switch to orders tab", () => click(byText(".screen .seg button", "Đơn hàng")));
   t = $(".screen")?.textContent ?? "";
   check("orders tab explains the bonus", t.includes("1,5 lần"));
   check("orders tab lists at least one order", t.includes("Cần:"));

@@ -116,7 +116,15 @@ section("5. Breeding two mature plants");
   const countBefore = store.state.plants.length;
   const res = store.breed(a.plantId, second.plantId);
   check("breeding succeeds", res.ok, res.reason);
-  check("breeding fee is charged", store.state.leafCoin < coinsBefore);
+  /* Net balance cannot witness the fee: the child's inherited XP levels the
+     breeder inside the same call, and three +200 payouts out-weigh a ~48 fee.
+     The ledger is the honest record — the fee line must exist and be a
+     debit. */
+  check(
+    "breeding fee is charged",
+    store.state.ledger.some((l) => l.delta < 0 && l.reason === "Phí lai tạo"),
+    `coins ${coinsBefore} -> ${store.state.leafCoin}`,
+  );
   // Breeding spends both parents, so the garden loses two and gains one: net -1.
 // The previous `countBefore + 1` was right when the parents survived.
 check(

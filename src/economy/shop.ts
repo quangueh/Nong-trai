@@ -7,6 +7,7 @@ import { dominantElement } from "../config/elements";
 import { checkUnlock, type UnlockContext, type UnlockReq } from "../config/unlocks";
 import { RARITY_META, type Rarity } from "../config/rarity";
 import { canSell } from "../growth/stages";
+import { costIn } from "./exchange";
 
 export function sellPrice(plant: Plant, demandMultiplier = 1): number {
   const base = 100;
@@ -311,14 +312,44 @@ export function queryCatalogue(q: CatalogueQuery): CataloguePage {
    * same shelf twice could show the same species on two pages.
    */
   const byName = (a: (typeof affordable)[number], b: (typeof affordable)[number]) => a.name.localeCompare(b.name, "vi");
+  /* "Cheapest" means cheap *within its own currency* on the default shelf:
+     ranking by leafCoin-equivalent collapses a tier into a single-currency
+     page — nectar (1:1) always undercuts pollen (1:8) and ember cannot be
+     bought at all. Instead each species is ranked by where its price sits
+     inside its own currency's range for that tier, so page one of a deep tier
+     shows the tier's real mix — a few cheap coins, a few cheap nectar, the
+     entry pollen cards — rather than twenty-four of one currency. */
+  const range = new Map<string, { min: number; max: number }>();
+  for (const s of affordable) {
+    const k = `${s.tier}:${s.currency}`;
+    const r = range.get(k);
+    if (r) {
+      if (s.seedPrice < r.min) r.min = s.seedPrice;
+      if (s.seedPrice > r.max) r.max = s.seedPrice;
+    } else range.set(k, { min: s.seedPrice, max: s.seedPrice });
+  }
+  const rel = (s: (typeof affordable)[number]): number => {
+    const r = range.get(`${s.tier}:${s.currency}`)!;
+    return r.max > r.min ? (s.seedPrice - r.min) / (r.max - r.min) : 0.5;
+  };
   const sort = q.sort ?? "default";
-  if (sort === "price-asc") {
-    affordable.sort((a, b) => a.seedPrice - b.seedPrice || byName(a, b));
-  } else if (sort === "price-desc") {
-    affordable.sort((a, b) => b.seedPrice - a.seedPrice || byName(a, b));
+  if (sort === "price-asc" || sort === "price-desc") {
+    /* An explicit price sort is a real-cost question, so here the
+       leafCoin-equivalent is the honest comparator — and Ember, which no
+       conversion can buy, sinks to the end of "asc" rather than leading it. */
+    const leafPrice = new Map<SpeciesId, number>();
+    for (const s of affordable) {
+      leafPrice.set(s.id, costIn(s.seedPrice, s.currency, "leafCoin") ?? Number.MAX_SAFE_INTEGER);
+    }
+    const eff = (s: (typeof affordable)[number]) => leafPrice.get(s.id) ?? 0;
+    /* Equal real-cost ranks (a run of Ember, all priceless) still need the
+       printed numbers to move in the direction the sort promised — sort those
+       runs by the face value, or a "descending" page reads 53, 63, 51, 56. */
+    if (sort === "price-asc") affordable.sort((a, b) => eff(a) - eff(b) || a.seedPrice - b.seedPrice || byName(a, b));
+    else affordable.sort((a, b) => eff(b) - eff(a) || b.seedPrice - a.seedPrice || byName(a, b));
   } else {
-    // Cheapest tier first, cheapest within it: the shelf leads with what can be bought.
-    affordable.sort((a, b) => a.tier - b.tier || a.seedPrice - b.seedPrice || byName(a, b));
+    // Cheapest tier first, cheapest within its currency's range inside it.
+    affordable.sort((a, b) => a.tier - b.tier || rel(a) - rel(b) || byName(a, b));
   }
 
   const total = affordable.length;

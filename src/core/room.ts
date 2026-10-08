@@ -79,6 +79,11 @@ export interface RoomSnapshot {
   hostId: string;
   players: RoomPlayer[];
   battleSeed: string | null;
+  /** How many battles this room has fought. Feeds the battle seed so a rematch
+     does not replay the last fight tick for tick — deterministic, unlike the
+     wall clock that used to sit here and made two calls in different
+     milliseconds disagree. */
+  battleNo: number;
   countdownAt: number | null;
   plants: Record<string, PlantPublic>;
 }
@@ -461,6 +466,7 @@ export class HostRoom {
       hostId,
       players: [{ playerId: hostId, name: hostName, isHost: true, plantId: null, ready: false, connected: true, stance: "aggressive" }],
       battleSeed: null,
+      battleNo: 0,
       countdownAt: null,
       plants: {},
     };
@@ -534,11 +540,14 @@ export class HostRoom {
   }
 
   makeBattleSeed(plantAId: string, plantBId: string): string {
-    return seedToken(this.snapshot.code, plantAId, plantBId, Date.now());
+    return seedToken(this.snapshot.code, plantAId, plantBId, this.snapshot.battleNo ?? 0);
   }
 
   markInBattle() {
     this.snapshot.state = "in_battle";
+    /* Older snapshots carry no battleNo — treat a missing counter as zero and
+       start counting from this fight. */
+    this.snapshot.battleNo = (this.snapshot.battleNo ?? 0) + 1;
   }
 
   finishBattle() {

@@ -243,10 +243,21 @@ html[data-solid="1"] .bottomnav {
 /* Combat hub segmented row sits at the top of arena/ascent/leaderboard. */
 .combat-hub {
   display: grid;
+  /* The single implicit column sized to auto: the seg row's min-content (three
+     nowrap labels, ~338px) stretched the whole hub past a 320px phone, and the
+     screen's overflow:hidden silently cut the third tab. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 .combat-hub > .seg {
   margin: 2px 2px 0;
+  /* Tabs that do not fit scroll sideways inside the row rather than widening
+     the hub. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.combat-hub > .seg::-webkit-scrollbar {
+  display: none;
 }
 /* A live fight owns the screen — the sub-nav must not compete with the HUD or
    offer a mid-swing route change. */
@@ -314,31 +325,27 @@ html[data-solid="1"] .topbar {
    resolves system/full/reduce to one attribute. Reduce must remove motion,
    not information: ambient loops stop, and transitions compress to a fast
    settle rather than zero so state changes still read as changes. */
-html[data-motion="reduce"] .bed .leaf,
-html[data-motion="reduce"] .plot-shine i,
-html[data-motion="reduce"] .need-water,
-html[data-motion="reduce"] .plantart.is-anim * {
-  animation: none !important;
+/* The whitelist approach above this rule kept leaking: every new ambient loop
+   (sway, flutter, mist drift, pulse…) needed its own line, and the audit kept
+   finding stragglers. Reduce is a contract, not a list — every loop collapses
+   to a single instant iteration, so one-shot state animations still fire
+   (they carry information) while infinite loops end at their first frame. */
+html[data-motion="reduce"] *,
+html[data-motion="reduce"] *::before,
+html[data-motion="reduce"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 80ms !important;
 }
-html[data-motion="reduce"] .route-enter {
-  animation: none !important;
-}
-/* Scene ambient and atelier pulses honour the player's switch too, not only
-   the OS media query — the clouds, the drifting isles, the butterflies, the
-   slot invite and the medallion's pulse are all *motion*, and this pref is
-   about motion. The static mist stays: a fog band is a backdrop, not a beat. */
+/* Pure decoration is skipped entirely rather than played once. */
 html[data-motion="reduce"] .scene-cloud,
 html[data-motion="reduce"] .scene-isle,
 html[data-motion="reduce"] .scene-flutter,
 html[data-motion="reduce"] .scene-mist i,
-html[data-motion="reduce"] .slot.is-next,
-html[data-motion="reduce"] .breed-link.is-ready .breed-link-ico {
+html[data-motion="reduce"] .plot-shine i,
+html[data-motion="reduce"] .bed .leaf,
+html[data-motion="reduce"] .bed svg {
   animation: none !important;
-}
-html[data-motion="reduce"] *,
-html[data-motion="reduce"] *::before,
-html[data-motion="reduce"] *::after {
-  transition-duration: 80ms !important;
 }
 
 /* ------------------------------------------------------------- quality budget
