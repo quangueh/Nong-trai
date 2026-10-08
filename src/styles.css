@@ -1393,12 +1393,50 @@ h4 {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: rgba(46, 60, 40, 0.22);
+  /* docs/23 §5.5 — cooldown is a sweep, not a shade: the conic veil drains
+     clockwise as `--cdp` falls 1→0, so remaining time is *shape*, not text.
+     The raw number still lands in the corner chip for players who count. */
+  background:
+    conic-gradient(from 0deg, rgba(46, 60, 40, 0.34) calc(var(--cdp, 0) * 1turn), transparent 0),
+    rgba(46, 60, 40, 0.1);
   display: block;
-  font-size: 12px;
+  /* The number lives in the corner chip (data-cd → ::after); the node's own
+     text stays written for tests and AT but is not painted twice. */
+  font-size: 0;
   font-weight: 800;
   font-family: "JetBrains Mono", monospace;
   color: #123047;
+}
+
+/* Energy cost: a physical chip on the button's foot, not buried in a
+   tooltip — the price of the skill is part of deciding to press it. */
+.skillbtn .cost {
+  position: absolute;
+  left: 5px;
+  bottom: 5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 800;
+  font-family: "JetBrains Mono", monospace;
+  color: #b45309;
+  background: linear-gradient(180deg, rgba(255, 248, 220, 0.95), rgba(255, 228, 170, 0.9));
+  border: 1px solid rgba(180, 83, 9, 0.28);
+  pointer-events: none;
+}
+/* Cannot pay: reads differently from cooling — desaturated rather than
+   veiled, and the cost chip itself goes red so the blocker is named. */
+.skillbtn.no-energy {
+  filter: saturate(0.45) brightness(0.94);
+}
+.skillbtn.no-energy .cost {
+  color: #b91c1c;
+  background: linear-gradient(180deg, #fee2e2, #fecaca);
+  border-color: rgba(185, 28, 28, 0.35);
+}
+.skillbtn:focus-visible {
+  outline: 2px solid var(--acc, #3578d4);
+  outline-offset: 2px;
 }
 
 .skillbtn .cd::after {
@@ -1721,6 +1759,12 @@ h4 {
 .plot {
   position: relative;
   z-index: 1;
+  /* docs/23 §9 — ambient budget: an offscreen plot skips its whole subtree,
+     leaves and all, instead of paying 40+ transform animations the player
+     cannot see. `auto` keeps the last-measured size, so the scrollbar does
+     not jump when the grid comes back into view. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 190px;
   /* Rounded at the crown, and less so at the foot: an island seen from above has a
      broad top and a tapering underside. Generous on purpose - at twenty pixels on a
      two-hundred-pixel card the corners read as barely-there, and a barely-there corner
@@ -2169,6 +2213,99 @@ h4 {
   100% {
     transform: scaleX(-1) translateX(0);
   }
+}
+
+/* --- rig reactions (docs/23 §5.4) ------------------------------------------
+   The avatar's squash is the juice layer's; these work the plant's own rig —
+   leaves, bloom, stem — so a wind-up coils and a hit rattles the body, not
+   just the whole portrait. Everything keys off classes the FxLayer pulses:
+   `.is-winding` (cast anticipation), `.is-struck` (impact), `.is-mended`
+   (heal). transform-box fill-box puts each pivot inside its own part. */
+.battler.is-winding .plantart .l-leaves,
+.battler.is-winding .plantart .l-petioles {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: rigCoil 0.5s ease-in-out;
+}
+.battler.is-winding .plantart .l-bloom,
+.battler.is-winding .plantart .l-fruit {
+  transform-box: fill-box;
+  transform-origin: 50% 60%;
+  animation: rigDraw 0.5s ease-in-out;
+}
+@keyframes rigCoil {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  35% {
+    transform: rotate(-4deg) scale(0.94);
+  }
+}
+@keyframes rigDraw {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  35% {
+    /* The bloom pulls back like a drawn bow — the anticipation the cast
+       banner announces and the strike then releases. */
+    transform: scale(0.82);
+  }
+}
+.battler.is-struck .plantart .l-stem {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: rigShudder 0.38s ease-out;
+}
+.battler.is-struck .plantart .l-leaves {
+  transform-box: fill-box;
+  transform-origin: 50% 90%;
+  animation: rigShudder 0.38s ease-out 0.03s;
+}
+@keyframes rigShudder {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(2.6deg);
+  }
+  60% {
+    transform: rotate(-1.6deg);
+  }
+}
+.battler.is-mended .plantart .l-leaves {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: rigLift 0.6s ease-out;
+}
+@keyframes rigLift {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.05);
+  }
+}
+/* Reduced motion and the light preset keep the material but drop the beat —
+   the class may still land, it just moves nothing. */
+html[data-motion="reduce"] .battler.is-winding .plantart .l-leaves,
+html[data-motion="reduce"] .battler.is-winding .plantart .l-petioles,
+html[data-motion="reduce"] .battler.is-winding .plantart .l-bloom,
+html[data-motion="reduce"] .battler.is-winding .plantart .l-fruit,
+html[data-motion="reduce"] .battler.is-struck .plantart .l-stem,
+html[data-motion="reduce"] .battler.is-struck .plantart .l-leaves,
+html[data-motion="reduce"] .battler.is-mended .plantart .l-leaves,
+html[data-quality="lite"] .battler.is-winding .plantart .l-leaves,
+html[data-quality="lite"] .battler.is-winding .plantart .l-petioles,
+html[data-quality="lite"] .battler.is-winding .plantart .l-bloom,
+html[data-quality="lite"] .battler.is-winding .plantart .l-fruit,
+html[data-quality="lite"] .battler.is-struck .plantart .l-stem,
+html[data-quality="lite"] .battler.is-struck .plantart .l-leaves,
+html[data-quality="lite"] .battler.is-mended .plantart .l-leaves {
+  animation: none;
 }
 
 /* Attacking plants lunge forward. */
@@ -2759,6 +2896,7 @@ input::placeholder {
   border: 1.5px dashed var(--line);
   border-radius: var(--r);
   padding: 14px;
+  position: relative;
   text-align: center;
   /* Was 120px, which forced a short plant into a box too small to read and left
      the breeding screen mostly empty. */
@@ -2841,6 +2979,109 @@ input::placeholder {
   flex-direction: column;
   align-items: center;
   gap: 3px;
+  position: relative;
+  width: 72px;
+}
+
+/* Atelier channel (docs/23 §7): once both parents stand, a glass conduit runs
+   between the two pods through the medallion, and gene motes ride it inward.
+   Before this the link was a coin floating between two unrelated boxes. */
+.breed-link::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  right: -14px;
+  top: 22px; /* medallion centre */
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(196, 214, 176, 0.35), rgba(156, 178, 132, 0.28));
+  border: 1px solid rgba(120, 150, 100, 0.2);
+  opacity: 0;
+  transition: opacity 0.3s var(--ease);
+  z-index: 0;
+}
+.breed-link.is-ready::before {
+  opacity: 1;
+  background: linear-gradient(180deg, rgba(120, 220, 150, 0.4), rgba(47, 159, 98, 0.32));
+  border-color: rgba(47, 159, 98, 0.35);
+  box-shadow: 0 0 8px rgba(47, 159, 98, 0.25);
+}
+.breed-link .flow-dot {
+  position: absolute;
+  top: 22px;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 32%, #eafff0, #4cc47c);
+  box-shadow: 0 0 6px rgba(76, 196, 124, 0.8);
+  opacity: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.breed-link.is-ready .flow-dot {
+  opacity: 1;
+}
+.breed-link.is-ready .flow-dot.a {
+  animation: geneFlowA 1.5s ease-in-out infinite;
+}
+.breed-link.is-ready .flow-dot.b {
+  animation: geneFlowB 1.5s ease-in-out infinite 0.75s;
+}
+@keyframes geneFlowA {
+  0% {
+    left: -12px;
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    left: 50%;
+    transform: scale(1) translateX(-50%);
+    opacity: 0;
+  }
+}
+@keyframes geneFlowB {
+  0% {
+    right: -12px;
+    left: auto;
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    right: 50%;
+    left: auto;
+    transform: scale(1) translateX(50%);
+    opacity: 0;
+  }
+}
+html[data-motion="reduce"] .breed-link.is-ready .flow-dot,
+html[data-quality="lite"] .breed-link.is-ready .flow-dot {
+  animation: none;
+  opacity: 0.6;
+}
+html[data-motion="reduce"] .breed-link.is-ready .flow-dot.a {
+  left: 18%;
+}
+html[data-motion="reduce"] .breed-link.is-ready .flow-dot.b {
+  right: 18%;
+}
+.breed-link-ico,
+.breed-link-lbl {
+  position: relative;
+  z-index: 2;
 }
 .breed-link-ico {
   width: 44px;
@@ -2898,6 +3139,36 @@ input::placeholder {
   transform: scale(1.05);
 }
 .slot-pod { transition: transform 0.16s var(--spring), border-color 0.16s var(--ease); }
+
+/* Atelier pedestal (docs/23 §7): the slot stands on a mineral plinth rather
+   than floating in a card — a small but constant cue that this room is a
+   workbench, not a form. */
+.slot::after {
+  content: "";
+  display: block;
+  width: 64%;
+  height: 9px;
+  margin-top: 8px;
+  border-radius: 6px 6px 12px 12px;
+  background: linear-gradient(180deg, #f0e8cf, #d4c69f);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 2px 4px rgba(96, 76, 44, 0.16);
+}
+.slot.filled::after {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--rarc, var(--accent)) 26%, #f0e8cf), color-mix(in srgb, var(--rarc, var(--accent)) 40%, #d4c69f));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 0 8px color-mix(in srgb, var(--rarc, var(--accent)) 40%, transparent);
+}
+/* Glass sheen across a filled pod: a fixed diagonal band, not an animated
+   sweep — polish that does not compete with the gene flow. */
+.slot.filled::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(115deg, transparent 32%, rgba(255, 255, 255, 0.3) 44%, transparent 58%);
+  pointer-events: none;
+}
 
 /* A filled slot rims itself in the parent's rarity colour, set as --rarc. */
 .slot.filled {
@@ -8840,6 +9111,45 @@ button.qachip:active {
   }
   100% {
     transform: translate(104vw, 0) rotate(-8deg);
+  }
+}
+
+/* The fog band under the islands: two soft bars that slide past each other so
+   slowly it reads as weather, not animation. A single element would smear the
+   same direction forever; two crossing banks give it parallax on their own. */
+.scene-mist {
+  position: absolute;
+  left: -6%;
+  right: -6%;
+  bottom: -4%;
+  height: 34%;
+  pointer-events: none;
+  z-index: 0;
+}
+.scene-mist i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 62%;
+  border-radius: 999px;
+  background: radial-gradient(60% 100% at 30% 50%, rgba(255, 255, 255, 0.5), transparent 70%),
+    radial-gradient(55% 100% at 70% 55%, rgba(238, 248, 252, 0.45), transparent 72%);
+  filter: blur(6px);
+  animation: mistDrift 26s ease-in-out infinite alternate;
+}
+.scene-mist i:last-child {
+  height: 50%;
+  bottom: 0;
+  opacity: 0.7;
+  animation-duration: 34s;
+  animation-direction: alternate-reverse;
+}
+@keyframes mistDrift {
+  from {
+    transform: translateX(-3%);
+  }
+  to {
+    transform: translateX(3%);
   }
 }
 

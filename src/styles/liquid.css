@@ -323,6 +323,18 @@ html[data-motion="reduce"] .plantart.is-anim * {
 html[data-motion="reduce"] .route-enter {
   animation: none !important;
 }
+/* Scene ambient and atelier pulses honour the player's switch too, not only
+   the OS media query — the clouds, the drifting isles, the butterflies, the
+   slot invite and the medallion's pulse are all *motion*, and this pref is
+   about motion. The static mist stays: a fog band is a backdrop, not a beat. */
+html[data-motion="reduce"] .scene-cloud,
+html[data-motion="reduce"] .scene-isle,
+html[data-motion="reduce"] .scene-flutter,
+html[data-motion="reduce"] .scene-mist i,
+html[data-motion="reduce"] .slot.is-next,
+html[data-motion="reduce"] .breed-link.is-ready .breed-link-ico {
+  animation: none !important;
+}
 html[data-motion="reduce"] *,
 html[data-motion="reduce"] *::before,
 html[data-motion="reduce"] *::after {
@@ -341,6 +353,15 @@ html[data-quality="lite"] .plantart.is-anim .l-leaves .leaf {
 }
 html[data-quality="lite"] .plot-shine i,
 html[data-quality="lite"] .need-water {
+  animation: none !important;
+}
+/* Lite keeps the world but stops paying for its constant motion: clouds and
+   isles park, butterflies perch, the fog stills. The shapes themselves are
+   not removed — a lite garden is a still garden, not an empty sky. */
+html[data-quality="lite"] .scene-cloud,
+html[data-quality="lite"] .scene-isle,
+html[data-quality="lite"] .scene-flutter,
+html[data-quality="lite"] .scene-mist i {
   animation: none !important;
 }
 html[data-quality="lite"] .l-aura {

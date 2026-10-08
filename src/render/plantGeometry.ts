@@ -267,7 +267,7 @@ export function cubicSamples(p0: Pt, c1: Pt, c2: Pt, p1: Pt, steps: number): Pt[
  * the middle, or the crown — which is what actually distinguishes a rosette from
  * a spire at thumbnail size.
  */
-export type Habit = "spire" | "bush" | "rosette" | "arch" | "spiral";
+export type Habit = "spire" | "bush" | "rosette" | "arch" | "spiral" | "cluster" | "crown" | "fan";
 
 /**
  * Pick a habit from the genes.
@@ -278,23 +278,55 @@ export type Habit = "spire" | "bush" | "rosette" | "arch" | "spiral";
  * low-complexity plant with three branches reads as a mistake rather than as a
  * simple plant.
  */
-export function habitFor(body: { stem: string; size: string; leaf: string; root: string }, complexity: number): Habit {
-  const roll = (complexity * 37.1 + body.stem.length * 11.3 + body.leaf.length * 5.7 + body.size.length * 3.1) % 100;
+export function habitFor(body: { stem: string; size: string; leaf: string; root: string; flower?: string; thorn?: string; fungus?: string }, complexity: number): Habit {
+  /* The raw mix actually lands ~113–169 for real genomes, so a bare %100 left
+     the upper band of the grammar (spire, fan) extinct and the lower bands
+     unreachable. Stretch the observed range across the full dial — the
+     distribution is still gene-driven, just not clipped. */
+  const raw = complexity * 37.1 + body.stem.length * 11.3 + body.leaf.length * 5.7 + body.size.length * 3.1;
+  const roll = Math.min(99.9, Math.max(0, (raw - 113) * (100 / 56)));
   if (body.stem === "vine") return roll < 42 ? "spiral" : "arch";
+  /* docs/23 §5.1 — the grammar widened so the catalogue stops reading as five
+     silhouettes recoloured. The new archetypes map onto genes that already
+     exist; no species or stat was added or changed.
+
+       cluster   fungus genes → a colony of short sibling stems
+       crown     thorn genes on a complex plant → spire with a splayed top
+       fan       flowering genes → trunk that opens into a bloom-bearing fan
+       succulent thick stem + broad/round leaf on a simple plant → reads as a
+                 rosette whose parts are all oversized (handled in leafLayer)
+  */
+  if (body.fungus && body.fungus !== "none" && roll < 68) return "cluster";
+  if (body.thorn && body.thorn !== "none" && complexity > 0.42 && roll < 44) return "crown";
+  /* Succulent: a thick stem carrying broad paddle leaves reads as a fat,
+     water-storing rosette — the low mound with oversized parts — not as a
+     tall thin stalk that happens to be wide. */
+  if (body.stem === "thick" && (body.leaf === "round" || body.leaf === "broad") && roll < 50) return "rosette";
+  if (body.flower && body.flower !== "none" && roll >= 68 && roll < 92) return "fan";
   if (body.size === "colossal" && roll < 30) return "rosette";
   if (complexity < 0.34) return roll < 55 ? "spire" : "rosette";
-  if (roll < 26) return "rosette";
-  if (roll < 52) return "bush";
-  if (roll < 76) return "arch";
+  /* The fallback band used to park everything in "arch". Split the dial so the
+     plain shapes are a real spread: low rolls squat, mid rolls branch, high
+     rolls climb. */
+  if (roll < 20) return "rosette";
+  if (roll < 42) return "bush";
+  if (roll < 62) return "arch";
   return "spire";
 }
 
 /** How many side branches a habit carries at a given complexity. */
 export function branchCount(habit: Habit, complexity: number): number {
-  if (habit !== "bush") return 0;
-  if (complexity < 0.4) return 1;
-  if (complexity < 0.66) return 2;
-  return 3;
+  if (habit === "bush") {
+    if (complexity < 0.4) return 1;
+    if (complexity < 0.66) return 2;
+    return 3;
+  }
+  /* A cluster is the colony itself — sibling stems rather than branches. A
+     crown keeps its branches to the top, a fan spreads them mid-stem. */
+  if (habit === "cluster") return 2 + Math.min(3, Math.floor(complexity * 4));
+  if (habit === "crown") return 3;
+  if (habit === "fan") return complexity > 0.62 ? 4 : 3;
+  return 0;
 }
 
 // ---------------------------------------------------------------------------

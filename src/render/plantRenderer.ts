@@ -176,7 +176,7 @@ export function renderPlantSvg(plant: Plant, size = 120, opts: { anim?: boolean 
 
   const base: Pt = pt(cx, baseY);
   const habit = habitFor(body, complexity);
-  const skeleton = buildHabit(habit, cx, baseY, height, lean, sway, complexity, geoRng);
+  const skeleton = buildHabit(habit, cx, baseY, height, lean, sway, complexity, geoRng, stage);
   const spine = skeleton.main;
   // The tip curls over on itself. A straight quadratic always ends pointing the
   // same way it grew, so every plant was a pole with a prop on top; a third
@@ -363,7 +363,7 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
     // the horizontal overflow is folded into the same shrink step as the
     // vertical one and the tighter of the two wins.
     for (let attempt = 0; attempt < 10; attempt++) {
-      const skeleton = buildHabit(habit, cx, SOIL_TOP, height, lean, sway, complexity, geoRng);
+      const skeleton = buildHabit(habit, cx, SOIL_TOP, height, lean, sway, complexity, geoRng, stage);
       skeleton.main.push(...curledTip(skeleton.main, curl));
 
       const partScale0 = baseScale * leafScale;
@@ -426,7 +426,7 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
     const hasBloom = body.flower !== "none" && complexity > 0.3 && stage !== "seed" && stage !== "sprout";
     const plan = out[stage];
     for (let guard = 0; guard < 40; guard++) {
-      const skeleton = buildHabit(habit, cx, SOIL_TOP, plan.height, lean, sway, complexity, geoRng);
+      const skeleton = buildHabit(habit, cx, SOIL_TOP, plan.height, lean, sway, complexity, geoRng, stage);
       skeleton.main.push(...curledTip(skeleton.main, stemCurl(body.stem, v, geoRng)));
       const top = canopyTop(skeleton, comp.leafBudget, baseScale * plan.fitX * plan.leafScale, complexity, body, stage, hasBloom ? bloomR * plan.bloomScale : 0);
 
@@ -522,6 +522,7 @@ function buildHabit(
   sway: number,
   complexity: number,
   rng: Rng,
+  stage?: string,
 ): Skeleton {
   const base = pt(cx, baseY);
   let main: Pt[];
@@ -569,23 +570,73 @@ function buildHabit(
       main = quadSamples(base, pt(cx + lean * 0.3, baseY - height * 0.62), pt(cx + lean * 0.6, baseY - height), 12);
       break;
     }
+    case "cluster": {
+      /* Mushroom colony: the "main" stem is just the tallest sibling — short,
+         slightly curved — and the colony is carried by the branches, which for
+         this habit leave from the *base*, not the trunk. */
+      main = quadSamples(base, pt(cx + lean * 0.15, baseY - height * 0.45), pt(cx + lean * 0.2, baseY - height * 0.74), 8);
+      break;
+    }
+    case "crown": {
+      // A spire trunk; the branches splay at the top so the silhouette is a
+      // stem wearing a thorn crown, not a tree with a canopy.
+      main = buildSpine(cx, baseY, height, lean, sway);
+      break;
+    }
+    case "fan": {
+      /* Trunk to just past halfway, then the fan: the branch builder below
+         spreads the bloom-stalks symmetrically from the waist up. */
+      main = quadSamples(base, pt(cx + lean * 0.2, baseY - height * 0.42), pt(cx + lean * 0.3, baseY - height * 0.6), 8);
+      break;
+    }
     default: {
       main = buildSpine(cx, baseY, height, lean, sway);
       break;
     }
   }
 
-  const n = branchCount(habit, complexity);
+  /* A seed is a sprout, not a silhouette in miniature: branches only exist once
+     the plant has actually grown a trunk to carry them. Besides reading wrong,
+     a crown on a seedling threw the apex ~35% above the solved height and
+     broke the growth-monotonicity guarantee the ladder test asserts. */
+  const n = stage === "seed" || stage === "sprout" ? 0 : branchCount(habit, complexity);
   if (n > 0) {
     for (let i = 0; i < n; i++) {
-      // Branches leave the trunk between 30% and 85% of its height, alternating
-      // sides, so they never stack into a symmetrical candelabra.
-      const t = 0.3 + (i / Math.max(1, n)) * 0.55 + rng.float(-0.05, 0.05);
+      /* Where the branch leaves the trunk is a property of the habit, not a
+         shared constant:
+           bush     mid-trunk outward — the classic shrub
+           cluster  the soil itself — siblings, not branches
+           crown    only the top quarter — the splay is the crown
+           fan      the waist, spread evenly — the stalks are the bloom-bearers */
+      let t: number;
+      let len: number;
+      let rise: number;
+      let dir: number;
+      if (habit === "cluster") {
+        t = rng.float(0.02, 0.14);
+        /* Sibling stems hug the base: a colony wider than the frame was what
+           pushed the solver into shaving height at the late stages. */
+        len = height * rng.float(0.22, 0.4);
+        rise = height * rng.float(0.4, 0.62);
+        dir = i % 2 === 0 ? 1 : -1;
+      } else if (habit === "crown") {
+        t = 0.68 + (i / Math.max(1, n)) * 0.24 + rng.float(-0.02, 0.02);
+        len = height * rng.float(0.14, 0.22);
+        rise = height * rng.float(0.3, 0.46);
+        dir = i === 1 ? 0 : i % 2 === 0 ? 1 : -1;
+      } else if (habit === "fan") {
+        t = 0.5 + (i / Math.max(1, n)) * 0.16 + rng.float(-0.02, 0.02);
+        len = height * (0.26 + Math.abs(i - (n - 1) / 2) * 0.09) * rng.float(0.92, 1.06);
+        rise = height * rng.float(0.52, 0.68);
+        dir = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
+      } else {
+        t = 0.3 + (i / Math.max(1, n)) * 0.55 + rng.float(-0.05, 0.05);
+        len = height * rng.float(0.42, 0.68);
+        rise = height * rng.float(0.5, 0.78);
+        dir = i % 2 === 0 ? 1 : -1;
+      }
       const idx = Math.round(t * (main.length - 1));
       const from = main[Math.min(main.length - 1, idx)];
-      const dir = i % 2 === 0 ? 1 : -1;
-      const len = height * rng.float(0.42, 0.68);
-      const rise = height * rng.float(0.5, 0.78);
       const tip = { x: from.x + dir * len, y: from.y - rise };
       const ctrl = { x: from.x + dir * len * 0.32, y: from.y - rise * 0.72 };
       branches.push({ spine: quadSamples(from, ctrl, tip, 10), at: t, dir });
@@ -620,7 +671,7 @@ function canopyTop(
 
   const cotyledon = stage === "sprout" || stage === "seed";
   const rosette = skeleton.habit === "rosette" && !cotyledon;
-  const branchShare = skeleton.habit === "bush" ? skeleton.branches.length : 0;
+  const branchShare = skeleton.branches.length > 0 ? skeleton.branches.length : 0;
   const total = dist(spine[0], spine[spine.length - 1]);
   const stemAngle = angleOf(spine[0], spine[spine.length - 1]);
 
@@ -933,8 +984,9 @@ function leafLayer(
   // A rosette's whole point is that the leaves are the plant: they radiate from
   // the base at their own angles instead of climbing a stem in two ranks.
   const rosette = skeleton.habit === "rosette" && !cotyledon;
-  // A bush spreads its leaves across the branches too, or the branches are bare.
-  const branchShare = skeleton.habit === "bush" ? skeleton.branches.length : 0;
+  // Bush, cluster, crown and fan all carry leaves on their branches — the
+  // branches are the silhouette, so bare branches would read as sticks.
+  const branchShare = skeleton.branches.length > 0 ? skeleton.branches.length : 0;
 
   for (let i = 0; i < count; i++) {
     // Cotyledons sit at the base; true leaves climb the stem. A little jitter per

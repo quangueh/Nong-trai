@@ -15,6 +15,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { SPECIES } from "../src/config/species";
 import { createSeedPlant } from "../src/genetics/genomeGenerator";
 import { renderPlantSvg } from "../src/render/plantRenderer";
+import { habitFor } from "../src/render/plantGeometry";
 import { RARITY_ORDER } from "../src/config/rarity";
 import type { Plant } from "../src/core/types";
 import type { SpeciesId } from "../src/config/species";
@@ -47,7 +48,7 @@ const cells = plants
       (s) => `<div class="cell"><div class="art">${renderPlantSvg(p, s)}</div><div class="cap">${s}px</div></div>`,
     ).join("");
     return `<div class="row">
-      <div class="meta"><b>#${i} ${p.name}</b><span>${p.rarity} · ${p.growth.stage} · ⚔${p.powerRating}</span></div>
+      <div class="meta"><b>#${i} ${p.name}</b><span>${p.rarity} · ${p.growth.stage} · ${habitFor(p.dna.bodyGenes, p.visual.complexity)} · ⚔${p.powerRating}</span></div>
       <div class="imgs">${imgs}</div>
     </div>`;
   })
@@ -74,5 +75,11 @@ await b.close();
 const rarities = new Set(plants.map((p) => p.rarity));
 const stages = new Set(plants.map((p) => p.growth.stage));
 const allSvg = plants.every((p) => renderPlantSvg(p, 160).includes("<svg"));
+const habits = plants.reduce<Record<string, number>>((m, p) => {
+  const h = habitFor(p.dna.bodyGenes, p.visual.complexity);
+  m[h] = (m[h] ?? 0) + 1;
+  return m;
+}, {});
 console.log(`art-bench: ${plants.length} plants · rarities ${[...rarities].sort((a, b) => RARITY_ORDER.indexOf(a as never) - RARITY_ORDER.indexOf(b as never)).join("/")} · stages ${[...stages].join("/")} · all-svg ${allSvg}`);
+console.log(`habits: ${Object.entries(habits).map(([h, n]) => `${h}×${n}`).join(" ")}`);
 console.log("sheet → shots/art-bench/sheet.png");

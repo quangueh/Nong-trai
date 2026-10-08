@@ -118,7 +118,7 @@ export class BattleView {
   private comboMeter!: HTMLElement;
 
   /** Live skill buttons, built once. See `renderSkills`. */
-  private readonly skillBtns = new Map<string, { btn: HTMLButtonElement; cd: Element | null }>();
+  private readonly skillBtns = new Map<string, { btn: HTMLButtonElement; cd: Element | null; total: number; cost: number }>();
   private timer: number | null = null;
   private finished = false;
   private speed = 1;
@@ -884,6 +884,9 @@ estartTimer. */
         // The delivery is text, not only a glyph: the player is choosing between "hits hard
         // once" and "hits three times slowly", and a glyph alone does not say which.
         el("span", { class: "dl" }, [`${DELIVERY_NAME[skill.core.delivery] ?? ""} · ${EFFECT_NAME[skill.core.effect] ?? ""}`]),
+        /* docs/23 §5.5 — the cost is part of the button's physical readout, so
+           an unaffordable skill is visibly different from a cooling one. */
+        skill.energyCost > 0 ? el("span", { class: "cost" }, [`⚡${skill.energyCost}`]) : "",
         el("div", { class: "cd", "data-cd": "" }),
       ]) as HTMLButtonElement;
 
@@ -902,7 +905,7 @@ estartTimer. */
         }
       });
 
-      this.skillBtns.set(skill.id, { btn: b, cd: b.querySelector(".cd") });
+      this.skillBtns.set(skill.id, { btn: b, cd: b.querySelector(".cd"), total: skill.cooldown, cost: skill.energyCost });
       this.skillRow.appendChild(b);
     }
     this.refreshSkillBar();
@@ -924,11 +927,25 @@ estartTimer. */
     }
     for (const [id, ref] of this.skillBtns) {
       const cd = Math.max(0, (side.cooldown[id] ?? 0) - this.session.elapsed);
-      const ready = cd <= 0 && !side.casting;
+      /* Energy-starved is its own state, not "still cooling": the player reads
+         a greyed skill as "wait" and a dimmed one as "cannot pay". Before this
+         the two were indistinguishable and an unaffordable press silently did
+         nothing. */
+      const poor = ref.cost > 0 && side.energy < ref.cost;
+      const ready = cd <= 0 && !side.casting && !poor;
       ref.btn.classList.toggle("ready", ready);
-      ref.btn.classList.toggle("cooling", !ready);
+      ref.btn.classList.toggle("cooling", cd > 0);
+      ref.btn.classList.toggle("no-energy", poor && cd <= 0);
+      /* Cooldown sweep: the veil drains as a fraction of the skill's own
+         cooldown instead of a static tint + number, so a 2s and a 9s cooldown
+         read differently at a glance. */
+      const frac = cd > 0 && ref.total > 0 ? Math.min(1, cd / ref.total) : 0;
+      ref.btn.style.setProperty("--cdp", frac.toFixed(3));
       const label = cd > 0 ? String(Math.ceil(cd)) : "";
-      if (ref.cd && ref.cd.textContent !== label) ref.cd.textContent = label;
+      if (ref.cd && ref.cd.textContent !== label) {
+        ref.cd.textContent = label;
+        (ref.cd as HTMLElement).dataset.cd = label;
+      }
       ref.btn.disabled = !ready;
     }
     this.focusBtn.disabled = side.focusUsed;

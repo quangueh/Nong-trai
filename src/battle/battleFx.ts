@@ -84,6 +84,22 @@ export class FxLayer {
     window.setTimeout(() => node.remove(), lifeMs);
   }
 
+  /**
+   * Toggle a state class on a fighter's battler root for a beat.
+   *
+   * docs/23 §5.4 — the rig is per-part: a wind-up coils the leaves and draws
+   * the bloom back, a hit rocks the stem. Those classes drive the plant's own
+   * SVG layers, so the fighter reacts through its body rather than only
+   * through the squash on the avatar the juice layer owns. Reduced motion and
+   * the light quality preset turn the CSS side off; the class is harmless.
+   */
+  private pulse(side: FxSide, cls: string, ms: number): void {
+    const host = this.anchors?.[side];
+    if (!host || host.classList.contains(cls)) return;
+    host.classList.add(cls);
+    window.setTimeout(() => host.classList.remove(cls), ms);
+  }
+
   // --- casts -------------------------------------------------------------
 
   /**
@@ -95,6 +111,7 @@ export class FxLayer {
    */
   castStart(side: FxSide, delivery: Delivery, colour: string): void {
     const at = this.anchor(side);
+    this.pulse(side, "is-winding", 520);
     switch (delivery) {
       case "aura": {
         // Gathered inward, then released outward by `impact`.
@@ -296,6 +313,10 @@ export class FxLayer {
     weight: ImpactWeight = "light",
   ): void {
     const at = this.anchor(to);
+    // The body reacts too: a struck fighter rocks on its stem, a healed one
+    // lifts — the same rig grammar the garden sway uses, event-driven here.
+    if (kind === "hit" || kind === "crit" || kind === "dot") this.pulse(to, "is-struck", 400);
+    if (kind === "heal") this.pulse(to, "is-mended", 620);
     // Shard count by weight. A fixed count is what made every hit look the same.
     const bits = { light: 5, heavy: 9, crit: 16, kill: 26 }[weight];
     switch (kind) {

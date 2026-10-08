@@ -208,6 +208,12 @@ function paintPlots(body: HTMLElement, nav: Navigate, shell: Element, goTab: (t:
     el("div", { class: "scene-cloud c3", "aria-hidden": "true" }),
     el("div", { class: "scene-isle i1", "aria-hidden": "true" }),
     el("div", { class: "scene-isle i2", "aria-hidden": "true" }),
+    /* docs/23 §6 — a slow fog band under the floating soil sells the altitude:
+       the plots are islands above cloud, not cards on a gradient. */
+    el("div", { class: "scene-mist", "aria-hidden": "true" }, [
+      el("i"),
+      el("i"),
+    ]),
     el("div", { class: "scene-flutter f1", "aria-hidden": "true" }, ["🦋"]),
     el("div", { class: "scene-flutter f2", "aria-hidden": "true" }, ["🦋"]),
     el("div", { class: "scene-body" }, [section]),

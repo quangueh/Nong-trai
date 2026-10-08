@@ -8,7 +8,8 @@
 
 import { GameStore } from "../src/core/store";
 import { renderPlantSvg, plantPalette } from "../src/render/plantRenderer";
-import { leafPath, taperedOutline, quadSamples, pt, blobPath, shardPath, petalPath, rootPath } from "../src/render/plantGeometry";
+import { leafPath, taperedOutline, quadSamples, pt, blobPath, shardPath, petalPath, rootPath, habitFor } from "../src/render/plantGeometry";
+import { SPECIES } from "../src/config/species";
 import type { SpeciesId } from "../src/config/species";
 import type { Plant } from "../src/core/types";
 import { createSeedPlant } from "../src/genetics/genomeGenerator";
@@ -157,6 +158,27 @@ section("3. Distinctness — the whole point of procedural art");
 
   const paths = all.map((p) => (renderPlantSvg(p, 150).match(/ d="/g) ?? []).length);
   check("plants have varied path counts", new Set(paths).size > 3, `${new Set(paths).size} distinct counts`);
+
+  /* docs/23 §5.1 — silhouette grammar. The garden must not be five shapes in
+     different colours: across a wide species sample the habit selector has to
+     actually reach most of the archetype list, and two habits must never be
+     rare one-per-thousand curiosities. */
+  const habitCount = new Map<string, number>();
+  for (let i = 0; i < SPECIES.length; i += 37) {
+    const sp = SPECIES[i];
+    const probe = createSeedPlant(sp.id as SpeciesId, "habit-probe", `hp-${i}`, i);
+    habitCount.set(habitFor(probe.dna.bodyGenes, probe.visual.complexity), (habitCount.get(habitFor(probe.dna.bodyGenes, probe.visual.complexity)) ?? 0) + 1);
+  }
+  check(
+    "habit grammar covers at least six families",
+    habitCount.size >= 6,
+    [...habitCount.entries()].map(([h, n]) => `${h}:${n}`).join(" "),
+  );
+  check(
+    "no habit is vanishingly rare",
+    Math.min(...habitCount.values()) >= 3,
+    [...habitCount.entries()].map(([h, n]) => `${h}:${n}`).join(" "),
+  );
 }
 
 section("4. Determinism");

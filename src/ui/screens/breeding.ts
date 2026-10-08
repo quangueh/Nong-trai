@@ -37,6 +37,11 @@ export function renderBreeding(nav: Navigate): HTMLElement {
   const slots = el("div", { class: "breed-pair" });
   const slotElA = el("div", { class: "slot" });
   const link = el("div", { class: "breed-link" }, [
+    /* docs/23 §7 — the gene flow: two motes ride the channel from each parent
+       into the medallion while the pair stands ready. The channel itself is
+       drawn by CSS (.breed-link::before); these are the moving pieces. */
+    el("i", { class: "flow-dot a", "aria-hidden": "true" }),
+    el("i", { class: "flow-dot b", "aria-hidden": "true" }),
     el("span", { class: "breed-link-ico" }, ["+"]),
     el("span", { class: "breed-link-lbl" }, ["lai"]),
   ]);
