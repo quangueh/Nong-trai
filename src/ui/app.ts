@@ -9,7 +9,7 @@ import { renderBreeding } from "./screens/breeding";
 import { renderArena, currentBattleView } from "./screens/arena";
 import { renderAscent } from "./screens/ascent";
 import { renderLab } from "./screens/lab";
-import { leaderboardFab, leaderboardPanel, openLeaderboardSheet } from "./leaderboard";
+import { leaderboardFab, openLeaderboardSheet } from "./leaderboard";
 import { sfx } from "../audio/audio";
 import { music, type MusicMood } from "../audio/music";
 import {
@@ -198,12 +198,11 @@ function paint(params?: unknown) {
     sideRight.appendChild(right);
   }
   /*
-   * The leaderboard is pinned under whatever else the right rail carries — on the
-   * garden that is the weather and the seed bag, everywhere else it is the rail's
-   * only occupant, which is what stops it collapsing to nothing. On phones the
-   * rails are hidden entirely, so the same board is reachable through the 🏆 FAB.
+   * The leaderboard is deliberately not a rail fixture: it takes a column of
+   * screen space on every frame, and a rank list is not something the player
+   * needs in their peripheral vision all day. It opens as a sheet from the 🏆
+   * FAB, which floats on every screen size.
    */
-  sideRight?.appendChild(leaderboardPanel());
   updatePills();
 }
 
@@ -825,8 +824,8 @@ export function boot(root: HTMLElement) {
   noticeHost = el("div", { class: "notice-host", role: "status", "aria-live": "polite" });
 
   shell.append(topbar, noticeHost, workspace, navHost);
-  // Phones have no side rail, so the board that lives there gets a floating button
-  // instead — the stylesheet hides it once the rail is wide enough to show itself.
+  // The leaderboard's only entry point — a floating 🏆 on every screen, wide or
+  // narrow, that opens the board as a sheet. No size gets it pinned by default.
   shell.appendChild(leaderboardFab(openLeaderboardSheet));
   root.appendChild(shell);
 

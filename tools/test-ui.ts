@@ -106,14 +106,18 @@ check(
 );
 check("topbar shows currency", ($(".topbar")?.textContent ?? "").includes("1."));
 
-// The leaderboard is pinned to the right rail on every screen — a player should be
-// able to glance at their rank from anywhere, and the phone FAB covers the layout
-// where the rail is hidden.
-check("leaderboard panel sits in the right rail", !!$(".side-panel.right .lb-panel"));
-check("leaderboard shows the power board", ($(".lb-panel")?.textContent ?? "").includes("Sức mạnh"));
-check("leaderboard shows the level board", ($(".lb-panel")?.textContent ?? "").includes("Cấp nhà lai tạo"));
-check("the player sees their own row even offline", ($(".lb-panel")?.textContent ?? "").includes("bạn"));
-check("the phone FAB exists for when the rail is hidden", !!$(".lb-fab"));
+// The leaderboard is a tab, not a rail fixture — nothing mounts the board until
+// the floating 🏆 button opens its sheet, on any screen size.
+check("the leaderboard is not pinned in the rail", !$(".side-panel.right .lb-panel"));
+check("no board is mounted at all until asked", !$(".lb-panel"));
+check("the 🏆 tab exists", !!$(".lb-fab"));
+click($(".lb-fab"));
+check("the board opens as a sheet", !!$(".sheet .lb-panel"));
+check("leaderboard shows the power board", ($(".sheet .lb-panel")?.textContent ?? "").includes("Sức mạnh"));
+check("leaderboard shows the level board", ($(".sheet .lb-panel")?.textContent ?? "").includes("Cấp nhà lai tạo"));
+check("the player sees their own row even offline", ($(".sheet .lb-panel")?.textContent ?? "").includes("bạn"));
+click(byText(".sheet button", "✕") ?? $(".sheet"));
+check("the sheet closes again", !$(".sheet .lb-panel"));
 
 section("1. Garden screen");
 await render("garden renders", () => navigate("garden"));

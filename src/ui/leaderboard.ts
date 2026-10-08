@@ -1,6 +1,7 @@
 /**
- * The leaderboard panel — pinned to the right rail on wide screens, and a floating
- * 🏆 button that opens the same board as a sheet on phones.
+ * The leaderboard — a floating 🏆 button on every screen, opening the board as a
+ * sheet. It is a tab, not a rail fixture: a rank list does not need a column of
+ * the screen all day, and the button keeps it one tap away on any size.
  *
  * Two boards share one card: strongest plant first, then breeder level — the two
  * numbers the save handler already extracts on every push. The player's own row is
@@ -93,8 +94,8 @@ function paintBoard(host: HTMLElement, rows: Leaderboards["power"], kind: "power
 }
 
 /**
- * The card that lives in the right rail. Re-mounts with every screen change but keeps
- * its data — `boardsSnapshot` is module-cached, so a repaint is never a blank panel.
+ * The card the sheet hosts. Re-mounts with every open but keeps its data —
+ * `boardsSnapshot` is module-cached, so a repaint is never a blank panel.
  */
 export function leaderboardPanel(): HTMLElement {
   const card = el("div", { class: "card lb-panel" });
@@ -165,14 +166,14 @@ export function leaderboardPanel(): HTMLElement {
   return card;
 }
 
-/** The floating phone button — CSS hides it once the side rail is wide enough to show. */
+/** The floating 🏆 button — the board's only entry point, on every screen size. */
 export function leaderboardFab(onOpen: () => void): HTMLElement {
   const fab = el("button", { class: "lb-fab", "aria-label": "Bảng xếp hạng", title: "Bảng xếp hạng" }, ["🏆"]);
   fab.addEventListener("click", onOpen);
   return fab;
 }
 
-/** The same board, as a bottom sheet — the phone has no rail to pin it to. */
+/** The board as a sheet — bottom-anchored on phones, right-docked on wide screens. */
 export function openLeaderboardSheet(): void {
   const overlay = el("div", { class: "overlay" });
   const sheet = el("div", { class: "sheet" });

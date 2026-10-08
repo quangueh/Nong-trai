@@ -8982,7 +8982,7 @@ button.qachip:active {
 }
 
 /* ==========================================================================
-   Leaderboard — pinned board in the right rail, FAB on phones.
+   Leaderboard — the board lives in a sheet, opened by the FAB on every size.
    ========================================================================== */
 
 .lb-panel {
@@ -9063,7 +9063,9 @@ button.qachip:active {
   background: rgba(255, 255, 255, 0.06);
 }
 
-/* The phone has no rail; the board opens as a sheet from this button instead. */
+/* The board opens as a sheet from this button — the only entry point, on every
+   screen size. It used to hide once the rail was wide enough to pin the panel;
+   the panel is gone now, so the button stays. */
 .lb-fab {
   position: fixed;
   right: 14px;
@@ -9081,11 +9083,10 @@ button.qachip:active {
   place-items: center;
 }
 
+/* On the desktop frame the shell floats ~20px off the viewport bottom, so the
+   button lifts by the same amount to clear the nav sitting inside the shell. */
 @media (min-width: 1024px) {
   .lb-fab {
-    display: none;
-  }
-  .side-panel .lb-panel {
-    margin-top: 12px;
+    bottom: calc(96px + env(safe-area-inset-bottom, 0px));
   }
 }
