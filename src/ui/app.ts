@@ -1,8 +1,18 @@
 /** App shell: top bar, screen router, bottom nav. */
 
 import { GameStore, resetSave, type Notice } from "../core/store";
-import { motionPref, setMotionPref, type MotionPref } from "../core/prefs";
+import {
+  applyGlass,
+  glassPref,
+  setGlassPref,
+  watchSystemTransparency,
+  motionPref,
+  setMotionPref,
+  type GlassPref,
+  type MotionPref,
+} from "../core/prefs";
 import { el, toast, seedIcon, dismissOnEscape } from "./components";
+import { icon, type IconName } from "./icons";
 import { renderGarden, gardenSidebars } from "./screens/garden";
 import { renderCollection } from "./screens/collection";
 import { renderBreeding } from "./screens/breeding";
@@ -88,14 +98,37 @@ export const store = new GameStore();
 // neither has to import the other and no call site has to remember to ask for a reload.
 onSlotChange(() => store.reload());
 
-const TABS: { id: Screen; label: string; icon: string }[] = [
-  { id: "garden", label: "Vườn", icon: "🌱" },
-  { id: "collection", label: "Sưu tầm", icon: "📖" },
-  { id: "breeding", label: "Lai tạo", icon: "🧬" },
-  { id: "arena", label: "Đại chiến", icon: "⚔️" },
-  { id: "ascent", label: "Vượt ải", icon: "🏔" },
-  { id: "lab", label: "Cửa hàng", icon: "🛒" },
-  { id: "leaderboard", label: "Xếp hạng", icon: "🏆" },
+/*
+ * Five tabs, not seven.
+ *
+ * Arena, ascent and leaderboard are one verb — "Đấu" — so they share a tab and
+ * pick their sub-view in a segmented row inside the screen. The routes stay
+ * exactly as they were; `TAB_OF` is what makes a deep link to /ascent light
+ * the right dock item rather than leaving the nav unlit.
+ */
+const TABS: { id: Screen; label: string; icon: IconName }[] = [
+  { id: "garden", label: "Vườn", icon: "sprout" },
+  { id: "collection", label: "Cây", icon: "trees" },
+  { id: "breeding", label: "Lai", icon: "dna" },
+  { id: "arena", label: "Đấu", icon: "swords" },
+  { id: "lab", label: "Chợ", icon: "bag" },
+];
+
+const TAB_OF: Record<Screen, Screen> = {
+  garden: "garden",
+  collection: "collection",
+  breeding: "breeding",
+  arena: "arena",
+  ascent: "arena",
+  leaderboard: "arena",
+  lab: "lab",
+};
+
+/** The three combat destinations, in the order they appear in the hub. */
+const COMBAT_SUBS: { id: Screen; label: string; icon: IconName }[] = [
+  { id: "arena", label: "Đấu trường", icon: "swords" },
+  { id: "ascent", label: "Vượt ải", icon: "mountain" },
+  { id: "leaderboard", label: "Xếp hạng", icon: "trophy" },
 ];
 
 let levelBadge: HTMLElement | null = null;
@@ -148,8 +181,9 @@ export function navigate(screen: Screen, params?: unknown) {
   music.setMood(SCREEN_MOOD[screen] ?? "calm");
 
   paint(params);
+  const tab = TAB_OF[screen] ?? screen;
   for (const b of navHost.querySelectorAll(".navitem")) {
-    b.classList.toggle("active", (b as HTMLElement).dataset.screen === screen);
+    b.classList.toggle("active", (b as HTMLElement).dataset.screen === tab);
   }
 }
 
@@ -175,7 +209,31 @@ function paint(params?: unknown) {
     lab: renderLab,
     leaderboard: renderLeaderboard,
   }[current];
-  const node = view(navigate, params);
+  let node = view(navigate, params);
+  /*
+   * The combat hub: arena, ascent and leaderboard share one dock tab, so any
+   * of the three gets a segmented row on top that moves between them without
+   * touching the routes themselves. Battle views mount inside the same host,
+   * so the row doubles as a visible way back out of a fight.
+   */
+  if (COMBAT_SUBS.some((s) => s.id === current)) {
+    const wrap = el("div", { class: "combat-hub" });
+    const seg = el("div", { class: "seg", role: "tablist", "aria-label": "Khu vực chiến đấu" });
+    for (const s of COMBAT_SUBS) {
+      const b = el("button", {
+        class: s.id === current ? "on" : "",
+        role: "tab",
+        "aria-selected": String(s.id === current),
+      });
+      b.append(icon(s.icon, 17), s.label);
+      b.addEventListener("click", () => {
+        if (s.id !== current) navigate(s.id);
+      });
+      seg.appendChild(b);
+    }
+    wrap.append(seg, node);
+    node = wrap;
+  }
   /*
    * A route change gets a soft entrance; a same-route repaint must stay
    * instant. Every care action re-navigates to "garden", so animating those
@@ -386,7 +444,40 @@ function openSettings(): void {
   });
   paintMotion();
 
-  body.append(accountRow, soundRow, volumeWrap, musicWrap, motionRow, wipe);
+  /**
+   * Transparency — the same three-state shape as motion.
+   *
+   * `solid` is a designed mode, not a degraded one: surfaces go opaque and the
+   * border does the separating work that blur was doing, so nothing reads as
+   * "the version for people who can't have the nice one".
+   */
+  const GLASS_CYCLE: Array<{ pref: GlassPref; label: string; hint: string }> = [
+    { pref: "system", label: "Theo hệ thống", hint: "Tự theo thiết lập của thiết bị." },
+    { pref: "glass", label: "Kính", hint: "Thanh công cụ mờ nổi trên nội dung." },
+    { pref: "solid", label: "Đặc", hint: "Nền đặc không mờ — rõ nét trên máy yếu." },
+  ];
+  const glassRow = el("button", { class: "account-rowbtn" });
+  const paintGlass = (): void => {
+    const cur = GLASS_CYCLE.find((g) => g.pref === glassPref()) ?? GLASS_CYCLE[0];
+    glassRow.replaceChildren(
+      el("span", { class: "grow" }, [
+        el("b", {}, ["Độ trong suốt"]),
+        el("div", { class: "tiny muted" }, [cur.hint]),
+      ]),
+      el("span", { class: "account-value" }, [cur.label]),
+    );
+  };
+  glassRow.addEventListener("click", () => {
+    const i = GLASS_CYCLE.findIndex((g) => g.pref === glassPref());
+    const next = GLASS_CYCLE[(i + 1) % GLASS_CYCLE.length];
+    setGlassPref(next.pref);
+    paintGlass();
+    sfx.play("tap");
+    toast(`Độ trong suốt: ${next.label.toLowerCase()}.`);
+  });
+  paintGlass();
+
+  body.append(accountRow, soundRow, volumeWrap, musicWrap, motionRow, glassRow, wipe);
 
   const close = (): void => {
     offAccount();
@@ -677,6 +768,14 @@ export function boot(root: HTMLElement) {
   const shell = el("div", { class: "shell" });
 
   /*
+   * Transparency lands before first paint so a `solid` player never sees the
+   * shell flash translucent. The OS watch only matters while the pref is
+   * `system`, and `applyGlass` resolves that itself.
+   */
+  applyGlass();
+  watchSystemTransparency(applyGlass);
+
+  /*
    * Hover, in one listener rather than one per button.
    *
    * There are hundreds of buttons in a session and they are created and destroyed constantly, so
@@ -754,7 +853,9 @@ export function boot(root: HTMLElement) {
    * it turned the sound off as a side effect. Both rows are separate now: account,
    * sound, and a wipe that says plainly what it erases.
    */
-  const settings = el("button", { class: "btn sm ghost", title: "Cài đặt" }, ["⚙"]);
+  const settings = el("button", { class: "iconbtn", title: "Cài đặt", "aria-label": "Cài đặt" }, [
+    icon("gear", 20),
+  ]);
   settings.addEventListener("click", () => {
     sfx.play("tap");
     openSettings();
@@ -817,8 +918,11 @@ export function boot(root: HTMLElement) {
   // last item on a second row with no indication of it in either file.
   navHost.style.setProperty("--tab-count", String(TABS.length));
   for (const tab of TABS) {
-    const b = el("button", { class: "navitem" + (tab.id === current ? " active" : ""), "data-screen": tab.id });
-    b.append(el("span", { class: "ico" }, [tab.icon]), el("span", {}, [tab.label]));
+    const b = el("button", {
+      class: "navitem" + (tab.id === (TAB_OF[current] ?? current) ? " active" : ""),
+      "data-screen": tab.id,
+    });
+    b.append(el("span", { class: "ico" }, [icon(tab.icon)]), el("span", {}, [tab.label]));
     b.addEventListener("click", () => navigate(tab.id));
     navHost.appendChild(b);
   }

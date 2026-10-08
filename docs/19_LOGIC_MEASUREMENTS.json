@@ -1,0 +1,848 @@
+{
+  "seed": "logic-research-2026-10-08-v1",
+  "sourceRevision": "93de409661370aa0e9e58df5073f228ee4082277",
+  "sampleCounts": {
+    "forcedRarityBreeds": 1200,
+    "saleQuoteBreeds": 360,
+    "carePlants": 90,
+    "careActions": 14400,
+    "diagnosticBattles": 4800
+  },
+  "caveats": [
+    "Synthetic diagnostics, not observed player telemetry",
+    "Care grants simulated with abundant resources; costs are measured, not deducted",
+    "Current engine retains the known stance/cooldown/trait issues",
+    "Benchmark matrix is not a random-player population"
+  ],
+  "rarityTransitions": [
+    {
+      "tier": "seedling",
+      "target": "C",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 93,
+        "A": 7,
+        "S": 0,
+        "SS": 0,
+        "SSS": 0
+      },
+      "meanScore": 31.4578,
+      "inheritedTraitReportTotal": 0
+    },
+    {
+      "tier": "seedling",
+      "target": "B",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 66,
+        "A": 33,
+        "S": 1,
+        "SS": 0,
+        "SSS": 0
+      },
+      "meanScore": 39.0561,
+      "inheritedTraitReportTotal": 0
+    },
+    {
+      "tier": "seedling",
+      "target": "A",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 0,
+        "A": 92,
+        "S": 8,
+        "SS": 0,
+        "SSS": 0
+      },
+      "meanScore": 51.7744,
+      "inheritedTraitReportTotal": 0
+    },
+    {
+      "tier": "seedling",
+      "target": "S",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 0,
+        "A": 83,
+        "S": 16,
+        "SS": 1,
+        "SSS": 0
+      },
+      "meanScore": 56.8152,
+      "inheritedTraitReportTotal": 0
+    },
+    {
+      "tier": "seedling",
+      "target": "SS",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 0,
+        "A": 6,
+        "S": 86,
+        "SS": 8,
+        "SSS": 0
+      },
+      "meanScore": 66.858,
+      "inheritedTraitReportTotal": 0
+    },
+    {
+      "tier": "seedling",
+      "target": "SSS",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 0,
+        "A": 0,
+        "S": 85,
+        "SS": 15,
+        "SSS": 0
+      },
+      "meanScore": 71.1334,
+      "inheritedTraitReportTotal": 0
+    },
+    {
+      "tier": "ancient",
+      "target": "C",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 89,
+        "A": 11,
+        "S": 0,
+        "SS": 0,
+        "SSS": 0
+      },
+      "meanScore": 35.2819,
+      "inheritedTraitReportTotal": 0
+    },
+    {
+      "tier": "ancient",
+      "target": "B",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 36,
+        "A": 64,
+        "S": 0,
+        "SS": 0,
+        "SSS": 0
+      },
+      "meanScore": 42.0782,
+      "inheritedTraitReportTotal": 0
+    },
+    {
+      "tier": "ancient",
+      "target": "A",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 0,
+        "A": 84,
+        "S": 16,
+        "SS": 0,
+        "SSS": 0
+      },
+      "meanScore": 53.0477,
+      "inheritedTraitReportTotal": 0
+    },
+    {
+      "tier": "ancient",
+      "target": "S",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 0,
+        "A": 71,
+        "S": 25,
+        "SS": 4,
+        "SSS": 0
+      },
+      "meanScore": 58.1822,
+      "inheritedTraitReportTotal": 0
+    },
+    {
+      "tier": "ancient",
+      "target": "SS",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 0,
+        "A": 5,
+        "S": 85,
+        "SS": 10,
+        "SSS": 0
+      },
+      "meanScore": 66.7964,
+      "inheritedTraitReportTotal": 0
+    },
+    {
+      "tier": "ancient",
+      "target": "SSS",
+      "sample": 100,
+      "realized": {
+        "C": 0,
+        "B": 0,
+        "A": 0,
+        "S": 79,
+        "SS": 21,
+        "SSS": 0
+      },
+      "meanScore": 71.1196,
+      "inheritedTraitReportTotal": 0
+    }
+  ],
+  "rarityOdds": [
+    {
+      "level": 1,
+      "baseSSSPercent": 0.1,
+      "finalSSSPercent": 0.1
+    },
+    {
+      "level": 10,
+      "baseSSSPercent": 0.13,
+      "finalSSSPercent": 0.13
+    },
+    {
+      "level": 30,
+      "baseSSSPercent": 0.2,
+      "finalSSSPercent": 0.2
+    },
+    {
+      "level": 60,
+      "baseSSSPercent": 0.45,
+      "finalSSSPercent": 0.2
+    },
+    {
+      "level": 100,
+      "baseSSSPercent": 1.5,
+      "finalSSSPercent": 0.2
+    }
+  ],
+  "hardPityAt1000": {
+    "C": 2228,
+    "B": 2651,
+    "A": 2646,
+    "S": 1586,
+    "SS": 862,
+    "SSS": 27
+  },
+  "inheritance": [
+    {
+      "parentLevel": 5,
+      "inheritedXp": 80,
+      "childLevel": 1,
+      "childXp": 80,
+      "oneParentCumulativeXp": 885,
+      "fractionOfOneParentXp": 0.0904
+    },
+    {
+      "parentLevel": 15,
+      "inheritedXp": 140,
+      "childLevel": 2,
+      "childXp": 40,
+      "oneParentCumulativeXp": 12266,
+      "fractionOfOneParentXp": 0.0114
+    },
+    {
+      "parentLevel": 30,
+      "inheritedXp": 230,
+      "childLevel": 2,
+      "childXp": 130,
+      "oneParentCumulativeXp": 66885,
+      "fractionOfOneParentXp": 0.0034
+    },
+    {
+      "parentLevel": 60,
+      "inheritedXp": 410,
+      "childLevel": 3,
+      "childXp": 141,
+      "oneParentCumulativeXp": 366990,
+      "fractionOfOneParentXp": 0.0011
+    },
+    {
+      "parentLevel": 100,
+      "inheritedXp": 650,
+      "childLevel": 4,
+      "childXp": 124,
+      "oneParentCumulativeXp": 1286955,
+      "fractionOfOneParentXp": 0.0005
+    }
+  ],
+  "inheritedXpCandidate": [
+    {
+      "parentLevel": 15,
+      "preservedFractionOfCombinedXp": 0.3,
+      "inherited": 7359,
+      "childLevel": 12
+    },
+    {
+      "parentLevel": 30,
+      "preservedFractionOfCombinedXp": 0.3,
+      "inherited": 40131,
+      "childLevel": 24
+    },
+    {
+      "parentLevel": 60,
+      "preservedFractionOfCombinedXp": 0.3,
+      "inherited": 220194,
+      "childLevel": 48
+    },
+    {
+      "parentLevel": 100,
+      "preservedFractionOfCombinedXp": 0.3,
+      "inherited": 772173,
+      "childLevel": 81
+    }
+  ],
+  "progressionBatch": [
+    {
+      "targetLevel": 5,
+      "oneBatchBreederXp": 10,
+      "incrementalBreederXp": 28
+    },
+    {
+      "targetLevel": 15,
+      "oneBatchBreederXp": 30,
+      "incrementalBreederXp": 238
+    },
+    {
+      "targetLevel": 30,
+      "oneBatchBreederXp": 40,
+      "incrementalBreederXp": 818
+    }
+  ],
+  "careTrials": [
+    {
+      "profile": "durability",
+      "plants": 30,
+      "actionsPerPlant": 160,
+      "medianBeforeBudgetRatio": 0.4411,
+      "medianBudgetRatio": 16.1799,
+      "rankedLegal": 30,
+      "beforeWinRate": 0.5583,
+      "afterWinRate": 1,
+      "averagePhantomGains": 84.9333,
+      "costsPerPlant": {
+        "leafCoin": 960,
+        "items": 80,
+        "geneCrystal": 0
+      },
+      "medianLevel": 6,
+      "medianTraitCount": 17.5
+    },
+    {
+      "profile": "damage",
+      "plants": 30,
+      "actionsPerPlant": 160,
+      "medianBeforeBudgetRatio": 0.3754,
+      "medianBudgetRatio": 16.7409,
+      "rankedLegal": 30,
+      "beforeWinRate": 0.5708,
+      "afterWinRate": 1,
+      "averagePhantomGains": 43.6333,
+      "costsPerPlant": {
+        "leafCoin": 400,
+        "items": 80,
+        "geneCrystal": 0
+      },
+      "medianLevel": 6,
+      "medianTraitCount": 15
+    },
+    {
+      "profile": "skill",
+      "plants": 30,
+      "actionsPerPlant": 160,
+      "medianBeforeBudgetRatio": 0.5122,
+      "medianBudgetRatio": 5.9408,
+      "rankedLegal": 30,
+      "beforeWinRate": 0.5792,
+      "afterWinRate": 1,
+      "averagePhantomGains": 85.5667,
+      "costsPerPlant": {
+        "leafCoin": 640,
+        "items": 0,
+        "geneCrystal": 80
+      },
+      "medianLevel": 6,
+      "medianTraitCount": 22
+    }
+  ],
+  "mirrorBias": [
+    {
+      "tier": "seedling",
+      "battles": 120,
+      "aWins": 66,
+      "bWins": 52,
+      "draws": 2
+    },
+    {
+      "tier": "bloom",
+      "battles": 120,
+      "aWins": 62,
+      "bWins": 58,
+      "draws": 0
+    },
+    {
+      "tier": "ancient",
+      "battles": 120,
+      "aWins": 64,
+      "bWins": 56,
+      "draws": 0
+    }
+  ],
+  "matchupMatrix": [
+    {
+      "id": "tank_physical",
+      "opponents": [
+        {
+          "id": "tank_physical",
+          "winScore": 0.375,
+          "medianDuration": 28.3,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "burst_fast",
+          "winScore": 1,
+          "medianDuration": 8,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "sustain_heal",
+          "winScore": 0.9583,
+          "medianDuration": 34.1,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "control_lock",
+          "winScore": 0.6667,
+          "medianDuration": 20.4,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "tempo_onhit",
+          "winScore": 1,
+          "medianDuration": 8.3,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "counter_reflect",
+          "winScore": 0,
+          "medianDuration": 19.2,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        }
+      ]
+    },
+    {
+      "id": "burst_fast",
+      "opponents": [
+        {
+          "id": "tank_physical",
+          "winScore": 0,
+          "medianDuration": 8.05,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "burst_fast",
+          "winScore": 0.5,
+          "medianDuration": 4.45,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "sustain_heal",
+          "winScore": 0,
+          "medianDuration": 9.2,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "control_lock",
+          "winScore": 0,
+          "medianDuration": 6.1,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "tempo_onhit",
+          "winScore": 0.75,
+          "medianDuration": 5.7,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "counter_reflect",
+          "winScore": 0,
+          "medianDuration": 5.7,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        }
+      ]
+    },
+    {
+      "id": "sustain_heal",
+      "opponents": [
+        {
+          "id": "tank_physical",
+          "winScore": 0.0417,
+          "medianDuration": 31.8,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "burst_fast",
+          "winScore": 1,
+          "medianDuration": 9.2,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "sustain_heal",
+          "winScore": 0.4583,
+          "medianDuration": 44.35,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "control_lock",
+          "winScore": 0.3333,
+          "medianDuration": 21.75,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "tempo_onhit",
+          "winScore": 1,
+          "medianDuration": 11.75,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "counter_reflect",
+          "winScore": 0,
+          "medianDuration": 19.25,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        }
+      ]
+    },
+    {
+      "id": "control_lock",
+      "opponents": [
+        {
+          "id": "tank_physical",
+          "winScore": 0.2083,
+          "medianDuration": 20.15,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "burst_fast",
+          "winScore": 1,
+          "medianDuration": 6.2,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "sustain_heal",
+          "winScore": 0.5833,
+          "medianDuration": 21.75,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "control_lock",
+          "winScore": 0.5417,
+          "medianDuration": 13.7,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "tempo_onhit",
+          "winScore": 1,
+          "medianDuration": 6.85,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "counter_reflect",
+          "winScore": 0,
+          "medianDuration": 12,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        }
+      ]
+    },
+    {
+      "id": "tempo_onhit",
+      "opponents": [
+        {
+          "id": "tank_physical",
+          "winScore": 0,
+          "medianDuration": 8.15,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "burst_fast",
+          "winScore": 0.3333,
+          "medianDuration": 5.7,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "sustain_heal",
+          "winScore": 0.0417,
+          "medianDuration": 11.2,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "control_lock",
+          "winScore": 0,
+          "medianDuration": 7.1,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "tempo_onhit",
+          "winScore": 0.5833,
+          "medianDuration": 6.7,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "counter_reflect",
+          "winScore": 0,
+          "medianDuration": 6.65,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        }
+      ]
+    },
+    {
+      "id": "counter_reflect",
+      "opponents": [
+        {
+          "id": "tank_physical",
+          "winScore": 0.9167,
+          "medianDuration": 18.2,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "burst_fast",
+          "winScore": 1,
+          "medianDuration": 5.75,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "sustain_heal",
+          "winScore": 1,
+          "medianDuration": 19.65,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "control_lock",
+          "winScore": 0.9792,
+          "medianDuration": 12.85,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "tempo_onhit",
+          "winScore": 1,
+          "medianDuration": 6.5,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        },
+        {
+          "id": "counter_reflect",
+          "winScore": 0.6875,
+          "medianDuration": 13.7,
+          "medianFirstSkill": 0.1,
+          "noSkillBattles": 0
+        }
+      ]
+    }
+  ],
+  "defenseProbe": [
+    {
+      "factor": 1,
+      "defense": 51,
+      "buildValue": 191.01,
+      "winScore": 0.5063
+    },
+    {
+      "factor": 2,
+      "defense": 102,
+      "buildValue": 191.01,
+      "winScore": 0.9625
+    },
+    {
+      "factor": 4,
+      "defense": 204,
+      "buildValue": 191.01,
+      "winScore": 1
+    }
+  ],
+  "supportEnergyProbe": [
+    {
+      "cost": 0,
+      "samples": 120,
+      "winScore": 0.4833,
+      "battlesWithAnyCast": 120,
+      "medianFirstCast": 0.1
+    },
+    {
+      "cost": 18,
+      "samples": 120,
+      "winScore": 0.2167,
+      "battlesWithAnyCast": 120,
+      "medianFirstCast": 2.8
+    },
+    {
+      "cost": 26,
+      "samples": 120,
+      "winScore": 0,
+      "battlesWithAnyCast": 120,
+      "medianFirstCast": 4.4
+    }
+  ],
+  "catalogueCosts": [
+    {
+      "currency": "leafCoin",
+      "speciesCount": 4635,
+      "minPrice": 100,
+      "medianPrice": 3355,
+      "maxPrice": 7800,
+      "emberDaysAtDailyCap": null
+    },
+    {
+      "currency": "nectar",
+      "speciesCount": 3052,
+      "minPrice": 587,
+      "medianPrice": 2850.5,
+      "maxPrice": 5400,
+      "emberDaysAtDailyCap": null
+    },
+    {
+      "currency": "pollen",
+      "speciesCount": 3258,
+      "minPrice": 1590,
+      "medianPrice": 3971.5,
+      "maxPrice": 5600,
+      "emberDaysAtDailyCap": null
+    },
+    {
+      "currency": "ember",
+      "speciesCount": 1060,
+      "minPrice": 2669,
+      "medianPrice": 3670.5,
+      "maxPrice": 4200,
+      "emberDaysAtDailyCap": {
+        "cheapest": 890,
+        "median": 1224
+      }
+    }
+  ],
+  "economics": {
+    "parentSaleTotal": 242,
+    "fusionFee": 48,
+    "irreversibleOpportunityCost": 290,
+    "children": [
+      {
+        "target": "C",
+        "medianChildSell": 224
+      },
+      {
+        "target": "B",
+        "medianChildSell": 224
+      },
+      {
+        "target": "A",
+        "medianChildSell": 436
+      },
+      {
+        "target": "S",
+        "medianChildSell": 436
+      },
+      {
+        "target": "SS",
+        "medianChildSell": 997
+      },
+      {
+        "target": "SSS",
+        "medianChildSell": 997
+      }
+    ]
+  },
+  "identicalBuildEcr": {
+    "samples": [
+      0.24,
+      0.2,
+      0.2,
+      0.24,
+      0.33,
+      0.15,
+      0.24,
+      0.33,
+      0.2,
+      0.28,
+      0.28,
+      0.24
+    ],
+    "min": 0.15,
+    "max": 0.33
+  },
+  "speedPayoff": [
+    {
+      "speed": 20,
+      "interval": 1.866666666666667,
+      "attacksPerSecond": 0.5357
+    },
+    {
+      "speed": 40,
+      "interval": 1.5333333333333337,
+      "attacksPerSecond": 0.6522
+    },
+    {
+      "speed": 60,
+      "interval": 1.2000000000000002,
+      "attacksPerSecond": 0.8333
+    },
+    {
+      "speed": 80,
+      "interval": 0.8666666666666669,
+      "attacksPerSecond": 1.1538
+    },
+    {
+      "speed": 90,
+      "interval": 0.7000000000000002,
+      "attacksPerSecond": 1.4286
+    },
+    {
+      "speed": 100,
+      "interval": 0.5333333333333334,
+      "attacksPerSecond": 1.875
+    },
+    {
+      "speed": 110,
+      "interval": 0.5,
+      "attacksPerSecond": 2
+    }
+  ]
+}

@@ -1,0 +1,342 @@
+/* ==========================================================================
+   Liquid Glass foundation — tokens, materials, primitives.
+   Loaded AFTER styles.css so the layer can re-skin without editing the legacy
+   cascade in place. Every value below is additive: legacy tokens still drive
+   plant art, plots and battle scenes, which are "content", not "chrome".
+   ========================================================================== */
+
+:root {
+  /* Type scale (doc: 16 body / 14 secondary / 12 caption / 20 section / 24–28 title) */
+  --fs-caption: 12px;
+  --fs-secondary: 14px;
+  --fs-body: 16px;
+  --fs-section: 20px;
+  --fs-title: 26px;
+
+  /* Spacing scale 4-8-12-16-24-32-48 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-12: 48px;
+
+  /* Material: glass tint + blur + edge. One triplet, three places it can be
+     consumed — background, backdrop-filter, border — so a surface is either
+     fully glass or fully solid, never half of each. */
+  --glass-tint: rgba(255, 253, 243, 0.72);
+  --glass-tint-strong: rgba(255, 251, 231, 0.86);
+  --glass-edge: rgba(255, 255, 255, 0.55);
+  --glass-blur: 18px;
+  --glass-shadow: 0 12px 34px rgba(46, 74, 40, 0.16), 0 2px 8px rgba(46, 74, 40, 0.1);
+  --glass-edge-dark: rgba(38, 53, 29, 0.14);
+
+  /* Solid-mode surface: a real design, not a white fallback — warm parchment
+     like the cards, but opaque and with a stronger border for separation. */
+  --solid-tint: #fdf8e8;
+  --solid-edge: rgba(38, 53, 29, 0.2);
+
+  /* Motion timings from the masterplan. */
+  --dur-press: 70ms;
+  --dur-view: 190ms;
+  --dur-sheet: 270ms;
+}
+
+/* html[data-solid="1"] is set by prefs.applyGlass(). Turning transparency off
+   must not dim or flatten the world behind the chrome — only the chrome
+   itself goes opaque. */
+html[data-solid="1"] {
+  --glass-tint: var(--solid-tint);
+  --glass-tint-strong: var(--solid-tint);
+  --glass-edge: var(--solid-edge);
+  --glass-blur: 0px;
+  --glass-shadow: 0 10px 26px rgba(46, 74, 40, 0.2), 0 2px 6px rgba(46, 74, 40, 0.12);
+}
+
+/* ---------------------------------------------------------------- material */
+
+/* The one glass surface. Chrome floats on the world; the world never floats
+   on itself — so .glass is only applied to nav, header pills, toolbars,
+   sheets and overlays' own cards, never to a plot or a plant frame. */
+.glass {
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.25);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.25);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Strong variant for layers that sit above busy content (sheets, toasts). */
+.glass-strong {
+  background: var(--glass-tint-strong);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(1.3);
+  backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(1.3);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+}
+
+html[data-solid="1"] .glass,
+html[data-solid="1"] .glass-strong {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* -------------------------------------------------------------- primitives */
+
+.icn {
+  flex: none;
+  display: block;
+}
+
+/* IconButton: the 40px hit target every chrome glyph sits in. */
+.iconbtn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  transition:
+    background var(--dur-press) ease,
+    transform var(--dur-press) ease;
+  font-family: inherit;
+  padding: 0;
+}
+.iconbtn:hover {
+  background: rgba(38, 53, 29, 0.07);
+}
+.iconbtn:active {
+  transform: scale(0.92);
+  background: rgba(38, 53, 29, 0.1);
+}
+.iconbtn:focus-visible {
+  outline: 2px solid var(--accent-fill);
+  outline-offset: 2px;
+}
+.iconbtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.iconbtn.on {
+  background: rgba(47, 159, 98, 0.16);
+  color: var(--accent);
+}
+
+/* Segmented control: one-of-N choice. Reuses the battle stance rhythm but as
+   a glass pill so it can live in headers and toolbars, not only in cards. */
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 14px;
+  background: rgba(38, 53, 29, 0.08);
+  border: 1px solid var(--glass-edge-dark);
+}
+html[data-solid="1"] .seg {
+  background: #efe6cb;
+}
+.seg > button {
+  flex: 1 1 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: var(--fs-secondary);
+  font-weight: 700;
+  padding: 8px 10px;
+  border-radius: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition:
+    background var(--dur-view) var(--ease),
+    color var(--dur-view) var(--ease);
+}
+.seg > button:hover {
+  color: var(--text);
+}
+.seg > button.on {
+  background: var(--glass-tint-strong);
+  color: var(--accent);
+  box-shadow: 0 2px 8px rgba(46, 74, 40, 0.14);
+}
+html[data-solid="1"] .seg > button.on {
+  background: #fff;
+}
+.seg > button:focus-visible {
+  outline: 2px solid var(--accent-fill);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------------- sheet
+   Shared behaviour for every bottom sheet / dialog going forward: Escape,
+   overlay click and focus return are wired in ui/sheet.ts — the CSS only owns
+   the look and the travel. */
+.sheet {
+  background: var(--glass-tint-strong);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(1.3);
+  backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(1.3);
+}
+html[data-solid="1"] .sheet {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--solid-tint);
+}
+
+/* --------------------------------------------------------------------- nav
+   Five tabs instead of seven. Arena, ascent and leaderboard share the "Đấu"
+   tab through the combat hub; the routes themselves are untouched, so deep
+   links and tests keep working — the nav just lights the same tab for all
+   three. */
+.navitem .ico {
+  filter: none;
+}
+.navitem {
+  color: var(--muted);
+}
+.navitem.active {
+  color: var(--accent);
+}
+
+/* The dock itself floats over the world instead of being a solid footer
+   strip: rounded, inset, glass. */
+.bottomnav {
+  left: 10px;
+  right: 10px;
+  bottom: calc(env(safe-area-inset-bottom) + 8px);
+  border-radius: 20px;
+  border: 1px solid var(--glass-edge);
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.25);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.25);
+  box-shadow: var(--glass-shadow);
+  padding: 6px;
+  gap: 4px;
+}
+html[data-solid="1"] .bottomnav {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.navitem {
+  border-radius: 14px;
+  padding: 7px 2px;
+}
+.navitem.active {
+  background: rgba(47, 159, 98, 0.15);
+}
+
+/* The screen scrolls under the floating dock, so its content needs room to
+   clear it — a hair more than before since the dock now floats. */
+.screen {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 96px);
+}
+
+/* Combat hub segmented row sits at the top of arena/ascent/leaderboard. */
+.combat-hub {
+  display: grid;
+  gap: 10px;
+}
+.combat-hub > .seg {
+  margin: 2px 2px 0;
+}
+/* A live fight owns the screen — the sub-nav must not compete with the HUD or
+   offer a mid-swing route change. */
+.combat-hub:has(.battlefield) > .seg {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ header
+   The topbar keeps its layout but goes glass; the identity block and pills
+   become quiet chrome over the world. */
+.topbar {
+  background: var(--glass-tint);
+  border-bottom: 1px solid var(--glass-edge-dark);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+}
+html[data-solid="1"] .topbar {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--solid-tint);
+}
+
+/* ------------------------------------------------------------------ desktop
+   Rail navigation on the left at ≥1024px: the dock leaves the bottom and
+   becomes a vertical rail of five destinations. Content shifts right. */
+@media (min-width: 1024px) {
+  .bottomnav {
+    top: auto;
+    bottom: auto;
+    left: 0;
+    right: 0;
+    position: absolute;
+    display: grid;
+    grid-template-columns: repeat(var(--tab-count, 5), minmax(0, auto));
+    justify-content: center;
+    gap: 8px;
+    padding: 6px;
+    border-radius: 20px;
+    /* Float the dock over the bottom edge of the shell, centred. A left rail
+       would cost the screen a permanent column on a game that is already
+       landscape; a floating dock keeps the desktop frame intact. */
+    top: auto;
+    bottom: 12px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: auto;
+  }
+  .navitem {
+    flex-direction: row;
+    gap: 8px;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .navitem .icn {
+    width: 19px;
+    height: 19px;
+  }
+}
+
+/* ------------------------------------------------------------- reduced motion
+   Player-level reduce already exists via prefs; the glass layer adds nothing
+   animated itself except view transitions the legacy rules already gate. */
+/*
+ * Solid mode is global, not per-component: `prefers-reduced-transparency`
+ * means *no* layer may blur what sits under it, so the media answer applies
+ * to every chrome surface at once. Opaque parchment replaces the tint so the
+ * separation the blur was doing is still done — by the border and shadow.
+ */
+html[data-solid="1"] .qadock,
+html[data-solid="1"] .toast,
+html[data-solid="1"] .notice,
+html[data-solid="1"] .battle-paused,
+html[data-solid="1"] .levelup,
+html[data-solid="1"] .stageoverlay {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--solid-tint);
+}
+html[data-solid="1"] .overlay {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  /* The scrim keeps its job in solid mode: dim the world, don't blur it. */
+  background: rgba(26, 38, 18, 0.4);
+}
+/* A translucent veil over the battlefield would smear the sprites under it;
+   in solid mode it becomes a flat dim instead. */
+html[data-solid="1"] .fight-live .overlay,
+html[data-solid="1"] .stagelive {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

@@ -188,6 +188,72 @@ export function defaultVolume(): number {
   return systemPrefersReduced() ? 0.45 : 0.75;
 }
 
+/* ----------------------------------------------------------------- transparency */
+/*
+ * Reduced transparency is a separate axis from reduced motion: a player can
+ * want blur-free solid surfaces without wanting every animation gone (visual
+ * processing, low-end GPU, battery), or the reverse. The system media query
+ * `prefers-reduced-transparency` exists but only Safari honours it — so the
+ * player's explicit choice is the primary signal and the OS is a `system`
+ * fallback, exactly like motion.
+ */
+export type GlassPref = "system" | "glass" | "solid";
+const GLASS_KEY = "nongtrai.glass";
+
+let glass: GlassPref = "system";
+
+(function loadGlass() {
+  const raw = read(GLASS_KEY);
+  if (raw === "glass" || raw === "solid" || raw === "system") glass = raw;
+})();
+
+export function glassPref(): GlassPref {
+  return glass;
+}
+
+export function setGlassPref(next: GlassPref): void {
+  glass = next;
+  write(GLASS_KEY, next);
+  applyGlass();
+}
+
+function systemPrefersOpaque(): boolean {
+  return (
+    typeof matchMedia === "function" &&
+    matchMedia("(prefers-reduced-transparency: reduce)").matches
+  );
+}
+
+/** True when surfaces should render solid (no translucency, no backdrop blur). */
+export function reduceTransparency(): boolean {
+  if (glass === "solid") return true;
+  if (glass === "glass") return false;
+  return systemPrefersOpaque();
+}
+
+/**
+ * Publish the resolved mode on `<html data-solid>` so the stylesheet reads one
+ * attribute instead of every consumer re-running the media query. Called at
+ * boot and whenever the preference changes.
+ */
+export function applyGlass(): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.solid = reduceTransparency() ? "1" : "0";
+}
+
+/** Follow the OS transparency query while the pref is `system`. */
+export function watchSystemTransparency(onChange: () => void): () => void {
+  if (typeof matchMedia !== "function") return () => {};
+  const q = matchMedia("(prefers-reduced-transparency: reduce)");
+  const handler = (): void => onChange();
+  if (typeof q.addEventListener === "function") {
+    q.addEventListener("change", handler);
+    return () => q.removeEventListener("change", handler);
+  }
+  q.addListener(handler);
+  return () => q.removeListener(handler);
+}
+
 /* -------------------------------------------------------------------- hints */
 /*
  * One-shot UI hints ("you can pause with Space") earn their pixels only until

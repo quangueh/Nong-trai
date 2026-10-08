@@ -8,6 +8,9 @@ import "./ui/fx/stageOverlay.css";
 // Garden feel: watering, stage pops, unlock veils and reward flights. Own file
 // for the same reason as the level-up celebration — it is animation, not layout.
 import "./ui/fx/gardenFx.css";
+// Liquid Glass foundation — loaded last so its tokens re-skin the legacy layer
+// without edits in the middle of styles.css's cascade.
+import "./styles/liquid.css";
 import { boot } from "./ui/app";
 import { sfx } from "./audio/audio";
 import { music } from "./audio/music";

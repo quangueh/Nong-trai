@@ -381,26 +381,77 @@ function focusFirstIn(root: HTMLElement): void {
  * is, dead entries are popped lazily by the isConnected check, and the topmost
  * overlay — not the earliest-registered — is the one that closes.
  */
-const escapeStack: { root: HTMLElement; close: () => void }[] = [];
+const escapeStack: { root: HTMLElement; close: () => void; returnFocus: HTMLElement | null }[] = [];
 let escapeBound = false;
 
-function onEscapeKey(e: KeyboardEvent): void {
-  if (e.key !== "Escape") return;
-  while (escapeStack.length && !escapeStack[escapeStack.length - 1].root.isConnected) escapeStack.pop();
-  const top = escapeStack.pop();
-  if (!top) return;
-  /* Escape consumed by a modal must not fall through to the game underneath —
-     battle pause, tool disarm, or a second overlay closing at once. */
-  e.stopPropagation();
-  top.close();
+/*
+ * Give the opener its focus back when the modal it opened goes away — whether
+ * the dismissal was Escape, the scrim, or the sheet's own X. A keyboard user
+ * whose focus vanished into a detached node is left at document top, three
+ * dozen Tab presses from where they were.
+ */
+function restoreFocus(entry: { returnFocus: HTMLElement | null }): void {
+  const back = entry.returnFocus;
+  if (back?.isConnected) back.focus({ preventScroll: true });
 }
 
-/** Focus `root`'s first control on mount and run `close` on Escape while it lives. */
+/**
+ * Keep Tab inside the topmost sheet: cycle first↔last, and pull focus in when
+ * it is parked outside (on `body`, say). Focusable means rendered — a button
+ * in a `display:none` branch is not a stop, so the check is layout, not markup.
+ */
+function trapTab(e: KeyboardEvent, root: HTMLElement): void {
+  const items = [...root.querySelectorAll<HTMLElement>(
+    "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])",
+  )].filter((n) => n.getClientRects().length > 0);
+  if (!items.length) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const i = items.indexOf(document.activeElement as HTMLElement);
+  const next =
+    i < 0
+      ? items[0]
+      : e.shiftKey
+        ? items[(i - 1 + items.length) % items.length]
+        : items[(i + 1) % items.length];
+  next.focus({ preventScroll: true });
+}
+
+function onModalKey(e: KeyboardEvent): void {
+  while (escapeStack.length && !escapeStack[escapeStack.length - 1].root.isConnected) {
+    restoreFocus(escapeStack.pop()!);
+  }
+  if (e.key === "Escape") {
+    const top = escapeStack.pop();
+    if (!top) return;
+    /* Escape consumed by a modal must not fall through to the game underneath —
+       battle pause, tool disarm, or a second overlay closing at once. */
+    e.stopPropagation();
+    top.close();
+    restoreFocus(top);
+    return;
+  }
+  const top = escapeStack[escapeStack.length - 1];
+  if (top && e.key === "Tab") trapTab(e, top.root);
+}
+
+/**
+ * Focus `root`'s first control on mount, run `close` on Escape, keep Tab
+ * inside, and return focus to whatever opened it. The element the player was
+ * on is captured here — by the time `close` runs, `activeElement` is already
+ * inside the sheet being closed.
+ */
 export function dismissOnEscape(root: HTMLElement, close: () => void): void {
+  const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  /* Every sheet that can be dismissed this way is a modal dialog as far as a
+     screen reader is concerned — set it once here rather than in each of the
+     forty places a sheet is built. */
+  if (!root.hasAttribute("role")) root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
   focusFirstIn(root);
-  escapeStack.push({ root, close });
+  escapeStack.push({ root, close, returnFocus });
   if (!escapeBound) {
-    document.addEventListener("keydown", onEscapeKey, true);
+    document.addEventListener("keydown", onModalKey, true);
     escapeBound = true;
   }
 }

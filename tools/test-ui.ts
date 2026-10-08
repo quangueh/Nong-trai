@@ -90,10 +90,11 @@ const { store, navigate } = await import("../src/ui/app");
 section("0. Boot");
 await render("app boots", () => boot(w.document.getElementById("app")!));
 check("shell is created", !!$(".shell"));
-/* Seven, since the leaderboard joined the nav - and checked against the nav's own column
-   count rather than a second literal, because a check that repeats the number it is
-   checking only catches someone forgetting to update it, not someone breaking the layout. */
-check("bottom nav has 7 tabs", $$(".navitem").length === 7, `${$$(".navitem").length}`);
+/* Five tabs: arena, ascent and leaderboard share the "Đấu" tab and split inside
+   the combat hub. Checked against the nav's own column count rather than a
+   second literal, because a check that repeats the number it is checking only
+   catches someone forgetting to update it, not someone breaking the layout. */
+check("bottom nav has 5 tabs", $$(".navitem").length === 5, `${$$(".navitem").length}`);
 check(
   "and the nav is sized for as many columns as it has tabs",
   $$(".bottomnav .navitem").length === Number($(".bottomnav")?.style.getPropertyValue("--tab-count") || 0),
@@ -110,9 +111,19 @@ check("topbar shows currency", ($(".topbar")?.textContent ?? "").includes("1."))
 // and not a floating button that can end up outside the centred shell.
 check("the leaderboard is not pinned in the rail", !$(".side-panel.right .lb-panel"));
 check("no floating 🏆 button anywhere", !$(".lb-fab"));
-check("the 🏆 tab is in the bottom nav", !!$('.bottomnav .navitem[data-screen="leaderboard"]'));
+/* The leaderboard moved into the combat hub: the dock tab is "Đấu" and the
+   board is one segment inside it, reachable by the same route as before. */
+check("the Đấu tab is in the bottom nav", !!$('.bottomnav .navitem[data-screen="arena"]'));
 check("no board is mounted until the tab is opened", !$(".lb-panel"));
 await render("leaderboard tab opens", () => navigate("leaderboard"));
+check("the combat hub shows the board segment", !!$(".screen .combat-hub .seg"));
+check(
+  "the board segment is the selected one",
+  ($$(".screen .combat-hub .seg button").find((b) => b.classList.contains("on"))?.textContent ?? "").includes(
+    "Xếp hạng",
+  ),
+);
+check("the Đấu dock tab is lit for the board", !!$('.bottomnav .navitem[data-screen="arena"].active'));
 check("the board is the screen", !!$(".screen .lb-panel"));
 check("leaderboard shows the power board", ($(".screen .lb-panel")?.textContent ?? "").includes("Sức mạnh"));
 check("leaderboard shows the level board", ($(".screen .lb-panel")?.textContent ?? "").includes("Cấp nhà lai tạo"));
