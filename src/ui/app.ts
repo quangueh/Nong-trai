@@ -14,11 +14,13 @@ import { sfx } from "../audio/audio";
 import { music, type MusicMood } from "../audio/music";
 import {
   accountStatus,
+  guestChoiceOffered,
   initAccount,
   isSignedIn,
   onAccountStatus,
   push,
   pull,
+  resolveGuestChoice,
   signIn,
   signInWithGoogle,
   signOut,
@@ -1024,7 +1026,7 @@ export function boot(root: HTMLElement) {
        * module means the test exercises the same code the panel does rather than a
        * reimplementation of it, which would agree with itself forever.
        */
-      sync: { signInWithGoogle, signIn, signUp, pull, push },
+      sync: { signInWithGoogle, signIn, signUp, pull, push, resolveGuestChoice, guestChoiceOffered, accountStatus },
       /**
        * The experience-gain animation, for tests.
        *

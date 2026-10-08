@@ -37,7 +37,7 @@ import {
 } from "./api";
 import { forgetSessionKind, rememberSessionKind, type SessionKind } from "./kind";
 import { forgetSignIn, rememberSignIn } from "./stamp";
-import { setActiveAccountId } from "../core/saveSlot";
+import { getActiveAccountId, setActiveAccountId } from "../core/saveSlot";
 import { DEFAULT_PLAYER_NAME } from "../core/types";
 
 const TOKEN_KEY = "nong-trai-account-token";
@@ -97,6 +97,17 @@ let status: AccountStatus = {
 let token: string | null = null;
 let bridge: SaveBridge | null = null;
 let autoTimer: number | null = null;
+
+/**
+ * A guest garden waiting on a player's decision.
+ *
+ * Set when a sign-in finds the anonymous slot had grown past what the account's
+ * cloud copy holds — a real fork that nobody should resolve by guessing. The
+ * conflict strip offers the choice; `resolveGuestChoice` is the only resolver. A
+ * new sign-in clears whatever the previous one left undecided, because the
+ * snapshot belongs to the moment it was taken.
+ */
+let pendingGuest: { state: unknown; savedAt: number } | null = null;
 
 /**
  * Whether this device has successfully asked the server what it holds, at least once, for
@@ -218,7 +229,75 @@ export async function signUp(email: string, password: string, name?: string): Pr
   await signIn(email, password, name);
 }
 
+/**
+ * The garden on screen right now — but only when it is the anonymous one.
+ *
+ * Read *before* `adoptSession` switches the slot: afterwards `bridge.read()`
+ * returns the account's own slot, and the garden the player was growing survives
+ * only on disk, not in memory. Already-signed-in returns null too: the current
+ * save belongs to an account, and carrying it into a second account is how one
+ * player's garden leaks into another's.
+ */
+function guestSnapshot(): { state: unknown; savedAt: number } | null {
+  if (!bridge || getActiveAccountId() !== null) return null;
+  const { state, savedAt } = bridge.read();
+  return { state, savedAt };
+}
+
+/**
+ * Whether a guest garden is worth offering back to the player.
+ *
+ * A guest slot exists the moment the game boots — `loadOrCreate` persists a fresh
+ * garden there — so "a save exists" is not the test. Something must have happened
+ * in it: a second plant, a fight, a breed, experience, or a coin purse that is no
+ * longer the starting one. Without this, opening the game and signing straight in
+ * would raise a "which garden?" prompt over a garden indistinguishable from none.
+ */
+function gardenStarted(state: unknown): boolean {
+  const s = state as {
+    plants?: unknown[];
+    lifetimeExp?: number;
+    leafCoin?: number;
+    discovery?: { battles?: number; breeds?: number };
+  } | null;
+  if (!s || typeof s !== "object") return false;
+  return (
+    (Array.isArray(s.plants) ? s.plants.length : 0) > 1 ||
+    (Number(s.lifetimeExp) || 0) > 0 ||
+    (Number(s.leafCoin) || 0) !== 1200 ||
+    (Number(s.discovery?.battles) || 0) > 0 ||
+    (Number(s.discovery?.breeds) || 0) > 0
+  );
+}
+
+/** Whether the conflict currently on the strip is the guest-vs-account one. */
+export function guestChoiceOffered(): boolean {
+  return pendingGuest !== null;
+}
+
+/**
+ * Resolve the guest-vs-account fork.
+ *
+ * `true` writes the guest garden into the account's slot and pushes it — its
+ * timestamp is newer than the cloud's, which is exactly why the choice was
+ * offered, so the server takes it. `false` leaves whatever is already loaded,
+ * which is the account's own save in both reachable branches.
+ */
+export async function resolveGuestChoice(keepGuest: boolean): Promise<void> {
+  if (!pendingGuest) return;
+  const g = pendingGuest;
+  pendingGuest = null;
+  if (keepGuest && bridge) {
+    bridge.write(g.state, g.savedAt);
+    emit({ state: "synced", message: "Đã giữ vườn chơi không đăng nhập.", lastSyncedAt: Date.now(), serverWasNewer: false });
+    await push();
+    return;
+  }
+  emit({ state: "synced", message: "Đã dùng vườn trên tài khoản.", lastSyncedAt: Date.now(), serverWasNewer: false });
+}
+
 export async function signIn(email: string, password: string, preferredName?: string): Promise<void> {
+  const guest = guestSnapshot();
   const session: AccountSession = await apiLogin(email, password);
   adoptSession(session.token, email, session.playerId);
   // Bounded for the same reason as the Google path: a slow Worker must not be able to
@@ -230,8 +309,10 @@ export async function signIn(email: string, password: string, preferredName?: st
       (state as { name?: string }).name = name;
       adoptedInPull = true;
     }
-  }));
-  if (adoptedInPull || adoptInGameName(email, preferredName)) void push();
+  }, guest));
+  // A pending guest fork must keep its `conflict` state — a push here would end
+  // with "synced" and hide the choice the player still has to make.
+  if (!pendingGuest && (adoptedInPull || adoptInGameName(email, preferredName))) void push();
 }
 
 /**
@@ -319,6 +400,9 @@ function adoptSession(newToken: string, email: string, playerId: string, kind: S
   // through forever, which is precisely what the grace period is meant to bound.
   rememberSignIn();
   emit({ email, state: "idle", message: "Đã đăng nhập." });
+  // A stale undecided guest fork from an earlier session does not belong to this
+  // one — the snapshot was of a different moment's garden.
+  pendingGuest = null;
   startAuto();
 }
 
@@ -369,6 +453,7 @@ async function settleWithin(ms: number, work: Promise<unknown>): Promise<boolean
  * player rather than in front of them.
  */
 export async function signInWithGoogle(idToken: string): Promise<{ created: boolean; email: string }> {
+  const guest = guestSnapshot();
   const session = await apiGoogleSignIn(idToken);
   const email = session.email ?? session.name ?? "Google";
   adoptSession(session.token, email, session.playerId, "google");
@@ -379,10 +464,11 @@ export async function signInWithGoogle(idToken: string): Promise<{ created: bool
       (state as { name?: string }).name = name;
       adoptedInPull = true;
     }
-  }));
+  }, guest));
   // A Google account names itself after the address it signed in with — the same
-  // handle the friends list searches by — until the player picks a real one.
-  if (adoptedInPull || adoptInGameName(email)) void push();
+  // handle the friends list searches by — until the player picks a real one. Not
+  // while a guest fork is undecided: a push would stamp "synced" over the choice.
+  if (!pendingGuest && (adoptedInPull || adoptInGameName(email))) void push();
   return { created: session.created, email: session.email ?? "" };
 }
 
@@ -417,6 +503,7 @@ export function signOut(): Promise<void> {
   const teardown = (): void => {
     token = null;
     cloudRead = false;
+    pendingGuest = null;
     stopAuto();
     try {
       localStorage.removeItem(TOKEN_KEY);
@@ -504,8 +591,13 @@ export function currentToken(): string | null {
  * pulled save and this device's for a local one. So they decide, in both directions: an older
  * local slot is replaced by the cloud, and a newer one is kept and pushed up.
  */
-export async function pull(adoptState?: (state: unknown) => void): Promise<void> {
+export async function pull(
+  adoptState?: (state: unknown) => void,
+  guest?: { state: unknown; savedAt: number } | null,
+): Promise<void> {
   if (!token || !bridge) return;
+  // A new pull re-asks the question, so a fork offered by the previous one is void.
+  pendingGuest = null;
   emit({ state: "syncing", message: "Đang tải vườn từ tài khoản…" });
 
   try {
@@ -514,8 +606,19 @@ export async function pull(adoptState?: (state: unknown) => void): Promise<void>
     // what authorises a later push. See `cloudRead`.
     cloudRead = true;
     if (!remote) {
-      // First run on this account: push the local garden up rather than leaving
-      // the account empty and pretending the player has nothing.
+      /*
+       * First run on this account: push the garden the player was actually growing.
+       *
+       * The slot switch already loaded the account's own slot — empty, so a fresh
+       * garden — and pushing *that* would leave the guest's progress orphaned in the
+       * anonymous slot while the account fills up with a level-1 garden. The guest
+       * snapshot goes into the slot first so the push sends their garden, and the
+       * name fix is folded in before the write so the one push carries it.
+       */
+      if (guest) {
+        adoptState?.(guest.state);
+        bridge.write(guest.state, guest.savedAt);
+      }
       emit({ state: "idle", message: "Tài khoản mới — đang lưu vườn hiện tại lên." });
       await push();
       return;
@@ -523,6 +626,14 @@ export async function pull(adoptState?: (state: unknown) => void): Promise<void>
 
     const local = bridge.read();
     const localAt = Number(local.savedAt) || 0;
+
+    /*
+     * A guest garden newer than the account's cloud copy is a real fork: the player
+     * grew something while signed out, and whichever side wins, the other side's
+     * work is gone from view. Offered rather than decided silently — but only when
+     * the garden is more than the fresh one every boot plants (see `gardenStarted`).
+     */
+    const guestIsNewerWork = !!guest && gardenStarted(guest.state) && guest.savedAt > remote.savedAt;
 
     /*
      * Local is newer or the same age: keep it, and send it up.
@@ -534,23 +645,31 @@ export async function pull(adoptState?: (state: unknown) => void): Promise<void>
     if (remote.savedAt <= localAt) {
       emit({ state: "synced", message: "Vườn trên máy này là bản mới nhất.", lastSyncedAt: Date.now(), serverWasNewer: false });
       await push();
-      return;
+    } else {
+      /*
+       * `adoptState` folds an identity fix — the in-game name — into the remote copy
+       * before it is written, rather than committing one on top. A commit would
+       * re-stamp `savedAt` with this machine's clock and the adopted save would
+       * forever look newer than the cloud it came from.
+       */
+      adoptState?.(remote.state);
+      bridge.write(remote.state, remote.savedAt);
+      emit({
+        state: "synced",
+        message: "Đã nạp vườn từ tài khoản.",
+        lastSyncedAt: Date.now(),
+        serverWasNewer: false,
+      });
     }
 
-    /*
-     * `adoptState` folds an identity fix — the in-game name — into the remote copy
-     * before it is written, rather than committing one on top. A commit would
-     * re-stamp `savedAt` with this machine's clock and the adopted save would
-     * forever look newer than the cloud it came from.
-     */
-    adoptState?.(remote.state);
-    bridge.write(remote.state, remote.savedAt);
-    emit({
-      state: "synced",
-      message: "Đã nạp vườn từ tài khoản.",
-      lastSyncedAt: Date.now(),
-      serverWasNewer: false,
-    });
+    if (guestIsNewerWork) {
+      pendingGuest = guest;
+      emit({
+        state: "conflict",
+        message: "Vườn chơi không đăng nhập trên máy này mới hơn bản trên tài khoản — chọn bản muốn giữ.",
+        serverWasNewer: true,
+      });
+    }
   } catch (err) {
     report(err, "Không tải được vườn từ tài khoản.");
   }
@@ -611,6 +730,7 @@ export async function push(): Promise<void> {
 /** Resolve a conflict by taking the server's copy. */
 export async function takeServer(): Promise<void> {
   if (!token || !bridge) return;
+  pendingGuest = null;
   try {
     const remote = await fetchSave(token);
     if (!remote) return;
@@ -624,6 +744,7 @@ export async function takeServer(): Promise<void> {
 /** Overwrite the server with this device's copy. */
 export async function keepLocal(): Promise<void> {
   if (!token || !bridge) return;
+  pendingGuest = null;
   try {
     const { state, savedAt } = bridge.read();
     // Nudged a millisecond past whatever the server holds, so last-write-wins

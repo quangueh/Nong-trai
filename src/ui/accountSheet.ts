@@ -9,11 +9,13 @@ import { AccountError, accountServiceAvailable } from "../account/api";
 import { sessionKind } from "../account/kind";
 import {
   accountStatus,
+  guestChoiceOffered,
   isSignedIn,
   keepLocal,
   onAccountStatus,
   pull,
   push,
+  resolveGuestChoice,
   signOut,
   takeServer,
   updateName,
@@ -149,11 +151,22 @@ function syncStrip(status: AccountStatus): HTMLElement {
   // has to learn to ignore.
   if (status.state === "conflict") {
     const row = el("div", { class: "account-row" });
-    const theirs = el("button", { class: "btn xs" }, ["Dùng bản máy chủ"]);
-    theirs.addEventListener("click", () => void takeServer());
-    const mine = el("button", { class: "btn xs primary" }, ["Giữ bản máy này"]);
-    mine.addEventListener("click", () => void keepLocal());
-    row.append(theirs, mine);
+    if (guestChoiceOffered()) {
+      // The fork is guest-vs-account, not device-vs-server: what is on screen is
+      // the account's copy, and the alternative is the garden played anonymously
+      // before sign-in. Different choice, different buttons.
+      const acct = el("button", { class: "btn xs" }, ["Dùng vườn tài khoản"]);
+      acct.addEventListener("click", () => void resolveGuestChoice(false));
+      const guest = el("button", { class: "btn xs primary" }, ["Giữ vườn ẩn danh"]);
+      guest.addEventListener("click", () => void resolveGuestChoice(true));
+      row.append(acct, guest);
+    } else {
+      const theirs = el("button", { class: "btn xs" }, ["Dùng bản máy chủ"]);
+      theirs.addEventListener("click", () => void takeServer());
+      const mine = el("button", { class: "btn xs primary" }, ["Giữ bản máy này"]);
+      mine.addEventListener("click", () => void keepLocal());
+      row.append(theirs, mine);
+    }
     strip.appendChild(row);
   }
   return strip;

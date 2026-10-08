@@ -170,6 +170,10 @@ const browser = await chromium.launch();
     const cloud = JSON.parse(JSON.stringify(s.exportState()));
     cloud.leafCoin = 4242;
     cloud.plants[0].name = "Cay Tren May";
+    /* A seed-stage plant grows up ~15s in — the growth tick commits and re-stamps
+       savedAt, which this suite's exact-timestamp checks read as a local-clock
+       overwrite. A mature plant never ticks, keeping the stamp deterministic. */
+    cloud.plants[0].growth.stage = "mature";
     (window).__worker.setCloud({ state: cloud, savedAt: 1700000000000 });
   })()`);
 
@@ -374,6 +378,140 @@ const browser = await chromium.launch();
   if (errs.length) console.log(`\npage errors:\n  ${errs.join("\n  ")}`);
   check("no page errors", errs.length === 0, errs.join(" | "));
 
+  await ctx.close();
+}
+
+/* --- 7. a guest who connects Google keeps the garden they were playing ------
+ *
+ * The reported gap: play without an account, then link Google. The slot switch
+ * used to load the account's empty slot — a fresh garden — and push *that* up,
+ * leaving the guest's work stranded in the anonymous slot. Now the guest
+ * snapshot is captured before the switch and carried up when the account has
+ * nothing of its own.
+ */
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 900 } });
+  await ctx.addInitScript(WORKER_STUB);
+  const page = await ctx.newPage();
+  const errs: string[] = [];
+  page.on("pageerror", (e: Error) => errs.push(String(e).slice(0, 200)));
+  await page.goto(URL, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
+  await page.waitForTimeout(700);
+
+  console.log("\n7. guest garden carried into a brand-new account");
+
+  // Play as a guest first — a marker the account and the cloud must both show.
+  await page.evaluate(`(() => {
+    const s = (window).__game.store;
+    s.state.leafCoin = 8888;
+    s.state.plants[0].name = "Cay Khach";
+    s.commit("test");
+  })()`);
+
+  await signInWithToken(page, "ya29.guest-token");
+  await page.waitForTimeout(2500);
+
+  const res = (await page.evaluate(`(() => {
+    const s = (window).__game.store;
+    const c = (window).__worker.getCloud();
+    return {
+      coins: s.state.leafCoin,
+      name: s.state.plants[0]?.name,
+      cloudCoins: c && c.state && c.state.leafCoin,
+      cloudName: c && c.state && c.state.plants && c.state.plants[0] && c.state.plants[0].name,
+      active: localStorage.getItem("nong-trai-active-account"),
+      gate: Boolean(document.querySelector(".gate-overlay")),
+    };
+  })()`)) as Record<string, unknown>;
+  console.log(`  ${JSON.stringify(res)}`);
+  check("the player keeps the garden they were playing", res.coins === 8888 && res.name === "Cay Khach", JSON.stringify(res));
+  check(
+    "and it went up to the account — not a fresh garden",
+    res.cloudCoins === 8888 && res.cloudName === "Cay Khach",
+    `cloud=${res.cloudCoins}/${res.cloudName}`,
+  );
+  check("the save slot is the account's", res.active === "pl_seed", String(res.active));
+  check("the gate came down", res.gate === false);
+  if (errs.length) console.log(`  page errors: ${errs.join(" | ")}`);
+  check("no page errors", errs.length === 0, errs.join(" | "));
+  await ctx.close();
+}
+
+/* --- 8. guest newer than the account's cloud save — a choice, not a guess ---
+ *
+ * When both sides hold real work, sync must not silently pick: the guest garden
+ * is shown as a conflict the player resolves from the account sheet.
+ */
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 900 } });
+  await ctx.addInitScript(WORKER_STUB);
+  const page = await ctx.newPage();
+  const errs: string[] = [];
+  page.on("pageerror", (e: Error) => errs.push(String(e).slice(0, 200)));
+  await page.goto(URL, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
+  await page.waitForTimeout(700);
+
+  console.log("\n8. guest newer than the cloud save — offered, not decided");
+
+  // The account's older garden, labelled; its stamp is old on purpose.
+  await page.evaluate(`(() => {
+    const s = (window).__game.store;
+    const cloud = JSON.parse(JSON.stringify(s.exportState()));
+    cloud.leafCoin = 4242;
+    cloud.plants[0].name = "Cay Tai Khoan";
+    cloud.plants[0].growth.stage = "mature"; // a seed would grow mid-test and re-stamp the slot
+    (window).__worker.setCloud({ state: cloud, savedAt: 1700000000000 });
+  })()`);
+
+  // Then play as a guest — stamped now, so newer than the cloud copy.
+  await page.evaluate(`(() => {
+    const s = (window).__game.store;
+    s.state.leafCoin = 9991;
+    s.state.plants[0].name = "Cay Guest Moi";
+    s.commit("test");
+  })()`);
+
+  await signInWithToken(page, "ya29.fork-token");
+  await page.waitForTimeout(2500);
+
+  const fork = (await page.evaluate(`(() => {
+    const s = (window).__game.store;
+    const m = (window).__game.sync;
+    return {
+      coins: s.state.leafCoin,
+      name: s.state.plants[0]?.name,
+      state: m.accountStatus().state,
+      offered: m.guestChoiceOffered(),
+    };
+  })()`)) as Record<string, unknown>;
+  console.log(`  ${JSON.stringify(fork)}`);
+  check("the account's garden is on screen meanwhile", fork.coins === 4242, `${fork.coins}`);
+  check("and the fork is raised as a conflict", fork.state === "conflict", String(fork.state));
+  check("with the guest choice offered", fork.offered === true);
+
+  // Choose the guest garden: it is the newer work.
+  await page.evaluate(`(async () => { await (window).__game.sync.resolveGuestChoice(true); })()`);
+  await page.waitForTimeout(1200);
+
+  const kept = (await page.evaluate(`(() => {
+    const s = (window).__game.store;
+    const c = (window).__worker.getCloud();
+    return {
+      coins: s.state.leafCoin,
+      name: s.state.plants[0]?.name,
+      cloudCoins: c && c.state && c.state.leafCoin,
+      state: (window).__game.sync.accountStatus().state,
+      offered: (window).__game.sync.guestChoiceOffered(),
+    };
+  })()`)) as Record<string, unknown>;
+  console.log(`  ${JSON.stringify(kept)}`);
+  check("choosing the guest garden loads it", kept.coins === 9991 && kept.name === "Cay Guest Moi", JSON.stringify(kept));
+  check("and pushes it over the older cloud copy", kept.cloudCoins === 9991, `${kept.cloudCoins}`);
+  check("the choice is consumed", kept.offered === false && kept.state === "synced", `${kept.state} offered=${kept.offered}`);
+  if (errs.length) console.log(`  page errors: ${errs.join(" | ")}`);
+  check("no page errors", errs.length === 0, errs.join(" | "));
   await ctx.close();
 }
 
