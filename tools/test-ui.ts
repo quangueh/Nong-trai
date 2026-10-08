@@ -90,10 +90,10 @@ const { store, navigate } = await import("../src/ui/app");
 section("0. Boot");
 await render("app boots", () => boot(w.document.getElementById("app")!));
 check("shell is created", !!$(".shell"));
-/* Six, since the PvE ladder joined the nav - and checked against the nav's own column count
-   rather than a second literal, because a check that repeats the number it is checking only
-   catches someone forgetting to update it, not someone breaking the layout. */
-check("bottom nav has 6 tabs", $$(".navitem").length === 6, `${$$(".navitem").length}`);
+/* Seven, since the leaderboard joined the nav - and checked against the nav's own column
+   count rather than a second literal, because a check that repeats the number it is
+   checking only catches someone forgetting to update it, not someone breaking the layout. */
+check("bottom nav has 7 tabs", $$(".navitem").length === 7, `${$$(".navitem").length}`);
 check(
   "and the nav is sized for as many columns as it has tabs",
   $$(".bottomnav .navitem").length === Number($(".bottomnav")?.style.getPropertyValue("--tab-count") || 0),
@@ -106,18 +106,17 @@ check(
 );
 check("topbar shows currency", ($(".topbar")?.textContent ?? "").includes("1."));
 
-// The leaderboard is a tab, not a rail fixture — nothing mounts the board until
-// the floating 🏆 button opens its sheet, on any screen size.
+// The leaderboard is a nav tab like the shop — a real screen, not a rail fixture
+// and not a floating button that can end up outside the centred shell.
 check("the leaderboard is not pinned in the rail", !$(".side-panel.right .lb-panel"));
-check("no board is mounted at all until asked", !$(".lb-panel"));
-check("the 🏆 tab exists", !!$(".lb-fab"));
-click($(".lb-fab"));
-check("the board opens as a sheet", !!$(".sheet .lb-panel"));
-check("leaderboard shows the power board", ($(".sheet .lb-panel")?.textContent ?? "").includes("Sức mạnh"));
-check("leaderboard shows the level board", ($(".sheet .lb-panel")?.textContent ?? "").includes("Cấp nhà lai tạo"));
-check("the player sees their own row even offline", ($(".sheet .lb-panel")?.textContent ?? "").includes("bạn"));
-click(byText(".sheet button", "✕") ?? $(".sheet"));
-check("the sheet closes again", !$(".sheet .lb-panel"));
+check("no floating 🏆 button anywhere", !$(".lb-fab"));
+check("the 🏆 tab is in the bottom nav", !!$('.bottomnav .navitem[data-screen="leaderboard"]'));
+check("no board is mounted until the tab is opened", !$(".lb-panel"));
+await render("leaderboard tab opens", () => navigate("leaderboard"));
+check("the board is the screen", !!$(".screen .lb-panel"));
+check("leaderboard shows the power board", ($(".screen .lb-panel")?.textContent ?? "").includes("Sức mạnh"));
+check("leaderboard shows the level board", ($(".screen .lb-panel")?.textContent ?? "").includes("Cấp nhà lai tạo"));
+check("the player sees their own row even offline", ($(".screen .lb-panel")?.textContent ?? "").includes("bạn"));
 
 section("1. Garden screen");
 await render("garden renders", () => navigate("garden"));

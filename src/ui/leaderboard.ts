@@ -1,7 +1,9 @@
 /**
- * The leaderboard — a floating 🏆 button on every screen, opening the board as a
- * sheet. It is a tab, not a rail fixture: a rank list does not need a column of
- * the screen all day, and the button keeps it one tap away on any size.
+ * The leaderboard — a full screen in the bottom nav, like the shop. It used to
+ * live behind a floating 🏆 button that opened a sheet, but a fixed-position
+ * button floats at the viewport edge while the game shell sits centered — on a
+ * wide monitor it ended up far from anything the player was looking at. A nav
+ * item is where every other screen is reached, so it cannot be missed.
  *
  * Two boards share one card: strongest plant first, then breeder level — the two
  * numbers the save handler already extracts on every push. The player's own row is
@@ -12,8 +14,9 @@
  * of the board is missing, because a permanent empty card is worse than an honest one.
  */
 
-import { el, fmt, dismissOnEscape } from "./components";
+import { el, fmt } from "./components";
 import { store } from "./app";
+import type { Navigate } from "./screens/types";
 import { boardsSnapshot, onBoardsChange, refreshBoards, type Leaderboards } from "../account/leaderboard";
 import { socialUnavailableBecause } from "../account/social";
 import { accountStatus } from "../account/sync";
@@ -166,28 +169,17 @@ export function leaderboardPanel(): HTMLElement {
   return card;
 }
 
-/** The floating 🏆 button — the board's only entry point, on every screen size. */
-export function leaderboardFab(onOpen: () => void): HTMLElement {
-  const fab = el("button", { class: "lb-fab", "aria-label": "Bảng xếp hạng", title: "Bảng xếp hạng" }, ["🏆"]);
-  fab.addEventListener("click", onOpen);
-  return fab;
-}
-
-/** The board as a sheet — bottom-anchored on phones, right-docked on wide screens. */
-export function openLeaderboardSheet(): void {
-  const overlay = el("div", { class: "overlay" });
-  const sheet = el("div", { class: "sheet" });
-  const close = (): void => {
-    overlay.remove();
-    sheet.remove();
-  };
-  const closeBtn = el("button", { class: "btn sm ghost", "aria-label": "Đóng" }, ["✕"]);
-  closeBtn.addEventListener("click", close);
-  sheet.append(
-    el("div", { class: "row between" }, [el("h3", { class: "grow" }, ["🏆 Bảng xếp hạng"]), closeBtn]),
+/** The board as a whole screen — what the 🏆 nav tab renders. */
+export function renderLeaderboard(_nav: Navigate): HTMLElement {
+  const root = el("div", { class: "fadein" });
+  root.append(
+    el("div", { class: "card", style: "margin-bottom:12px" }, [
+      el("div", { style: "font-size:20px;font-weight:900" }, ["🏆 Bảng xếp hạng"]),
+      el("div", { class: "tiny muted", style: "margin-top:3px" }, [
+        "Hai bảng: cây mạnh nhất và cấp nhà lai tạo. Đồng bộ lưu lên để lên bảng.",
+      ]),
+    ]),
     leaderboardPanel(),
   );
-  overlay.addEventListener("click", close);
-  dismissOnEscape(sheet, close);
-  document.querySelector(".shell")!.append(overlay, sheet);
+  return root;
 }

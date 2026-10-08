@@ -9063,30 +9063,3 @@ button.qachip:active {
   background: rgba(255, 255, 255, 0.06);
 }
 
-/* The board opens as a sheet from this button — the only entry point, on every
-   screen size. It used to hide once the rail was wide enough to pin the panel;
-   the panel is gone now, so the button stays. */
-.lb-fab {
-  position: fixed;
-  right: 14px;
-  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
-  z-index: 40;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  background: linear-gradient(160deg, rgba(52, 76, 41, 0.95), rgba(30, 44, 26, 0.95));
-  font-size: 20px;
-  cursor: pointer;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-  display: grid;
-  place-items: center;
-}
-
-/* On the desktop frame the shell floats ~20px off the viewport bottom, so the
-   button lifts by the same amount to clear the nav sitting inside the shell. */
-@media (min-width: 1024px) {
-  .lb-fab {
-    bottom: calc(96px + env(safe-area-inset-bottom, 0px));
-  }
-}

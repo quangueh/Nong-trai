@@ -9,7 +9,7 @@ import { renderBreeding } from "./screens/breeding";
 import { renderArena, currentBattleView } from "./screens/arena";
 import { renderAscent } from "./screens/ascent";
 import { renderLab } from "./screens/lab";
-import { leaderboardFab, openLeaderboardSheet } from "./leaderboard";
+import { renderLeaderboard } from "./leaderboard";
 import { sfx } from "../audio/audio";
 import { music, type MusicMood } from "../audio/music";
 import {
@@ -95,6 +95,7 @@ const TABS: { id: Screen; label: string; icon: string }[] = [
   { id: "arena", label: "Đại chiến", icon: "⚔️" },
   { id: "ascent", label: "Vượt ải", icon: "🏔" },
   { id: "lab", label: "Cửa hàng", icon: "🛒" },
+  { id: "leaderboard", label: "Xếp hạng", icon: "🏆" },
 ];
 
 let levelBadge: HTMLElement | null = null;
@@ -172,6 +173,7 @@ function paint(params?: unknown) {
     arena: renderArena,
     ascent: renderAscent,
     lab: renderLab,
+    leaderboard: renderLeaderboard,
   }[current];
   const node = view(navigate, params);
   /*
@@ -200,10 +202,10 @@ function paint(params?: unknown) {
     sideRight.appendChild(right);
   }
   /*
-   * The leaderboard is deliberately not a rail fixture: it takes a column of
-   * screen space on every frame, and a rank list is not something the player
-   * needs in their peripheral vision all day. It opens as a sheet from the 🏆
-   * FAB, which floats on every screen size.
+   * The leaderboard is a nav tab like every other screen — not a rail fixture,
+   * which would cost a column of screen space all day, and not a floating
+   * button, which on a wide desktop ended up at the viewport edge far outside
+   * the centred shell.
    */
   updatePills();
 }
@@ -826,9 +828,6 @@ export function boot(root: HTMLElement) {
   noticeHost = el("div", { class: "notice-host", role: "status", "aria-live": "polite" });
 
   shell.append(topbar, noticeHost, workspace, navHost);
-  // The leaderboard's only entry point — a floating 🏆 on every screen, wide or
-  // narrow, that opens the board as a sheet. No size gets it pinned by default.
-  shell.appendChild(leaderboardFab(openLeaderboardSheet));
   root.appendChild(shell);
 
   store.subscribe(() => {
