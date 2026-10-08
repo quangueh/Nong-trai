@@ -197,9 +197,9 @@ export interface CatalogueQuery {
   /**
    * Show only the species sold in one currency.
    *
-   * Exists because the default order leads with tier 0, which is entirely LeafCoin - so a
-   * player browsing the shop sees one currency and has no way to learn the other three
-   * exist. Sorting by price did not fix that either: cheapest-first across four currencies
+   * Exists because the default order leads with tier 0, and the deep currencies never
+   * appear there - so a player browsing the shop has no way to learn that Pollen or Ember
+   * species exist. Sorting by price did not fix that either: cheapest-first across four currencies
    * is still cheapest-first, and the cheapest card on the shelf may be priced in a
    * currency its reader holds none of. Being able to say "show me the Pollen shelf" is the
    * thing that makes a four-currency shop usable.

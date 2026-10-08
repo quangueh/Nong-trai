@@ -2866,6 +2866,45 @@ input::placeholder {
   white-space: nowrap;
 }
 
+/* Shop filter panel: labelled chip groups inside the shop card, so the set of
+   thirty filter chips reads as four questions instead of one wall of buttons. */
+.flt-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: rgba(242, 223, 174, 0.55);
+  padding: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.flt-group {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+.flt-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+  padding-top: 7px;
+}
+.flt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+@media (max-width: 480px) {
+  .flt-group {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+  .flt-label {
+    padding-top: 0;
+  }
+}
+
 .divider {
   height: 1px;
   background: var(--line);

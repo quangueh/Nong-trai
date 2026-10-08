@@ -42,6 +42,18 @@ await page.evaluate(`(() => {
 })()`);
 await page.waitForTimeout(1200);
 
+/* The sort and affordability chips live inside the folded "Lọc" panel now, so it
+   has to be opened before they can be clicked. Only "▸" is clicked: "▾" means
+   already open and clicking it would close the panel the test reads through. */
+async function openFilters(): Promise<void> {
+  await page.evaluate(`(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => (x.textContent || "").trim().startsWith("▸"));
+    if (b) b.click();
+  })()`);
+  await page.waitForTimeout(500);
+}
+await openFilters();
+
 type Reading = { prices: number[]; currencies: number[]; page: string; order: string[] };
 
 /**
@@ -197,10 +209,10 @@ check("the affordability chip is marked", afford.order.some((t) => /đủ tiền
 check("nothing unaffordable survives", !shown.includes(CODES.blossom) && !shown.includes(CODES.flame), shown.map((c) => c.toString(16)).join(","));
 check("and something affordable remains", afford.prices.length > 0);
 
-/* The default shelf leads with tier 0, which is entirely LeafCoin, so the other three
-   currencies are invisible until asked for. That is why the currency chips exist, and this
+/* Ember is priced into the deep tiers only, so the default shelf - which leads with
+   tier 0 - never shows it unprompted. That is why the currency chips exist, and this
    is the check that they work - not that every currency appears unprompted. */
-check("the default shelf is all LeafCoin, which is the problem the chips solve", new Set(dflt.currencies).size === 1, [...new Set(dflt.currencies)].map((c) => c.toString(16)).join(","));
+check("the deep-currency shelf is invisible until asked for, which is the problem the chips solve", !dflt.currencies.includes(CODES.flame), [...new Set(dflt.currencies)].map((c) => c.toString(16)).join(","));
 
 for (const [label, code] of [["Phấn hoa", CODES.blossom], ["Mảnh lửa", CODES.flame]] as const) {
   // Affordability off first: it is still on from the block above, and the player holds none

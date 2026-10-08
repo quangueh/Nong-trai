@@ -51,6 +51,18 @@ await page.evaluate(`(() => {
 })()`);
 await page.waitForTimeout(1200);
 
+/* The lock chips live inside the folded "Lọc" panel now, so it has to be opened
+   before they can be clicked - and re-opened after every navigate, which resets
+   the screen's collapsed state. Only "▸" is clicked: "▾" means already open and
+   clicking it would close the panel the test is trying to reach through. */
+async function openFilters(): Promise<void> {
+  await page.evaluate(`(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => (x.textContent || "").trim().startsWith("▸"));
+    if (b) b.click();
+  })()`);
+  await page.waitForTimeout(500);
+}
+
 type Reading = { total: number; locked: number; open: number; active: string[]; currencies: number[] };
 
 async function clickFilter(label: string): Promise<Reading> {
@@ -93,6 +105,7 @@ async function clickFilter(label: string): Promise<Reading> {
   })()`)) as Reading;
 }
 
+await openFilters();
 const all = await clickFilter("Tất cả");
 const open = await clickFilter("Chỉ loài đã mở");
 const locked = await clickFilter("Chỉ loài đang khoá");
@@ -144,6 +157,7 @@ const FLAME = 0x1f525;
 
 await page.evaluate(`(() => { (window).__game.store.state.breederLevel = 30; (window).__game.navigate("lab"); })()`);
 await page.waitForTimeout(900);
+await openFilters();
 
 const t2 = await tierShelf("II");
 const t3 = await tierShelf("III");
