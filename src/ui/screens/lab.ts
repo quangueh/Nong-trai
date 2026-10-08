@@ -228,10 +228,15 @@ function paintSeeds(body: HTMLElement, seedFocus?: SpeciesId) {
     wrap.appendChild(lockRow);
 
     const optRow = el("div", { class: "scrollx", style: "gap:6px;margin-bottom:12px" });
+    /* The expanded element/archetype panel lives outside the scrollx row:
+       twenty-five chips in a horizontal strip cannot be scrolled to with a
+       mouse wheel, so the open panel wraps to multiple rows and every choice
+       stays reachable. */
+    const fancyPanel = el("div", { style: "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px" });
     const optChip = (label: string, on: boolean, apply: () => void) => {
       const b = el("button", { class: "btn xs" + (on ? " primary" : "") }, [label]);
       b.addEventListener("click", apply);
-      optRow.appendChild(b);
+      fancyPanel.appendChild(b);
     };
     /*
      * Elements and archetypes, folded away by default.
@@ -269,7 +274,8 @@ function paintSeeds(body: HTMLElement, seedFocus?: SpeciesId) {
         });
       }
     }
-    wrap.appendChild(optRow);
+    wrap.append(optRow);
+    if (fancyOpen) wrap.appendChild(fancyPanel);
 
     // Price order, and affordability.
     //
