@@ -4,7 +4,7 @@
  * Deployed separately from the game, which stays a static site. The game talks to
  * this over four endpoints and nothing else.
  *
- *   POST /api/register   { email, password }        -> { token, player }
+ *   POST /api/register   { email, password, name? } -> { token, player }
  *   POST /api/login      { email, password }        -> { token, player }
  *   POST /api/google     { idToken }                -> { token, player, created }
  *   GET  /api/save                                  -> { savedAt, state } | 404
@@ -35,6 +35,7 @@
 
 import { googleAccountKey, googleSaveKey, verifyGoogleIdToken } from "./google";
 import { entryFromState, handleLeaderboard, writeEntry } from "./leaderboard";
+import { DEFAULT_PLAYER_NAME } from "../../src/core/types";
 import { routeRoom } from "./room";
 import { RoomMailbox } from "./roomdo";
 
@@ -49,6 +50,7 @@ import {
   handleDuelSend,
   handleFriend,
   indexAccount,
+  unindexName,
   type Identity,
 } from "./social";
 
@@ -313,9 +315,15 @@ async function throttled(env: Env, email: string): Promise<boolean> {
 }
 
 async function handleRegister(req: Request, env: Env): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { email?: string; password?: string } | null;
+  const body = (await req.json().catch(() => null)) as { email?: string; password?: string; name?: string } | null;
   const email = String(body?.email ?? "").trim().toLowerCase();
   const password = String(body?.password ?? "");
+  /*
+   * The in-game name is optional and clamped rather than validated: it is a label,
+   * not a credential, and a fussy rule here is a registration that fails over a
+   * display detail. Blank means "not chosen" — the email prefix becomes it.
+   */
+  const name = String(body?.name ?? "").trim().slice(0, 24) || undefined;
 
   // Deliberately loose. The address is only a login handle; being fussy about
   // the domain rejects real players over a typo and teaches nothing.
@@ -336,10 +344,11 @@ async function handleRegister(req: Request, env: Env): Promise<Response> {
     hash: b64(hash),
     playerId: `pl_${b64(randomBytes(9).buffer as ArrayBuffer).replace(/[^a-zA-Z0-9]/g, "").slice(0, 14)}`,
     createdAt: Date.now(),
+    name,
     writes: 0,
   };
   await env.DB.put(accountKey(email), JSON.stringify(account));
-  await indexAccount(env, identityFor(accountKey(email), saveKey(email), email));
+  await indexAccount(env, identityFor(accountKey(email), saveKey(email), email, name));
   return ROK({ playerId: account.playerId }, 201);
 }
 
@@ -484,29 +493,50 @@ async function handlePutSave(req: Request, auth: Session, env: Env): Promise<Res
   // cannot mistake "not counted" for "never written".
   const accountKeyFor = auth.sub ? googleAccountKey(auth.sub) : accountKey(auth.email!);
   const accountRaw = await env.DB.get(accountKeyFor);
-  const writes = accountRaw ? (JSON.parse(accountRaw) as { writes?: number }).writes! + 1 : 1;
+  const account = accountRaw
+    ? (JSON.parse(accountRaw) as { name?: string; email?: string; writes?: number })
+    : null;
+  const writes = account ? (account.writes ?? 0) + 1 : 1;
 
   const puts: Promise<unknown>[] = [env.DB.put(key, JSON.stringify({ savedAt: body.savedAt, state: body.state }))];
-  if (accountRaw) {
-    puts.push(env.DB.put(accountKeyFor, JSON.stringify({ ...(JSON.parse(accountRaw) as object), writes })));
+
+  /*
+   * The display name prefers the one inside the save — the name the player actually
+   * plays under — over the account record's, which is an email prefix when the
+   * player never set one. The stock placeholder is not a name: a save that never
+   * chose one must not erase an account name that was picked since.
+   */
+  const stateName = (body.state as { name?: unknown })?.name;
+  const fromState =
+    typeof stateName === "string" && stateName.trim() && stateName.trim() !== DEFAULT_PLAYER_NAME
+      ? stateName.trim().slice(0, 24)
+      : "";
+  const displayName = fromState || account?.name?.trim() || account?.email?.split("@")[0] || "Người chơi";
+
+  if (account) {
+    const next = { ...account, writes };
+    /*
+     * A rename travels inside the save: when the save's name differs from the
+     * account's, the record follows the save and the friend-search indexes are
+     * re-pointed at the new name. That is what makes "đổi tên" work with no
+     * dedicated endpoint — the name lives in the garden, and the garden is what
+     * gets pushed.
+     */
+    if ((account.name?.trim() || "") !== displayName) {
+      next.name = displayName;
+      const oldIndexed = account.name?.trim() || account.email?.split("@")[0] || "";
+      if (oldIndexed && oldIndexed !== displayName) puts.push(unindexName(env, accountKeyFor, oldIndexed));
+      if (account.email) puts.push(indexAccount(env, identityFor(accountKeyFor, key, account.email, displayName)));
+    }
+    puts.push(env.DB.put(accountKeyFor, JSON.stringify(next)));
   }
 
   // One extra small write keeps the leaderboard index current: the ranked numbers are
   // extracted here, at save time, so a board read never has to open a save at all.
-  // The display name prefers the one inside the save — the name the player actually
-  // plays under — over the account record's, which is an email prefix when the player
-  // never set one.
-  const accountName = accountRaw ? (JSON.parse(accountRaw) as { name?: string; email?: string }) : null;
-  const stateName = (body.state as { name?: unknown })?.name;
-  const displayName =
-    (typeof stateName === "string" && stateName.trim()) ||
-    accountName?.name?.trim() ||
-    accountName?.email?.split("@")[0] ||
-    "Người chơi";
   const entry = entryFromState(body.state, displayName);
-  // The board shows the account email — the handle a player recognises as "my gmail".
-  // Names are decorative and editable; this one is the identity that signed in.
-  entry.email = accountName?.email;
+  // The board still carries the account email — the identity that signed in — but
+  // it is a fallback label now that `name` is a name the player chose.
+  entry.email = account?.email;
   puts.push(writeEntry(env, accountKeyFor, entry));
 
   await Promise.all(puts);

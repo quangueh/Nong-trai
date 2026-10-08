@@ -1064,6 +1064,10 @@ export function boot(root: HTMLElement) {
     write: (next, savedAt) => {
       store.importState(next, savedAt);
     },
+    // The in-game name lives inside the save, so renaming is a store mutation —
+    // the sync layer turns it into a push, and the Worker repoints the
+    // leaderboard and friend indexes from the same payload.
+    renamePlayer: (name) => store.renamePlayer(name),
   });
 
   /*

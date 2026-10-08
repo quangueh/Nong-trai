@@ -1,7 +1,7 @@
 /** Account sheet: sign in, sign up, and see the sync state. */
 
 import { el, toast, dismissOnEscape } from "./components";
-import { showGate } from "./app";
+import { showGate, store } from "./app";
 import { googleSignInAvailable } from "../account/google";
 import { googlePanel } from "./googlePanel";
 import { buildEmailSignIn } from "./emailSignIn";
@@ -16,6 +16,7 @@ import {
   push,
   signOut,
   takeServer,
+  updateName,
   updatePassword,
   type AccountStatus,
 } from "../account/sync";
@@ -38,6 +39,7 @@ const WHY: Record<string, string> = {
   not_configured: "Chưa cấu hình dịch vụ tài khoản.",
   server: "Máy chủ lỗi. Thử lại sau.",
   no_save: "Chưa có vườn nào trên tài khoản này.",
+  bad_name: "Tên cần 1–24 ký tự.",
 };
 
 function explain(err: unknown): string {
@@ -285,11 +287,50 @@ function renderSignedIn(body: HTMLElement, close: () => void): void {
     ? new Date(status.lastSyncedAt).toLocaleString("vi-VN")
     : "chưa đồng bộ lần nào";
 
+  /*
+   * The in-game name — the label the leaderboard, room lobbies and duel invites
+   * all read. Kept beside the account identity rather than in a settings tab,
+   * because the name is what the account is publicly called.
+   */
+  const nameErr = el("p", { class: "account-err" });
+  const nameInput = el("input", {
+    class: "field",
+    type: "text",
+    maxlength: "24",
+    placeholder: "Tên trong game",
+    autocomplete: "nickname",
+  }) as HTMLInputElement;
+  nameInput.value = store.state.name;
+  const nameBtn = el("button", { class: "btn sm", type: "button", style: "flex:none" }, ["Đổi tên"]);
+  nameBtn.addEventListener("click", () => {
+    nameErr.textContent = "";
+    nameBtn.disabled = true;
+    void updateName(nameInput.value)
+      .then(() => toast("Đã đổi tên."))
+      .catch((e: unknown) => {
+        nameErr.textContent = explain(e);
+      })
+      .finally(() => {
+        nameBtn.disabled = false;
+      });
+  });
+  const nameBlock = el("div", { style: "margin:10px 0" }, [
+    el("label", { class: "tiny muted", style: "display:block;margin-bottom:4px" }, [
+      "Tên trong game — hiện trên bảng xếp hạng và khi giao đấu",
+    ]),
+    el("div", { class: "row", style: "gap:8px" }, [
+      el("div", { class: "grow" }, [nameInput]),
+      nameBtn,
+    ]),
+    nameErr,
+  ]);
+
   body.append(
     el("div", { class: "account-id" }, [
       el("div", { class: "small", style: "font-weight:700" }, [status.email ?? ""]),
       el("div", { class: "tiny muted" }, [`Đồng bộ gần nhất: ${when}`]),
     ]),
+    nameBlock,
     syncStrip(status),
     sync,
     pullBtn,

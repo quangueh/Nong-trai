@@ -38,6 +38,7 @@ import {
 import { forgetSessionKind, rememberSessionKind, type SessionKind } from "./kind";
 import { forgetSignIn, rememberSignIn } from "./stamp";
 import { setActiveAccountId } from "../core/saveSlot";
+import { DEFAULT_PLAYER_NAME } from "../core/types";
 
 const TOKEN_KEY = "nong-trai-account-token";
 const EMAIL_KEY = "nong-trai-account-email";
@@ -77,6 +78,11 @@ export interface SaveBridge {
   read(): { state: unknown; savedAt: number };
   /** Replace the whole local save, used after pulling the cloud copy down. */
   write(state: unknown, savedAt: number): void;
+  /**
+   * Rename the player inside the save. Optional: a bridge that cannot rename
+   * simply skips the in-game-name step at sign-in.
+   */
+  renamePlayer?(name: string): void;
 }
 
 const listeners = new Set<Listener>();
@@ -207,17 +213,55 @@ function noteWrite(): void {
 
 // --- public API ------------------------------------------------------------
 
-export async function signUp(email: string, password: string): Promise<void> {
-  await apiRegister(email, password);
-  await signIn(email, password);
+export async function signUp(email: string, password: string, name?: string): Promise<void> {
+  await apiRegister(email, password, name);
+  await signIn(email, password, name);
 }
 
-export async function signIn(email: string, password: string): Promise<void> {
+export async function signIn(email: string, password: string, preferredName?: string): Promise<void> {
   const session: AccountSession = await apiLogin(email, password);
   adoptSession(session.token, email, session.playerId);
   // Bounded for the same reason as the Google path: a slow Worker must not be able to
   // keep a player out of the game they have just signed in to.
   await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull());
+  if (adoptInGameName(email, preferredName)) void push();
+}
+
+/**
+ * Give the save a real name once there is an account to name it after.
+ *
+ * A fresh garden calls its owner the stock "Nhà Lai Tạo" — a placeholder, not an
+ * identity. Once a session exists the fallback is the account's email prefix, and
+ * a name typed at registration wins over both. A save that already carries a
+ * chosen name keeps it: signing in must never rename anyone.
+ *
+ * Returns whether a rename happened, so the caller can push it up once.
+ */
+function adoptInGameName(email: string, preferredName?: string): boolean {
+  if (!bridge?.renamePlayer) return false;
+  const state = bridge.read().state as { name?: unknown } | null;
+  const current = typeof state?.name === "string" ? state.name.trim() : "";
+  const isPlaceholder = !current || current === DEFAULT_PLAYER_NAME;
+  const chosen = preferredName?.trim() ?? "";
+  const next = chosen || (isPlaceholder ? (email.split("@")[0] ?? "").trim() : "");
+  if (!next || next === current) return false;
+  bridge.renamePlayer(next);
+  return true;
+}
+
+/**
+ * Rename the player, everywhere the name is shown.
+ *
+ * The name lives in the save, so changing it is a store mutation plus a push —
+ * the Worker's save handler re-points the leaderboard row and the friend-search
+ * indexes from the same payload, which is why there is no separate rename call
+ * to forget.
+ */
+export async function updateName(name: string): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new AccountError("bad_name", "Cần một cái tên.");
+  bridge?.renamePlayer?.(trimmed);
+  await push();
 }
 
 /**
@@ -306,8 +350,12 @@ async function settleWithin(ms: number, work: Promise<unknown>): Promise<boolean
  */
 export async function signInWithGoogle(idToken: string): Promise<{ created: boolean; email: string }> {
   const session = await apiGoogleSignIn(idToken);
-  adoptSession(session.token, session.email ?? session.name ?? "Google", session.playerId, "google");
+  const email = session.email ?? session.name ?? "Google";
+  adoptSession(session.token, email, session.playerId, "google");
   await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull());
+  // A Google account names itself after the address it signed in with — the same
+  // handle the friends list searches by — until the player picks a real one.
+  if (adoptInGameName(email)) void push();
   return { created: session.created, email: session.email ?? "" };
 }
 

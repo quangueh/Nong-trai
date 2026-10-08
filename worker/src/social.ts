@@ -312,6 +312,24 @@ export async function readAccountSummary(env: KvEnv, accountKey: string): Promis
   return { handle, name: rec.name?.trim() || handle.split("@")[0] || handle, key: accountKey, saveKey };
 }
 
+/**
+ * Release a display name an account no longer uses.
+ *
+ * `indexAccount` counts occupants per name and a lookup refuses a name shared by
+ * more than one account. Renaming without a matching decrement would leave the old
+ * name permanently over-counted — ambiguous forever to a friend search even after
+ * the player who inflated it moved on. Only the recorded occupant may decrement:
+ * a stale index pointing elsewhere means the count belongs to whoever is there.
+ */
+export async function unindexName(env: KvEnv, accountKey: string, name: string): Promise<void> {
+  if (!name.trim()) return;
+  const ni = nameIndexKey(name);
+  const previous = await env.DB.get(ni);
+  if (previous !== accountKey) return;
+  const seen = Number(await env.DB.get(nameCountKey(name))) || 0;
+  if (seen > 0) await env.DB.put(nameCountKey(name), String(seen - 1));
+}
+
 /** Keep the two indexes current. Called on every sign-in. */
 export async function indexAccount(env: KvEnv, summary: Identity): Promise<void> {
   // Read the name's current occupant *before* overwriting it. The comparison has to be

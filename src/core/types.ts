@@ -7,6 +7,16 @@ import type { Delivery, EffectKind, ModifierId } from "../config/skills";
 import type { Mood, StressKind } from "../config/careActions";
 import type { MutationTier, Rarity } from "../config/rarity";
 
+/**
+ * The stock player name every fresh save starts with.
+ *
+ * Treated as "no name chosen" rather than as a name: the leaderboard and the
+ * account sync both fall through it to the account's email prefix, and signing
+ * in replaces it. Shared between the client and the account Worker so the two
+ * never disagree about what counts as a placeholder.
+ */
+export const DEFAULT_PLAYER_NAME = "Nhà Lai Tạo";
+
 export type GrowthStage = "seed" | "sprout" | "young" | "mature" | "awakened";
 
 export const STAGE_ORDER: readonly GrowthStage[] = ["seed", "sprout", "young", "mature", "awakened"];

@@ -55,6 +55,22 @@ export function buildEmailSignIn(): EmailSignIn {
     required: "required",
   }) as HTMLInputElement;
 
+  /*
+   * The in-game name, asked only at registration.
+   *
+   * Optional: an empty answer falls back to the email prefix once the session
+   * exists, and the account sheet can rename it later — so this is a chance to
+   * be named, never a wall between the player and their first garden.
+   */
+  const ign = el("input", {
+    class: "field",
+    type: "text",
+    placeholder: "Tên trong game (tuỳ chọn)",
+    autocomplete: "nickname",
+    maxlength: "24",
+  }) as HTMLInputElement;
+  ign.hidden = true;
+
   const submit = el("button", { class: "btn primary wide", type: "submit" }, ["Đăng nhập"]);
   const swap = el("button", { class: "btn ghost wide", type: "button", style: "margin-top:8px" }, [
     "Chưa có tài khoản? Đăng ký",
@@ -64,7 +80,7 @@ export function buildEmailSignIn(): EmailSignIn {
   let registering = false;
 
   const form = el("form", { class: "account-fields", autocomplete: "on" }) as HTMLFormElement;
-  form.append(email, pass, error, submit, swap);
+  form.append(email, ign, pass, error, submit, swap);
   form.noValidate = true;
 
   const apply = (): void => {
@@ -73,6 +89,7 @@ export function buildEmailSignIn(): EmailSignIn {
     // The browser's own manager keys off this, so getting it wrong saves a password to
     // the wrong form.
     pass.autocomplete = registering ? "new-password" : "current-password";
+    ign.hidden = !registering;
   };
 
   form.addEventListener("submit", (e) => {
@@ -87,7 +104,7 @@ export function buildEmailSignIn(): EmailSignIn {
       submit.disabled = true;
       submit.textContent = "Đang xử lý…";
       try {
-        if (registering) await signUp(email.value.trim(), pass.value);
+        if (registering) await signUp(email.value.trim(), pass.value, ign.value.trim() || undefined);
         else await signIn(email.value.trim(), pass.value);
         sfx.play("levelUp");
         form.dispatchEvent(new CustomEvent("signed-in", { bubbles: true }));

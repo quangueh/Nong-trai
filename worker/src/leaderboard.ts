@@ -150,6 +150,23 @@ const rowFor = (row: LbRow, rank: number, myKey: string) => ({
 });
 
 /**
+ * Throwaway accounts left behind by the project's own test runs.
+ *
+ * `tools/smoke-worker.ts` registers a `smoke-*@example.com` account and pushes a
+ * save on every run — by design, since only a real request exercises the deployed
+ * Worker — and leaderboard probes did the same under `lb-probe-*`. Each one earns
+ * an `lb:` entry that then sits on the public board. `example.com` is the
+ * reserved documentation domain, so a real mailbox can never end in it; the name
+ * prefixes carry the probe's timestamp (`smoke-1791395758872`), which a real
+ * display name would not.
+ */
+function isTestEntry(row: LbRow): boolean {
+  if (/@example\.com$/i.test(row.email ?? "")) return true;
+  const probeName = /^(smoke|probe|lb-probe|test)-\d/i;
+  return probeName.test(row.name) || probeName.test(row.email ?? "");
+}
+
+/**
  * `GET /api/leaderboard` — both boards plus the caller's own placement.
  *
  * `myKey` is the caller's account key, resolved by the router from the session — the
@@ -157,7 +174,7 @@ const rowFor = (row: LbRow, rank: number, myKey: string) => ({
  * better)`, so being absent from the index reads as unranked rather than as last.
  */
 export async function handleLeaderboard(env: LbEnv, myKey: string): Promise<Response> {
-  const rows = await readAll(env);
+  const rows = (await readAll(env)).filter((r) => !isTestEntry(r));
   const power = [...rows].sort(byPower);
   const level = [...rows].sort(byLevel);
   // Rows carry their full KV name (`lb:acct:…`); the caller arrives as a bare key.

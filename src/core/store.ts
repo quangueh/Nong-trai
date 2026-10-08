@@ -6,7 +6,7 @@
 
 import { Rng, clamp, round2, seedToken } from "./rng";
 import type { Plant } from "./types";
-import { STAGE_ORDER, STAGE_SECONDS } from "./types";
+import { DEFAULT_PLAYER_NAME, STAGE_ORDER, STAGE_SECONDS } from "./types";
 import { createSeedPlant, breedPlants, genomeSignature, validateGenome, estimatePower, type BreedingContext, type BreedingResult } from "../genetics/genomeGenerator";
 import { applyCatalyst, getProtocol, protocolDiversity, protocolUnlocked, type ProtocolId } from "../genetics/protocols";
 import { plantName, nameKey } from "../genetics/names";
@@ -1102,6 +1102,21 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     this.commit("rename");
   }
 
+  /**
+   * The player's own display name — the one the leaderboard, room joins and
+   * friend invites all read out of the save.
+   *
+   * Trimmed and capped at 24 chars, matching what the Worker keeps. A no-op on an
+   * unchanged name so an identity sync at sign-in does not write a save for
+   * nothing.
+   */
+  renamePlayer(name: string): void {
+    const trimmed = name.trim().slice(0, 24);
+    if (!trimmed || trimmed === this.state.name) return;
+    this.state.name = trimmed;
+    this.commit("renamePlayer");
+  }
+
   get(plantId: string): Plant | undefined {
     return this.state.plants.find((p) => p.plantId === plantId);
   }
@@ -1760,7 +1775,7 @@ function loadOrCreate(rawOverride?: string): PlayerState {
         if (!Array.isArray(parsed.ledger)) parsed.ledger = [];
         if (!Array.isArray(parsed.seenGenes)) parsed.seenGenes = [];
         if (typeof parsed.playerId !== "string" || !parsed.playerId) parsed.playerId = `pl_${seedToken("player", Date.now(), Math.random())}`;
-        if (typeof parsed.name !== "string" || !parsed.name) parsed.name = "Nhà Lai Tạo";
+        if (typeof parsed.name !== "string" || !parsed.name) parsed.name = DEFAULT_PLAYER_NAME;
         if (!Number.isFinite(parsed.createdAt)) parsed.createdAt = Date.now();
         if (!Number.isFinite(parsed.lastSeen)) parsed.lastSeen = Date.now();
         for (const pl of parsed.plants) {
@@ -1884,7 +1899,7 @@ function loadOrCreate(rawOverride?: string): PlayerState {
   const playerId = `pl_${seedToken("player", now, Math.random())}`;
   const fresh: PlayerState = {
     playerId,
-    name: "Nhà Lai Tạo",
+    name: DEFAULT_PLAYER_NAME,
     breederLevel: 1,
     breederXp: 0,
     leafCoin: 1200,

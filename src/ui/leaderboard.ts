@@ -16,6 +16,7 @@ import { store } from "./app";
 import { boardsSnapshot, onBoardsChange, refreshBoards, type Leaderboards } from "../account/leaderboard";
 import { socialUnavailableBecause } from "../account/social";
 import { accountStatus } from "../account/sync";
+import { DEFAULT_PLAYER_NAME } from "../core/types";
 
 /** Rows shown per board. The caller's own row is pinned separately, not counted here. */
 const VISIBLE = 8;
@@ -27,25 +28,38 @@ let wired = false;
 /** Repaint functions of every panel currently mounted — a store change repaints all. */
 const liveRepaints = new Set<() => void>();
 
+/**
+ * What a row is called: the in-game name first.
+ *
+ * The email prefix answers only when the row has no real name — entries written
+ * before names could be chosen, and saves still wearing the stock placeholder.
+ * The full email stays on the tooltip, where a player can still check *which*
+ * Minh this is without the whole column being addresses.
+ */
+function rowLabel(row: { name: string; email?: string }): string {
+  const n = (row.name ?? "").trim();
+  if (n && n !== DEFAULT_PLAYER_NAME) return n;
+  return row.email?.split("@")[0] || n || "?";
+}
+
 /** What a "me" row looks like when there is no server to ask — the local truth. */
 function localMe(): { name: string; email?: string; power: number; level: number } {
   const power = Math.max(0, ...store.state.plants.map((p) => p.powerRating ?? 0));
+  const email = accountStatus().email ?? undefined;
   return {
-    name: store.state.name || "Bạn",
-    email: accountStatus().email ?? undefined,
+    name: rowLabel({ name: store.state.name, email }),
+    email,
     power: Math.round(power),
     level: store.state.breederLevel,
   };
 }
 
-/** Rows are labelled by account email — the identity players recognise — falling back
- *  to the display name only for entries written before emails were indexed. */
 function rowEl(rank: number, row: { name: string; email?: string }, value: string, me: boolean): HTMLElement {
-  const label = row.email ?? row.name;
+  const label = rowLabel(row);
   const r = el("div", { class: "lb-row" + (me ? " me" : "") });
   r.append(
     el("span", { class: "lb-rank mono" }, [rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : `#${rank}`]),
-    el("span", { class: "lb-name", title: row.name !== label ? row.name : label }, [me ? `${label} (bạn)` : label]),
+    el("span", { class: "lb-name", title: row.email ?? label }, [me ? `${label} (bạn)` : label]),
     el("span", { class: "lb-val mono" }, [value]),
   );
   return r;

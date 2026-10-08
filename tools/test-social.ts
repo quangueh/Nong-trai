@@ -34,12 +34,14 @@ import {
   handleDuelSend,
   handleFriend,
   indexAccount,
+  unindexName,
   nameCountKey,
   nameIndexKey,
   handleIndexKey,
   friendBookKey,
   inboxKey,
   plantFromSave,
+  resolveTarget,
   MAX_FRIENDS,
   INVITE_TTL_MS,
   type Identity,
@@ -483,6 +485,59 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   const second = await handleLeaderboard(lbEnv, "acct:never-saved");
   const nobody = (await second.json()) as { me: unknown };
   check("a player with no save is unranked, not an error", nobody.me === null);
+
+  /*
+   * Throwaway probe accounts stay off the public board.
+   *
+   * smoke-worker and the leaderboard probes register `*@example.com` addresses and
+   * push real saves on every run; those entries used to fill the board with junk.
+   * A genuine gmail row must still show beside them.
+   */
+  const clean = new Map<string, string>();
+  const cleanDb = {
+    get: async (k: string) => clean.get(k) ?? null,
+    put: async (k: string, v: string) => void clean.set(k, v),
+    list: async (o: { prefix: string }) => ({
+      keys: [...clean.keys()].filter((k) => k.startsWith(o.prefix)).sort().map((name) => ({ name })),
+      list_complete: true,
+    }),
+  };
+  const cleanEnv = { DB: cleanDb };
+  await writeEntry(cleanEnv, "acct:real", { name: "quanghao6c", email: "quanghao6c@gmail.com", power: 930, level: 4, at: 1 });
+  await writeEntry(cleanEnv, "acct:smoke-1@example.com", { name: "smoke-1791395758872", email: "smoke-1791395758872@example.com", power: 700, level: 1, at: 2 });
+  await writeEntry(cleanEnv, "acct:lb-probe@example.com", { name: "lb-probe-1791396883605", email: "lb-probe-1791396883605@example.com", power: 777, level: 1, at: 3 });
+  const pub = (await (await handleLeaderboard(cleanEnv, "acct:real")).json()) as {
+    power: { name: string }[];
+    total: number;
+    me: { powerRank: number } | null;
+  };
+  check("test accounts are filtered off the board", pub.power.length === 1 && pub.power[0].name === "quanghao6c", JSON.stringify(pub.power));
+  check("and out of the roster count", pub.total === 1, `${pub.total}`);
+  check("the real caller still gets a rank", pub.me?.powerRank === 1);
+}
+
+/* --- 10. renaming frees the old name -------------------------------------- */
+
+{
+  const db = fakeKv();
+  const env = envFor(db);
+  const minh1 = identity("minh1@example.com", "Minh");
+  const minh2 = identity("minh2@example.com", "Minh");
+  await publish(env, db, minh1);
+  await publish(env, db, minh2);
+  check("two Minhs make the name ambiguous", (await db.get(nameCountKey("Minh"))) === "2", (await db.get(nameCountKey("Minh"))) ?? "none");
+
+  // Only the recorded occupant may release the name: an index pointing at minh2
+  // must not be decremented by minh1's rename.
+  await unindexName(env, minh1.key, "Minh");
+  check("a non-occupant cannot release the name", (await db.get(nameCountKey("Minh"))) === "2");
+  await unindexName(env, minh2.key, "Minh");
+  check("the occupant's rename frees one share", (await db.get(nameCountKey("Minh"))) === "1");
+
+  // And the freed name resolves to the survivor again — no longer ambiguous.
+  const target = await resolveTarget(env, "Minh");
+  check("the freed name resolves again", !!target && !("ambiguous" in target) && target.handle === "minh2@example.com",
+    JSON.stringify(target));
 }
 
 /* --- 8. reading a save ------------------------------------------------------- */

@@ -84,8 +84,8 @@ async function call<T>(path: string, init: RequestInit & { token?: string } = {}
   }
 }
 
-export async function register(email: string, password: string): Promise<void> {
-  await call("/api/register", { method: "POST", body: JSON.stringify({ email, password }) });
+export async function register(email: string, password: string, name?: string): Promise<void> {
+  await call("/api/register", { method: "POST", body: JSON.stringify({ email, password, name }) });
 }
 
 export async function login(email: string, password: string): Promise<AccountSession> {

@@ -51,7 +51,7 @@ Without that variable the account UI says so and everything else works unchanged
 
 | | |
 |---|---|
-| `POST /api/register` | `{ email, password }` → `{ playerId }` |
+| `POST /api/register` | `{ email, password, name? }` → `{ playerId }` |
 | `POST /api/login` | `{ email, password }` → `{ token, playerId }` |
 | `GET /api/save` | bearer → `{ savedAt, state }`, or 404 |
 | `PUT /api/save` | bearer, `{ savedAt, state }` → `{ savedAt, kept }` |
@@ -101,6 +101,28 @@ one; a token that sometimes fails to verify would be a support ticket.
 atomic, so it is not a security boundary — it exists to stop someone grinding
 passwords against a leaked namespace, and the real cost of an attempt is the
 PBKDF2 work.
+
+## Display names and the leaderboard
+
+Every save carries the player's in-game name (`state.name`). On `PUT /api/save`
+the Worker reads it — ignoring the stock placeholder "Nhà Lai Tạo" — and:
+
+- writes the leaderboard entry under that name (the account email rides along as
+  a fallback for rows saved before names could be chosen);
+- updates `account.name` when it differs, and re-points the `name:`/`handle:`
+  search indexes — so a rename needs no dedicated endpoint, the next save push
+  propagates it everywhere;
+- releases the old name's share of the name-count index, so a freed name stops
+  answering "ambiguous" to friend search.
+
+`register` accepts an optional `name` so a brand-new account can be born named;
+otherwise the client falls back to the email prefix, and the account sheet can
+rename at any time.
+
+Rows whose account email ends `@example.com`, or whose name carries a probe
+prefix (`smoke-`, `probe-`, `lb-probe-`, `test-` followed by digits), are kept
+off the published boards — `tools/smoke-worker.ts` registers a throwaway account
+and pushes a save on every run, and those entries would otherwise top the board.
 
 **CORS** is permissive because the game is likely served from a different host than
 the Worker. Once the production host is known, replace the `*` in
