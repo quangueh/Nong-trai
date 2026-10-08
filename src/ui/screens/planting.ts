@@ -179,6 +179,61 @@ export function playPlanting(opts: {
 }
 
 /**
+ * Planting several seeds at once: one compact ceremony for the whole batch.
+ *
+ * The single-plant ritual exists so the roll a seed carries is visible. At N
+ * plants that same patience would be N modal screens in a row — the batch
+ * reveal keeps the "the seed drops, sprouts pop up" feel but shows the whole
+ * planting at once, as a row of sprouts rising in sequence.
+ */
+export function playPlantingBatch(opts: {
+  plants: Plant[];
+  onPlanted: () => void;
+}): void {
+  const { plants, onPlanted } = opts;
+
+  const overlay = el("div", { class: "plant-overlay", role: "dialog", "aria-label": `Gieo ${plants.length} hạt` });
+  const card = el("div", { class: "plant-batch" });
+  card.appendChild(el("div", { class: "plant-batch-title" }, [`🌱 Đã gieo ${plants.length} hạt`]));
+
+  const grid = el("div", { class: "plant-batch-grid" });
+  const shown = plants.slice(0, 12);
+  for (const [i, p] of shown.entries()) {
+    const cell = el("div", { class: "plant-batch-cell", style: `--d:${(i * 0.09).toFixed(2)}s` });
+    const art = el("div", { class: "plant-batch-art" });
+    art.innerHTML = renderRevealArt(p, 56);
+    cell.append(art, el("small", {}, [p.name]));
+    grid.appendChild(cell);
+  }
+  if (plants.length > shown.length) {
+    grid.appendChild(el("div", { class: "plant-batch-more" }, [`+${plants.length - shown.length}`]));
+  }
+  card.appendChild(grid);
+
+  card.appendChild(el("div", { class: "tiny muted", style: "text-align:center" }, [
+    "Tất cả đang nảy mầm — chăm từng cây trong vườn.",
+  ]));
+
+  const go = el("button", { class: "btn primary", style: "width:100%" }, ["Vào vườn"]);
+  const dismiss = () => {
+    overlay.classList.add("plant-overlay--leaving");
+    document.body.classList.remove("planting");
+    window.setTimeout(() => overlay.remove(), 260);
+    onPlanted();
+  };
+  go.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dismiss();
+  });
+  card.appendChild(go);
+  overlay.appendChild(card);
+  overlay.addEventListener("click", dismiss);
+  document.body.appendChild(overlay);
+  document.body.classList.add("planting");
+  sfx.play("sprout");
+}
+
+/**
  * The reveal card: what the seed actually rolled, and what to do next.
  *
  * Every number here is read off the plant, never invented — the panel is a

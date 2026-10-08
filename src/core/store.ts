@@ -340,7 +340,16 @@ export function emptyAscent(day: string): AscentState {
 /* Every read and write of the save goes through `saveSlotKey` from ./saveSlot, because
    the key depends on who is signed in. There is deliberately no bare key constant here to
    reach for: one is what made every account share one garden. */
-const SEED_PACK_PRICE = 0.05;
+export const SEED_PACK_PRICE = 0.05;
+
+/**
+ * The price a batch of `count` seeds charges — mirrors `buySeed`, so the
+ * picker's "Mua + Trồng" button can show the real total before committing.
+ */
+export function seedPackPrice(species: SpeciesId, count: number): number {
+  const def = SPECIES_BY_ID[species];
+  return Math.floor(def.seedPrice * count * (1 - (count >= 10 ? SEED_PACK_PRICE : 0)));
+}
 
 /**
  * How many times breeding re-rolls to escape a genome already in the garden.
@@ -814,7 +823,7 @@ export class GameStore {
     // button, so a player who cannot afford it knows which of four numbers to go and
     // earn rather than just being refused.
     const currency = def.currency;
-    const price = Math.floor(def.seedPrice * count * (1 - (count >= 10 ? SEED_PACK_PRICE : 0)));
+    const price = seedPackPrice(species, count);
     if (!this.debitCurrency(currency, price, `Mua ${count} hạt ${def.name}`)) {
       return {
         ok: false,
@@ -847,6 +856,37 @@ export class GameStore {
     this.questEvent({ name: "plant", amount: 1, species: [species] });
     this.commit("plantSeed");
     return { ok: true, plantId: plant.plantId };
+  }
+
+  /**
+   * Plant several seeds of the same species in one shot.
+   *
+   * One commit for the whole batch rather than one per seed: the picker lets a
+   * player fill every empty plot with the same seed, and N commits would push N
+   * saves to the cloud-queue debounce and N redundant re-renders.
+   *
+   * Plants as many as fit: if the bag or the nursery runs out partway through,
+   * what got planted stays planted and the count planted is what came back —
+   * "gieo hết chỗ trống" is the gesture, not "gieo đúng N hoặc không gì".
+   */
+  plantSeeds(species: SpeciesId, count: number): { ok: boolean; reason?: string; plantIds: string[] } {
+    if (!Number.isInteger(count) || count < 1) return { ok: false, reason: "Số lượng không hợp lệ", plantIds: [] };
+    if ((this.state.seeds[species] ?? 0) <= 0) return { ok: false, reason: "Không có hạt này", plantIds: [] };
+    if (this.state.plants.length >= this.state.nurseryCap) return { ok: false, reason: "Vườn đã đầy", plantIds: [] };
+    const n = Math.min(count, this.state.seeds[species] ?? 0, this.state.nurseryCap - this.state.plants.length);
+    const plantIds: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const plant = createSeedPlant(species, this.state.playerId, seedToken(Date.now(), i, Math.random()), Date.now());
+      plant.economy.purchaseCost = SPECIES_BY_ID[species].seedPrice;
+      this.state.plants.push(plant);
+      plantIds.push(plant.plantId);
+      this.recordPlantDiscovery(plant);
+      this.state.discovery.planted[species] = (this.state.discovery.planted[species] ?? 0) + 1;
+    }
+    this.state.seeds[species] = (this.state.seeds[species] ?? 0) - n;
+    this.questEvent({ name: "plant", amount: n, species: [species] });
+    this.commit("plantSeed");
+    return { ok: true, plantIds };
   }
 
   // --- care ------------------------------------------------------------

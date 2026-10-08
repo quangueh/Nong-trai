@@ -191,7 +191,7 @@ const STARTERS: readonly SpeciesDef[] = [
 ];
 
 /** How many generated species sit behind the five starters. */
-export const GENERATED_SPECIES_COUNT = 12000;
+export const GENERATED_SPECIES_COUNT = 19995;
 
 /** Total species in the registry: five starters plus the generated pool. */
 export const SPECIES_TOTAL = STARTERS.length + GENERATED_SPECIES_COUNT;
@@ -658,9 +658,13 @@ const PRICE_BAND: Record<CurrencyId, [number, number]> = {
      currency stops meaning anything. Ember's band reaches into the thousands on
      purpose: at 3 a day it is the prestige shelf, and a price nobody can pay
      this month is a goal, not a bug. */
-  leafCoin: [60, 7800],
+  /* Bands sized for a 20,000-strong registry: leafCoin needs ~1.95x of one
+     tier (~7,800 unique prices) so it had to grow; nectar (~5,000 into 5,360
+     slots) stays inside its old band so early-game nectar seeds do not jump
+     in price; pollen (~5,400) had to widen rather than probe at ~97% fill. */
+  leafCoin: [60, 14000],
   nectar: [40, 5400],
-  pollen: [15, 5600],
+  pollen: [15, 11000],
   /* Ember earns 3/day and the shop is the only sink — at [4,4200] the top of
      the shelf asked for 1400 days of drops. 21–63 is 7–21 days: a real goal,
      not a wall (docs/20 §3.8). The narrow band means prices repeat between

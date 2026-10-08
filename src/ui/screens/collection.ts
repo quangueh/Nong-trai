@@ -10,7 +10,7 @@ import { canSell } from "../../growth/stages";
 import { plantDisplayName } from "../../core/plantNames";
 import { sellPrice } from "../../economy/shop";
 import { openDetail } from "./garden";
-import { SPECIES, getSpecies, type SpeciesId } from "../../config/species";
+import { getSpecies, type SpeciesId } from "../../config/species";
 import { createSeedPlant } from "../../genetics/genomeGenerator";
 import { renderPlantSvg } from "../../render/plantRenderer";
 import { dominantElement, ELEMENT_INFO } from "../../config/elements";
@@ -31,18 +31,12 @@ export function renderCollection(nav: Navigate): HTMLElement {
    * species. `discovery.species` is rebuilt from every plant's lineage, so a
    * consumed parent still counts. The inventory (and the sell table) lives below.
    */
-  const discovered = new Set(store.state.discovery.species as string[]);
   const ownedBySpecies = new Map<string, number>();
   for (const p of store.state.plants) {
     for (const sp of p.baseLineage) ownedBySpecies.set(sp, (ownedBySpecies.get(sp) ?? 0) + 1);
   }
 
-  const dexTitle = el("div", { class: "sec-title" });
-  dexTitle.append(
-    el("span", {}, [`Bộ sưu tập loài`]),
-    el("span", { class: "tiny muted" }, [` đã mở ${discovered.size}/${SPECIES.length}`]),
-  );
-  root.appendChild(dexTitle);
+  root.appendChild(el("div", { class: "sec-title" }, [`Bộ sưu tập loài`]));
 
   let dexFilter: "all" | "owned" | "gone" = "all";
   const dexChips = el("div", { class: "scrollx", style: "margin-bottom:12px" });

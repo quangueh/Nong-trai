@@ -5,6 +5,7 @@ import { store } from "../app";
 import type { Plant } from "../../core/types";
 import { STAGE_LABEL, STAT_LABEL } from "../../core/types";
 import type { GardenWeather } from "../../core/store";
+import { seedPackPrice } from "../../core/store";
 import { canBattle, growRangeMinutes, stageProgress } from "../../growth/stages";
 import { previewCare } from "../../growth/care";
 import { plotCard, canWaterNow } from "./plotCard";
@@ -16,7 +17,7 @@ import { ARCHETYPE_STRENGTH, ARCHETYPE_WEAKNESS, ARCHETYPE_ROLE } from "../../co
 import { dominantArchetype } from "../../core/types";
 import { SPECIES, type SpeciesId, type SpeciesDef } from "../../config/species";
 import { featuredSpecies } from "../../economy/shop";
-import { playPlanting, setRevealArt } from "./planting";
+import { playPlanting, playPlantingBatch, setRevealArt } from "./planting";
 import { sfx } from "../../audio/audio";
 import { MAX_PLOTS, plotStatuses, type PlotStatus } from "../../config/unlocks";
 import { seedColor } from "../components";
@@ -664,10 +665,11 @@ function lockedPlot(status: PlotStatus, onChange: () => void): HTMLElement {
 }
 
 /** Buy if needed, plant, then hand over to the ceremony. */
-function doPlant(nav: Navigate, seedId: SpeciesId): void {
-  const hadNone = (store.state.seeds[seedId] ?? 0) <= 0;
-  if (hadNone) {
-    const bought = store.buySeed(seedId);
+function doPlant(nav: Navigate, seedId: SpeciesId, count = 1): void {
+  const owned = store.state.seeds[seedId] ?? 0;
+  const need = Math.max(0, count - owned);
+  if (need > 0) {
+    const bought = store.buySeed(seedId, need);
     if (!bought.ok) {
       sfx.play("error");
       toast(bought.reason ?? "Không mua được hạt");
@@ -676,19 +678,22 @@ function doPlant(nav: Navigate, seedId: SpeciesId): void {
     // Coins are a different gesture from planting, and they should sound like one.
     sfx.play("buy");
   }
-  const res = store.plantSeed(seedId);
-  if (!res.ok || !res.plantId) {
+  const res = store.plantSeeds(seedId, count);
+  if (!res.ok || !res.plantIds.length) {
     sfx.play("error");
     toast(res.reason ?? "Không thể gieo");
     return;
   }
   sfx.play("plant");
-  const plant = store.get(res.plantId);
-  if (!plant) {
+  const plants = res.plantIds.map((id) => store.get(id)).filter((p): p is Plant => Boolean(p));
+  if (!plants.length) {
     nav("garden");
     return;
   }
-  playPlanting({ plant, onPlanted: () => nav("garden") });
+  // One plant still earns the full ritual with its gene reveal; a batch gets the
+  // compact version so planting six of the same seed is one screen, not six.
+  if (plants.length === 1) playPlanting({ plant: plants[0], onPlanted: () => nav("garden") });
+  else playPlantingBatch({ plants, onPlanted: () => nav("garden") });
 }
 
 /**
@@ -725,7 +730,10 @@ function openSeedPicker(nav: Navigate, _anchor?: HTMLElement): void {
   const heroArt = el("div", { class: "seed-hero-art" });
   const heroInfo = el("div", { class: "seed-hero-info" });
   const cta = el("button", { class: "btn primary wide seed-cta" });
+  const qtyRow = el("div", { class: "seed-qty" });
   const rows = new Map<SpeciesId, HTMLElement>();
+  let qty = 1;
+  const emptyPlots = Math.max(0, store.state.nurseryCap - store.state.plants.length);
 
   const showPick = (): void => {
     const sp = listed.find((s) => s.id === pick);
@@ -733,12 +741,36 @@ function openSeedPicker(nav: Navigate, _anchor?: HTMLElement): void {
     if (!sp) {
       heroArt.replaceChildren();
       heroInfo.replaceChildren(el("b", {}, ["Túi hạt đang trống"]));
+      qtyRow.replaceChildren();
       cta.textContent = "Vào Cửa hàng";
       cta.onclick = () => { close(); nav("lab"); };
       return;
     }
     const owned = store.state.seeds[sp.id] ?? 0;
     const cur = currencyInfo(sp.currency);
+    // How many of this seed could land in the ground right now: what the bag
+    // holds plus what the wallet can still buy, capped by open plots.
+    let affordable = 0;
+    for (let k = 1; k <= emptyPlots; k++) {
+      if (seedPackPrice(sp.id, k) <= store.state[sp.currency]) affordable = k;
+      else break;
+    }
+    const maxQty = Math.min(emptyPlots, owned + affordable);
+    qty = Math.max(1, Math.min(qty, Math.max(1, maxQty)));
+    qtyRow.replaceChildren();
+    if (maxQty > 1) {
+      const minus = el("button", { class: "btn sm", "aria-label": "Bớt một ô" }, ["−"]);
+      const plus = el("button", { class: "btn sm", "aria-label": "Thêm một ô" }, ["+"]);
+      minus.addEventListener("click", (e) => { e.stopPropagation(); qty = Math.max(1, qty - 1); showPick(); });
+      plus.addEventListener("click", (e) => { e.stopPropagation(); qty = Math.min(maxQty, qty + 1); showPick(); });
+      qtyRow.append(
+        el("span", { class: "tiny muted" }, ["Gieo"]),
+        minus,
+        el("b", { class: "seed-qty-n mono" }, [`${qty}`]),
+        plus,
+        el("span", { class: "tiny muted" }, [`ô · trống ${emptyPlots}`]),
+      );
+    }
     // The hero shows the grown plant, not the seed: a preview plant built for
     // the species and forced to mature, so "gieo hạt này" answers "ra cây gì".
     const preview = createSeedPlant(sp.id, store.state.playerId, `preview-${sp.id}`, Date.now());
@@ -755,23 +787,30 @@ function openSeedPicker(nav: Navigate, _anchor?: HTMLElement): void {
           : el("span", { class: "tag gold" }, [`Mua ${sp.seedPrice.toLocaleString("vi-VN")}${cur.icon}`]),
       ]),
     );
-    if (owned > 0) {
-      cta.textContent = `🌱 Trồng ${sp.name}`;
+    const need = Math.max(0, qty - owned);
+    if (emptyPlots <= 0) {
+      cta.textContent = "Vườn đã đầy — mở thêm ô";
+      cta.setAttribute("disabled", "true");
+      cta.onclick = null;
+      return;
+    }
+    if (need === 0) {
+      cta.textContent = qty > 1 ? `🌱 Trồng ${qty} cây ${sp.name}` : `🌱 Trồng ${sp.name}`;
       cta.removeAttribute("disabled");
     } else {
-      const short = Math.max(0, sp.seedPrice - store.state[sp.currency]);
-      if (short > 0) {
-        cta.textContent = `Thiếu ${short.toLocaleString("vi-VN")}${cur.icon}`;
+      const cost = seedPackPrice(sp.id, need);
+      if (cost > store.state[sp.currency]) {
+        cta.textContent = `Thiếu ${(cost - store.state[sp.currency]).toLocaleString("vi-VN")}${cur.icon}`;
         cta.setAttribute("disabled", "true");
       } else {
-        cta.textContent = `🌱 Mua + Trồng · ${sp.seedPrice.toLocaleString("vi-VN")}${cur.icon}`;
+        cta.textContent = `🌱 Mua ${need} + Trồng ${qty} · ${cost.toLocaleString("vi-VN")}${cur.icon}`;
         cta.removeAttribute("disabled");
       }
     }
     cta.onclick = () => {
       sfx.play("dig");
       close();
-      doPlant(nav, sp.id);
+      doPlant(nav, sp.id, qty);
     };
   };
 
@@ -814,6 +853,7 @@ function openSeedPicker(nav: Navigate, _anchor?: HTMLElement): void {
     ]),
     el("div", { class: "seed-hero" }, [heroArt, heroInfo]),
     list,
+    qtyRow,
     cta,
     shopLink,
   );

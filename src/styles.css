@@ -8756,6 +8756,106 @@ button.qachip:active {
   padding-right: 2px;
 }
 
+/* "Gieo n ô" stepper: sits between the seed list and the CTA so the count it
+   sets reads as part of the action it applies to. */
+.seed-qty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 34px;
+}
+.seed-qty:empty {
+  display: none;
+}
+.seed-qty .btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 16px;
+}
+.seed-qty-n {
+  min-width: 2ch;
+  text-align: center;
+  font-size: 16px;
+}
+
+/* Batch planting reveal — one compact card instead of N single ceremonies. */
+.plant-batch {
+  display: grid;
+  gap: 12px;
+  width: min(400px, 90vw);
+  padding: 16px;
+  border-radius: 20px;
+  background:
+    radial-gradient(90% 60% at 50% 0%, rgba(255, 252, 236, 0.9), transparent 70%),
+    linear-gradient(170deg, #f8f0d8, #eee0bc);
+  border: 1px solid rgba(122, 90, 48, 0.3);
+  box-shadow: 0 24px 60px rgba(20, 32, 14, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  animation: plantBatchIn 0.4s var(--spring, cubic-bezier(0.2, 0.9, 0.3, 1.2)) both;
+}
+@keyframes plantBatchIn {
+  from { transform: translateY(18px) scale(0.94); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+.plant-batch-title {
+  font-weight: 800;
+  font-size: 16px;
+  text-align: center;
+  color: #3d2c14;
+}
+.plant-batch-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.plant-batch-cell {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  animation: plantBatchPop 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes plantBatchPop {
+  from { transform: translateY(14px) scale(0.6); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+.plant-batch-art {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: radial-gradient(70% 60% at 50% 82%, rgba(176, 138, 88, 0.4), rgba(255, 253, 241, 0.55));
+  border: 1px solid rgba(122, 90, 48, 0.22);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.plant-batch-art svg {
+  width: 50px;
+  height: 50px;
+}
+.plant-batch-cell small {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #5a4630;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plant-batch-more {
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1.5px dashed rgba(122, 90, 48, 0.4);
+  font-weight: 800;
+  font-size: 15px;
+  color: #7a5a30;
+  min-height: 56px;
+}
+
 .seed-pick {
   display: flex;
   align-items: center;

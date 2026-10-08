@@ -83,14 +83,14 @@ export function plantPalette(visual: VisualGenes): PlantPalette {
     stemShade: `hsl(${hue} ${Math.round(sat * 0.86)}% ${L(24)}%)`,
     stemLight: `hsl(${hue} ${Math.round(sat * 0.7)}% ${L(50)}%)`,
     // Leaves occupy the mid range so they read as solid shapes.
-    leaf: `hsl(${leafHue} ${sat}% ${L(44)}%)`,
-    leafDark: `hsl(${hue} ${Math.round(sat * 0.9)}% ${L(30)}%)`,
-    leafLight: `hsl(${(leafHue + hueSpread * 0.3) % 360} ${Math.round(sat * 0.86)}% ${L(58)}%)`,
+    leaf: `hsl(${leafHue} ${sat}% ${L(47)}%)`,
+    leafDark: `hsl(${hue} ${Math.round(sat * 0.9)}% ${L(33)}%)`,
+    leafLight: `hsl(${(leafHue + hueSpread * 0.3) % 360} ${Math.round(sat * 0.86)}% ${L(61)}%)`,
     accent: `hsl(${accentHue} ${Math.round(sat * 1.05)}% ${L(64)}%)`,
     bloom: `hsl(${(accentHue + 25) % 360} ${Math.round(sat * 1.05)}% ${L(72)}%)`,
     bloomShade: `hsl(${(accentHue + 25) % 360} ${Math.round(sat * 1.1)}% ${L(52)}%)`,
     shadow: `hsl(${hue} 30% 18%)`,
-    ground: `hsl(26 30% 42%)`,
+    ground: `hsl(30 36% 52%)`,
   };
 }
 
@@ -121,7 +121,7 @@ function composition(plant: Plant) {
   const complexity = v.complexity;
 
   // A seed stage shows only the sprout; a sprout shows stem and cotyledons.
-  const leafBudget = Math.max(stage === "seed" ? 3 : stage === "young" ? 7 : 9, Math.round(complexity * 22) + (stage === "young" ? 2 : 0));
+  const leafBudget = Math.max(stage === "seed" ? 3 : stage === "young" ? 11 : 15, Math.round(complexity * 36) + (stage === "young" ? 3 : 0));
   const showVeins = complexity > 0.45;
   const showBloom = body.flower !== "none" && complexity > 0.3 && stage !== "seed" && stage !== "sprout";
   const showThorns = body.thorn !== "none" && stage !== "seed";
@@ -318,7 +318,9 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
   const geoRng = new Rng(`geometry:${plant.plantId}`);
   const lean = stemLean(body.stem, v, geoRng);
   const sway = geoRng.float(-4, 4) + (body.stem === "vine" ? 6 : 0);
-  const fill = Math.min(1.32, 0.88 + v.scale * 0.32);
+  // Shorter and fuller rather than tall and sparse: a stem half-empty of
+  // foliage reads as a stick, and the contact sheet showed exactly that.
+  const fill = Math.min(1.24, 0.8 + v.scale * 0.3);
   // The solver and the renderer must describe the same plant, so the habit and
   // its branches are decided once, here, from the same deterministic stream.
   const habit = habitFor(body, complexity);
@@ -329,7 +331,7 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
   for (const stage of STAGE_ORDER) {
     const comp = compositionFor(plant, stage);
     const baseScale = v.scale * (STAGE_SCALE[stage] ?? 1);
-    const bloomR = (body.flower === "bud" ? 5 : 11) * baseScale;
+    const bloomR = (body.flower === "bud" ? 7 : 16) * baseScale;
     const hasBloom = body.flower !== "none" && complexity > 0.3 && stage !== "seed" && stage !== "sprout";
 
     let height = Math.max(prev, (SOIL_TOP - 12) * (STAGE_SCALE[stage] ?? 1) * fill);
@@ -337,7 +339,7 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
     let bloomScale = 1;
   // Bigger leaves: with the count raised, each leaf also has to carry more of the
   // silhouette, or a full plant reads as clutter instead of foliage.
-    let leafScale = 1.18;
+    let leafScale = 1.3;
 
     // The spine must include the curled tip: the renderer appends the curl before
     // any layer is drawn, so leaves hang off it and the bloom sits above it.
@@ -415,7 +417,7 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
   for (const stage of STAGE_ORDER) {
     const comp = compositionFor(plant, stage);
     const baseScale = v.scale * (STAGE_SCALE[stage] ?? 1);
-    const bloomR = (body.flower === "bud" ? 5 : 11) * baseScale;
+    const bloomR = (body.flower === "bud" ? 7 : 16) * baseScale;
     const hasBloom = body.flower !== "none" && complexity > 0.3 && stage !== "seed" && stage !== "sprout";
     const plan = out[stage];
     for (let guard = 0; guard < 40; guard++) {
@@ -430,7 +432,7 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
       // Height is the only lever that narrows a stem, so this is the one place a
       // width problem gets fixed even when the monotonic-growth floor has already
       // spent the shrink budget. Clipping is worse.
-      const tipAllowance = Math.max(4, (body.flower === "bud" ? 5 : 11) * baseScale * plan.bloomScale + 2);
+      const tipAllowance = Math.max(4, (body.flower === "bud" ? 7 : 16) * baseScale * plan.bloomScale + 2);
       const stemSide = horizontalStemExtent(skeleton) + Math.abs(sway) + tipAllowance;
       if (stemSide > SIDE_MARGIN) plan.height *= Math.max(0.88, SIDE_MARGIN / stemSide);
       plan.fitX = Math.min(plan.fitX, fitFromRoom(stemSide, leafReachFor(stage, baseScale)));
@@ -470,7 +472,7 @@ function compositionFor(plant: Plant, stage: string) {
   const complexity = plant.visual.complexity;
   const stageScale = STAGE_SCALE[stage] ?? 1;
   const scale = plant.visual.scale * stageScale;
-  const leafBudget = Math.max(stage === "seed" ? 3 : stage === "young" ? 7 : 9, Math.round(complexity * 22) + (stage === "young" ? 2 : 0));
+  const leafBudget = Math.max(stage === "seed" ? 3 : stage === "young" ? 11 : 15, Math.round(complexity * 36) + (stage === "young" ? 3 : 0));
   return { scale, complexity, leafBudget };
 }
 
@@ -628,7 +630,7 @@ function canopyTop(
       // vertical, so the topmost leaf points up rather than out.
       a = { x: spine[0].x, y: spine[0].y - 1 };
       leafAngle = -150 + (i / Math.max(1, leafCount)) * 120;
-      size = 19 * s;
+      size = 23 * s;
     } else {
       t = cotyledon ? 0.12 + i * 0.1 : 0.22 + (i / Math.max(1, leafCount)) * 0.68;
       const onBranch = branchShare > 0 && i >= leafCount - branchShare * 2;
@@ -647,7 +649,7 @@ function canopyTop(
       const side = i % 2 === 0 ? -1 : 1;
       const droop = cotyledon ? 12 : 8 + t * 34;
       leafAngle = baseAngle + side * (52 - t * 14) + droop * (side > 0 ? 1 : 0.6);
-      size = (cotyledon ? 9 : 11 + (i % 3) * 3.4) * s * (1 - t * 0.25);
+      size = (cotyledon ? 11 : 18 + (i % 3) * 3.4) * s * (1 - t * 0.25);
     }
 
     const side = i % 2 === 0 ? -1 : 1;
@@ -815,7 +817,7 @@ function rootLayer(base: Pt, scale: number, stem: string, rng: Rng): string {
 }
 
 function plantGround(): string {
-  return "hsl(28 34% 44%)";
+  return "hsl(30 34% 50%)";
 }
 
 /**
@@ -952,19 +954,22 @@ const jitterT = cotyledon ? 0 : (i % 2 === 0 ? 1 : -1) * rng.float(0.02, 0.07);
         anchor = along(spine[0], spine[spine.length - 1], span * Math.min(0.98, t));
         baseAngle = stemAngle;
       }
-      // Splay wide and low at the base, steeper near the tip.
-      const droop = cotyledon ? 18 : 6 + t * 30;
-      leafAngle = baseAngle + side * (74 - t * 22) + droop * (side > 0 ? 1 : 0.65);
+      // Splay wide and low at the base, steeper near the tip. A stronger droop
+      // folds the blade downward so the foliage covers the stem instead of
+      // spiking out sideways like a bottle brush.
+      const droop = cotyledon ? 18 : 12 + t * 40;
+      leafAngle = baseAngle + side * (70 - t * 20) + droop * (side > 0 ? 1 : 0.62);
     }
-const taper = rosette ? 1 : 1 - t * 0.42;
+const taper = rosette ? 1 : 1 - t * 0.3;
     const sizeVariation = cotyledon ? 1 : 0.78 + rng.float(0, 0.5) + (i % 3) * 0.06;
     // A rosette has no stem to climb, so its leaves carry the whole silhouette
     // and are drawn noticeably larger.
-    const size = (cotyledon ? 13 : rosette ? 19 : 15 + (i % 3) * 2.6) * scale * taper * sizeVariation;
+    const size = (cotyledon ? 14 : rosette ? 23 : 17 + (i % 3) * 3) * scale * taper * sizeVariation;
 
     const curl = (side > 0 ? 1 : -1) * rng.float(14, 38) + rng.float(-6, 6);
-    // Ratio of full width to length. 0.62 is a slim lance, 0.95 is a broad leaf.
-    const width = 0.62 + complexity * 0.26 + rng.float(-0.05, 0.05);
+    // Ratio of full width to length. Broader blades overlap into a canopy
+    // instead of reading as separate slivers.
+    const width = 0.72 + complexity * 0.24 + rng.float(-0.05, 0.05);
     const belly = 0.4 + rng.float(-0.08, 0.12);
     const serration = body.pattern === "veined" ? 0 : rng.bool(0.3) ? rng.float(0.3, 1) : 0;
     const jitter = 0.18 + complexity * 0.3;
@@ -1043,7 +1048,7 @@ function thornLayer(spine: Pt[], scale: number, complexity: number, thorn: strin
  */
 function bloomLayer(top: Pt, scale: number, flower: string, pal: PlantPalette, gid: string, rng: Rng): string {
   const petals = PETALS[flower] ?? 5;
-  const r = (flower === "bud" ? 6 : 13) * scale;
+  const r = (flower === "bud" ? 7 : 16) * scale;
   let out = "";
 
   // Pedicel: a short stalk from the stem tip down into the calyx.
@@ -1259,8 +1264,8 @@ function eyeLayer(top: Pt, scale: number, eyeCount: number, pal: PlantPalette, d
  * All values are roughly a third smaller so the foliage is the subject.
  */
 function stemWidthFor(stem: string, scale: number): number {
-  const map: Record<string, number> = { thin: 1.1, slender: 1.5, normal: 2.1, thick: 3, vine: 1.6, lean: 1.8, braided: 2.4 };
-  return (map[stem] ?? 2.1) * Math.max(0.55, scale);
+  const map: Record<string, number> = { thin: 1.5, slender: 2, normal: 2.9, thick: 4.2, vine: 2.1, lean: 2.5, braided: 3.3 };
+  return (map[stem] ?? 2.9) * Math.max(0.55, scale);
 }
 
 /**
