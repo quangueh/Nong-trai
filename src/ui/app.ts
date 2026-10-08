@@ -10,8 +10,12 @@ import {
   watchSystemTransparency,
   motionPref,
   setMotionPref,
+  qualityPref,
+  setQualityPref,
+  applyQuality,
   type GlassPref,
   type MotionPref,
+  type QualityPref,
 } from "../core/prefs";
 import { el, toast, seedIcon, dismissOnEscape } from "./components";
 import { icon, type IconName } from "./icons";
@@ -479,7 +483,41 @@ function openSettings(): void {
   });
   paintGlass();
 
-  body.append(accountRow, soundRow, volumeWrap, musicWrap, motionRow, glassRow, wipe);
+  /**
+   * Quality — an art budget, not an accessibility mode.
+   *
+   * "Nhẹ" stops continuous ambient loops (flutter, shimmer, aura) for weak
+   * hardware and long sessions. It deliberately does NOT dim the world or
+   * strip materials — that answer belongs to "Độ trong suốt", and reduced
+   * motion is its own row above.
+   */
+  const QUALITY_CYCLE: Array<{ pref: QualityPref; label: string; hint: string }> = [
+    { pref: "beauty", label: "Đẹp", hint: "Đầy đủ hiệu ứng và chuyển động nền." },
+    { pref: "balanced", label: "Cân bằng", hint: "Giữ chất lượng, tiết kiệm pin." },
+    { pref: "lite", label: "Nhẹ", hint: "Tắt chuyển động nền — cho máy yếu." },
+  ];
+  const qualityRow = el("button", { class: "account-rowbtn" });
+  const paintQuality = (): void => {
+    const cur = QUALITY_CYCLE.find((q) => q.pref === qualityPref()) ?? QUALITY_CYCLE[1];
+    qualityRow.replaceChildren(
+      el("span", { class: "grow" }, [
+        el("b", {}, ["Chất lượng hình ảnh"]),
+        el("div", { class: "tiny muted" }, [cur.hint]),
+      ]),
+      el("span", { class: "account-value" }, [cur.label]),
+    );
+  };
+  qualityRow.addEventListener("click", () => {
+    const i = QUALITY_CYCLE.findIndex((q) => q.pref === qualityPref());
+    const next = QUALITY_CYCLE[(i + 1) % QUALITY_CYCLE.length];
+    setQualityPref(next.pref);
+    paintQuality();
+    sfx.play("tap");
+    toast(`Chất lượng: ${next.label.toLowerCase()}.`);
+  });
+  paintQuality();
+
+  body.append(accountRow, soundRow, volumeWrap, musicWrap, motionRow, glassRow, qualityRow, wipe);
 
   const close = (): void => {
     offAccount();
@@ -776,6 +814,7 @@ export function boot(root: HTMLElement) {
    */
   applyGlass();
   applyMotion();
+  applyQuality();
   watchSystemTransparency(applyGlass);
   watchSystemMotion(applyMotion);
 

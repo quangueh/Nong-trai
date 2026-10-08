@@ -328,6 +328,24 @@ html[data-motion="reduce"] *::before,
 html[data-motion="reduce"] *::after {
   transition-duration: 80ms !important;
 }
+
+/* ------------------------------------------------------------- quality budget
+   data-quality="lite" trims ambient work without touching information or the
+   world itself — the garden still holds dew, rim light and cast shadows; what
+   stops is the *continuous* motion and the heaviest compositing. */
+html[data-quality="lite"] .bed .leaf {
+  animation: none !important;
+}
+html[data-quality="lite"] .plantart.is-anim .l-leaves .leaf {
+  animation: none !important;
+}
+html[data-quality="lite"] .plot-shine i,
+html[data-quality="lite"] .need-water {
+  animation: none !important;
+}
+html[data-quality="lite"] .l-aura {
+  display: none;
+}
 /*
  * Solid mode is global, not per-component: `prefers-reduced-transparency`
  * means *no* layer may blur what sits under it, so the media answer applies
@@ -335,6 +353,7 @@ html[data-motion="reduce"] *::after {
  * separation the blur was doing is still done — by the border and shadow.
  */
 html[data-solid="1"] .qadock,
+html[data-solid="1"] .tabs,
 html[data-solid="1"] .toast,
 html[data-solid="1"] .notice,
 html[data-solid="1"] .battle-paused,

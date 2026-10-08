@@ -2,6 +2,8 @@
 
 Đọc `docs/21_LIQUID_GLASS_UX_UI_MASTERPLAN.md` trước. Đây là brief thực thi, không phải yêu cầu chạy toàn bộ các phase ngay khi đọc file.
 
+Đọc thêm `docs/23_BOTANICAL_GLASS_ART_DIRECTION.md`: bổ sung yêu cầu kính cho ô đất/cây/skill, nâng renderer cây và animation, nghiên cứu game tham khảo. Áp dụng thứ tự art-first ở doc 23 trong các phase liên quan; không hiểu “kính chủ yếu navigation/tools” bên dưới là cấm botanical glass trong game art.
+
 ## Prompt nền
 
 ```text

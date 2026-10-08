@@ -1731,6 +1731,12 @@ h4 {
   overflow: visible;
   border: none;
   background-image:
+    /* The polished rim (docs/23): a specular arc at the island's upper-left
+       lip and a tighter glint beside it — the "glass edge" on the plot itself,
+       painted into the surface rather than a blur layered over it. Kept as a
+       background layer so selection/armed box-shadows never erase it. */
+    radial-gradient(46% 9% at 30% 2.5%, rgba(255, 255, 255, 0.55), transparent 72%),
+    radial-gradient(18% 5% at 66% 1.5%, rgba(255, 255, 255, 0.32), transparent 70%),
     /* Furrows. Soil that has been raked has a direction, and a flat fill reads as
        a paint swatch rather than as earth. */
     repeating-linear-gradient(
@@ -1815,10 +1821,14 @@ h4 {
      than the middle, because soil catches light on the underside of an overhang. */
   background: linear-gradient(180deg, #b08658 0%, #98693d 46%, #a3744a 100%);
   /* A pair of root threads hanging out of the point, because a perfectly smooth cone
-     reads as a drop of chocolate rather than as soil. */
+     reads as a drop of chocolate rather than as soil. The small bright dash is the
+     mineral vein in the root — the polished edge the doc asks the island base to
+     carry (docs/23 §4). */
   box-shadow:
     -8px 15px 0 -7px #8a6038,
-    9px 17px 0 -8px #7d552f;
+    9px 17px 0 -8px #7d552f,
+    inset -3px -2px 0 -1px rgba(255, 238, 200, 0.35),
+    inset 4px 3px 0 -2px rgba(70, 46, 24, 0.18);
   z-index: -1;
   pointer-events: none;
 }

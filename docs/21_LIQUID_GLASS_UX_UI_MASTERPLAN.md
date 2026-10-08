@@ -2,6 +2,8 @@
 
 Ngày: 08/10/2026. Trạng thái: đề xuất thiết kế và kế hoạch triển khai, chưa thay giao diện.
 
+**Bổ sung yêu cầu mới:** đọc `docs/23_BOTANICAL_GLASS_ART_DIRECTION.md`. Người dùng muốn chất kính đi sâu vào ô đất, cây, kỹ năng và animation, không chỉ chrome. Doc 23 ưu tiên khi mâu thuẫn về phạm vi vật liệu; giữ nguyên các ràng buộc readability, domain và performance của bản này.
+
 ## 1. Quyết định thiết kế
 
 **Một thế giới thực vật sống động, với lớp công cụ kính tinh tế nổi phía trên.**

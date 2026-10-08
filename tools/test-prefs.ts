@@ -233,9 +233,12 @@ try {
   await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
   await page.waitForTimeout(800);
 
-  /* Opened through its real button, not by calling the function. */
+  /* Opened through its real button, not by calling the function. The gear is
+     an SVG icon now, so the handle is its accessible name, not a glyph. */
   await page.evaluate(`(() => {
-    const b = [...document.querySelectorAll("button")].find(x => /⚙/.test(x.textContent || ""));
+    const b = [...document.querySelectorAll("button")].find(
+      x => /Cài đặt/.test(x.getAttribute("aria-label") || "") || /⚙/.test(x.textContent || ""),
+    );
     if (b) b.click();
   })()`);
   await page.waitForTimeout(600);
@@ -307,7 +310,9 @@ try {
   await forced.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
   await forced.waitForTimeout(700);
   await forced.evaluate(`(() => {
-    const b = [...document.querySelectorAll("button")].find(x => /⚙/.test(x.textContent || ""));
+    const b = [...document.querySelectorAll("button")].find(
+      x => /Cài đặt/.test(x.getAttribute("aria-label") || "") || /⚙/.test(x.textContent || ""),
+    );
     if (b) b.click();
   })()`);
   await forced.waitForTimeout(600);

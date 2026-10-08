@@ -171,7 +171,9 @@ console.log("\nmute, and the two volumes:");
   const { page, errs } = await open();
 
   const sliders = (await page.evaluate(`(async () => {
-    const b = [...document.querySelectorAll("button")].find(x => /⚙/.test(x.textContent || ""));
+    const b = [...document.querySelectorAll("button")].find(
+      x => /Cài đặt/.test(x.getAttribute("aria-label") || "") || /⚙/.test(x.textContent || ""),
+    );
     if (b) b.click();
     await new Promise(r => setTimeout(r, 400));
     return {

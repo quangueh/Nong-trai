@@ -266,6 +266,40 @@ export function watchSystemTransparency(onChange: () => void): () => void {
   return () => q.removeListener(handler);
 }
 
+/* ------------------------------------------------------------------- quality */
+/*
+ * Quality is the third axis, separate from reduced motion (docs/23 §9):
+ * Đẹp/Cân bằng/Nhẹ is a *budget* for ambient work — leaf flutter, aura
+ * shimmer, dew — and says nothing about whether the player can read motion.
+ * "Nhẹ" is for weak hardware and long sessions, not an accessibility mode;
+ * reduced motion keeps the full art and only strips movement.
+ */
+export type QualityPref = "beauty" | "balanced" | "lite";
+const QUALITY_KEY = "nongtrai.quality";
+
+let quality: QualityPref = "balanced";
+
+(function loadQuality() {
+  const raw = read(QUALITY_KEY);
+  if (raw === "beauty" || raw === "balanced" || raw === "lite") quality = raw;
+})();
+
+export function qualityPref(): QualityPref {
+  return quality;
+}
+
+export function setQualityPref(next: QualityPref): void {
+  quality = next;
+  write(QUALITY_KEY, next);
+  applyQuality();
+}
+
+/** Publish on `<html data-quality>` — CSS reads it the way it reads data-solid. */
+export function applyQuality(): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.quality = quality;
+}
+
 /* -------------------------------------------------------------------- hints */
 /*
  * One-shot UI hints ("you can pause with Space") earn their pixels only until

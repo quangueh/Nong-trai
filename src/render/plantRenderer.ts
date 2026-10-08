@@ -210,7 +210,7 @@ export function renderPlantSvg(plant: Plant, size = 120, opts: { anim?: boolean 
   for (const br of skeleton.branches) {
     stem += stemLayer(br.spine, stemWidth * 0.52, body.stem, pal, gid);
   }
-  const { leaves, petioles } = leafLayer(spine, leafBudget, leafS, complexity, showVeins, pal, rng, body, stage, gid, skeleton);
+  const { leaves, petioles, dew } = leafLayer(spine, leafBudget, leafS, complexity, showVeins, pal, rng, body, stage, gid, skeleton);
   const thorns = showThorns ? thornLayer(spine, s, complexity, body.thorn, pal, rng) : "";
   const bloom = showBloom ? bloomLayer(top, s * bloomScale, body.flower, pal, gid, rng) : "";
   const fruit = showFruit ? fruitLayer(spine, s, body.fruit, pal, rng) : "";
@@ -245,6 +245,9 @@ export function renderPlantSvg(plant: Plant, size = 120, opts: { anim?: boolean 
   ${g(stem, "l-stem")}
   ${petioles ? `<g class="l-petioles${cls}">${petioles}</g>` : ""}
   ${leaves ? `<g class="l-leaves${cls}">${leaves}</g>` : ""}
+  <!-- dew is a large-render luxury (docs/23 §5.3): at thumbnail size the drops
+       are sub-pixel noise, so the layer only exists when the frame can hold it -->
+  ${size >= 130 && dew ? `<g class="l-dew">${dew}</g>` : ""}
   ${g(thorns, "l-thorns")}
   ${g(fungus, "l-fungus")}
   ${g(fruit, "l-fruit")}
@@ -911,11 +914,15 @@ function leafLayer(
   stage: string,
   gid: string,
   skeleton: Skeleton,
-): { leaves: string; petioles: string } {
+): { leaves: string; petioles: string; dew: string } {
   const gradId = gid;
   const cotyledon = stage === "sprout" || stage === "seed";
   let leaves = "";
   let petioles = "";
+  /* Dew positions on a few lit blades, for the botanical-glass pass. Stored as
+     points rather than markup because the drops sit on the leaf surface — the
+     blade origin plus a share of its length lands them inside the silhouette. */
+  const dewSpots: { x: number; y: number; r: number }[] = [];
   const stemAngle = angleOf(spine[0], spine[spine.length - 1]);
   const span = dist(spine[0], spine[spine.length - 1]);
 
@@ -1015,6 +1022,12 @@ const taper = rosette ? 1 : 1 - t * 0.3;
     }
 
     const lit = i % 2 === 0;
+    // One drop on every fourth lit leaf, three at most — dew is jewellery, and
+    // jewellery loses value when everything sparkles.
+    if (!cotyledon && lit && i % 4 === 2 && dewSpots.length < 3) {
+      const dpt = rotate(pt(size * 0.55, 0), pt(0, 0), leafAngle);
+      dewSpots.push({ x: px + dpt.x, y: py + dpt.y, r: Math.min(1.9, Math.max(1, size * 0.08)) });
+    }
     leaves += `<g transform="translate(${r2(px)} ${r2(py)}) rotate(${r2(leafAngle)})">
       <g class="leaf ${lit ? "leaf-lit" : "leaf-shade"}" style="--d:${(i * 0.07).toFixed(2)}s">
         <path d="${under}" fill="${pal.leafDark}" opacity="0.5" transform="translate(0 ${r2(lift)})"/>
@@ -1024,7 +1037,19 @@ const taper = rosette ? 1 : 1 - t * 0.3;
       </g>
     </g>`;
   }
-  return { leaves, petioles };
+  /* A dew drop is a lens, not a white dot: translucent body, a bright edge on
+     the lit side, a catchlight off the upper-left, and a hair of shade under
+     it so it sits *on* the blade instead of hovering. */
+  const dew = dewSpots
+    .map(
+      (d) => `<g>
+        <ellipse cx="${r2(d.x)}" cy="${r2(d.y + d.r * 0.28)}" rx="${r2(d.r * 0.9)}" ry="${r2(d.r * 0.4)}" fill="${pal.stemShade}" opacity="0.25"/>
+        <ellipse cx="${r2(d.x)}" cy="${r2(d.y)}" rx="${r2(d.r)}" ry="${r2(d.r * 0.86)}" fill="rgba(196, 228, 250, 0.4)" stroke="rgba(255,255,255,0.55)" stroke-width="0.35"/>
+        <circle cx="${r2(d.x - d.r * 0.3)}" cy="${r2(d.y - d.r * 0.32)}" r="${r2(d.r * 0.3)}" fill="#fff" opacity="0.9"/>
+      </g>`,
+    )
+    .join("");
+  return { leaves, petioles, dew };
 }
 
 function thornLayer(spine: Pt[], scale: number, complexity: number, thorn: string, pal: PlantPalette, rng: Rng): string {
