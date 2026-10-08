@@ -127,10 +127,44 @@ body {
 
 /* The pills never shrink and the brand always does, so the bar's width is decided by
    however many balances are on it. Below 560px the two care materials come off (see the
-   media query); above it there is room for everything. Making the bar a scroll container
-   instead was tried and is worse: it stops the flex children from sharing the width, the
-   brand collapses to zero, and a game with no title on a phone is a worse trade than one
-   that has to scroll. */
+   media query); above it there is room for everything. The pill cluster scrolls on its
+   own — scrolling the whole bar was tried and is worse: it stops the flex children from
+   sharing the width, the brand collapses to zero, and a game with no title on a phone is
+   a worse trade than one that has to scroll. */
+
+/* The pill strip: one horizontally scrollable cluster so the settings gear —
+   the rightmost control and the only way into the settings sheet — is never
+   pushed past the viewport and clipped by the shell's overflow:hidden. When the
+   wallet is small it just sits there; when it's wider than the space left over,
+   the balances swipe instead of the gear disappearing. */
+.toppills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* The strip fades at its right edge whenever there is more pill to swipe to —
+     a clipped half-pill reads as broken, a faded one reads as scrollable. */
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+}
+
+.toppills::-webkit-scrollbar {
+  display: none;
+}
+
+.toppills .pill {
+  flex: none;
+}
+
+/* Level badge and gear are chrome: they pin at the bar's ends and never scroll
+   or shrink. */
+.topbar > .levelbadge,
+.topbar > .iconbtn {
+  flex: none;
+}
 
 .brand {
   display: flex;
@@ -139,10 +173,11 @@ body {
   font-weight: 800;
   letter-spacing: -0.02em;
   font-size: 15px;
-  /* `flex: 1 1 0` rather than `flex: 1`. With a zero basis the brand is the first thing
-     to lose width in a crowded bar and it ends up at zero - which is how the game ended up
-     with no title on a phone while every balance stayed full size. */
-  flex: 1 1 0;
+  /* `flex: 0 1 auto` — the name keeps its natural width now that the pill
+     cluster (.toppills) is the flexible child, and it still shrinks before the
+     pinned controls do. min-width:0 lets it go below content; the inner text
+     ellipsizes. */
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
 }
@@ -313,7 +348,7 @@ body {
 
 .pulse-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 16px;
 }
@@ -876,12 +911,12 @@ h4 {
 }
 .grid3 {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 .grid4 {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -2658,7 +2693,7 @@ html[data-quality="lite"] .battler.is-mended .plantart .l-leaves {
 
 .wallet-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin-top: 10px;
 }
@@ -8651,7 +8686,7 @@ button.qachip:active {
    these are sub-tabs, not screens. */
 .quest-tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
   margin: 10px 0 12px;
 }
@@ -8671,7 +8706,23 @@ button.qachip:active {
   align-items: center;
   justify-content: center;
   gap: 5px;
+  /* A grid track sized minmax(0,1fr) hands the tab less than its content on a
+     360px phone; the label is what gives, the badge stays. */
+  min-width: 0;
+  overflow: hidden;
   transition: background 0.15s ease, color 0.15s ease;
+}
+
+.quest-tab > span:not(.quest-tab-ico):not(.tab-badge) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quest-tab .tab-badge,
+.quest-tab .quest-tab-ico {
+  flex: none;
 }
 
 .quest-tab .quest-tab-ico {
@@ -9454,7 +9505,7 @@ button.qachip:active {
 }
 .plant-batch-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   max-height: 46vh;
   overflow-y: auto;

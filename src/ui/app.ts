@@ -903,7 +903,17 @@ export function boot(root: HTMLElement) {
     sfx.play("tap");
     openSettings();
   });
-  topbar.append(levelBadge, brand, coinPill, emberPill, pairPill, crystalPill, itemPill, settings);
+  /**
+   * The currency pills sit in their own scroller, between the brand and the
+   * settings gear. A full late-game wallet (coin + ember + the nectar/pollen
+   * pair) is wider than a phone minus level badge and gear, and the gear used
+   * to be the thing that paid for it — pushed past the right edge and clipped
+   * by the shell's overflow:hidden, unreachable on every screen. Scrolling the
+   * pill cluster keeps the gear pinned; the balances swipe under it.
+   */
+  const toppills = el("div", { class: "toppills" });
+  toppills.append(coinPill, emberPill, pairPill, crystalPill, itemPill);
+  topbar.append(levelBadge, brand, toppills, settings);
 
   // Tapping the shared pill says what each half is for and where it comes from, since a
   // two-number pill is not self-explanatory and the shop's cards now name currencies.
