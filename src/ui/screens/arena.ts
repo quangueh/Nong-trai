@@ -98,6 +98,39 @@ function renderMenu(nav: Navigate): HTMLElement {
 
   const ready = store.state.plants.filter((p) => canBattle(p));
 
+  // Hero banner: the arena's own pitch dark, so the two plain buttons below it
+  // read as doors into the same place the fight happens. The record rides on it —
+  // W/L/D as chips — so the screen's first element answers "how am I doing".
+  {
+    const rec = store.state.plants.reduce(
+      (acc, p) => {
+        acc.w += p.battleRecord.wins;
+        acc.l += p.battleRecord.losses;
+        acc.d += p.battleRecord.draws;
+        return acc;
+      },
+      { w: 0, l: 0, d: 0 },
+    );
+    const total = rec.w + rec.l + rec.d;
+    const streak = ready.reduce((m, p) => Math.max(m, p.battleRecord.streak), 0);
+    const hero = el("div", { class: "arena-hero" });
+    hero.append(
+      el("div", { class: "arena-hero-title" }, ["⚔ Đấu trường"]),
+      el("div", { class: "arena-hero-sub" }, [
+        total
+          ? `${rec.w} thắng · ${rec.l} thua${rec.d ? ` · ${rec.d} hòa` : ""} — tỉ lệ ${Math.round((rec.w / total) * 100)}%`
+          : "Chưa có trận nào — ra trận đầu tiên.",
+      ]),
+      el("div", { class: "arena-hero-chips" }, [
+        el("span", { class: "arena-chip is-win" }, [`${rec.w} W`]),
+        el("span", { class: "arena-chip is-loss" }, [`${rec.l} L`]),
+        rec.d ? el("span", { class: "arena-chip" }, [`${rec.d} D`]) : el("span", { class: "arena-chip" }, ["0 D"]),
+        streak > 0 ? el("span", { class: "arena-chip is-streak" }, [`🔥 ${streak}`]) : el("span"),
+      ]),
+    );
+    root.appendChild(hero);
+  }
+
   // A wide button: the label and its explanation are stacked in one column beside the
   // icon. As three sibling flex items they sat in a row, and on a phone the label was
   // the one that gave way - "Đấu với AI" broke across two lines while the explanation it
@@ -116,14 +149,16 @@ function renderMenu(nav: Navigate): HTMLElement {
     return btn;
   }
 
+  const actions = el("div", { class: "arena-actions" });
   const pve = wideAction("🎯", "Đấu với AI", "Hệ thống tìm đối thủ cùng cấp độ lực chiến", true);
   pve.disabled = !ready.length;
   pve.addEventListener("click", () => pickPlant((plant) => nav("arena", { plantId: plant.plantId })));
-  root.appendChild(pve);
+  actions.appendChild(pve);
 
   const create = wideAction("🏠", "Tạo phòng", "Sinh mã 6 ký tự để mời đối thủ", false);
   create.addEventListener("click", () => pickPlant((plant) => renderRoomHost(nav, plant)));
-  root.appendChild(create);
+  actions.appendChild(create);
+  root.appendChild(actions);
 
   const joinBox = el("div", { class: "card" });
   joinBox.appendChild(el("div", { class: "small", style: "font-weight:700;margin-bottom:8px" }, ["🔑 Nhập mã phòng"]));
@@ -137,7 +172,7 @@ function renderMenu(nav: Navigate): HTMLElement {
   input.addEventListener("input", () => {
     input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
   });
-  const joinBtn = el("button", { class: "btn primary block", style: "margin-top:8px" }, ["Vào phòng"]);
+  const joinBtn = el("button", { class: "btn primary", style: "flex:none" }, ["Vào phòng"]);
   joinBtn.addEventListener("click", () => {
     const code = input.value.trim().toUpperCase();
     if (code.length < 6) {
@@ -146,7 +181,10 @@ function renderMenu(nav: Navigate): HTMLElement {
     }
     pickPlant((plant) => renderRoomGuest(nav, code, plant));
   });
-  joinBox.append(input, joinBtn, el("div", { class: "callout", style: "margin-top:8px" }, [roomRelayAvailable
+  const joinRow = el("div", { class: "row", style: "gap:8px;margin-top:2px" });
+  input.style.margin = "0";
+  joinRow.append(input, joinBtn);
+  joinBox.append(joinRow, el("div", { class: "callout", style: "margin-top:8px" }, [roomRelayAvailable
     ? "Nhập mã của đối thủ để vào phòng — đấu qua mạng, không cần cùng thiết bị. Chủ phòng quyết định toàn bộ kết quả trận."
     : "Chưa cấu hình máy chủ: phòng chỉ nối được giữa hai tab CÙNG trình duyệt. Đặt VITE_ACCOUNT_API rồi deploy Worker để đấu qua mạng."]));
   root.appendChild(joinBox);
@@ -181,9 +219,9 @@ function renderMenu(nav: Navigate): HTMLElement {
 
     const roster = el("div", { class: "roster" });
     for (const p of ready.slice(0, 6)) {
-      const card = el("button", { class: "roster-card" });
+      const card = el("button", { class: `roster-card rar-${p.rarity}` });
       const thumb = el("div", { class: "roster-thumb" });
-      thumb.innerHTML = plantThumb(p, 54).innerHTML;
+      thumb.innerHTML = plantThumb(p, 68).innerHTML;
       card.append(
         thumb,
         // Resolved against the whole garden, not the battle-ready subset shown here, so
@@ -479,13 +517,15 @@ function showResult(
   container.replaceChildren();
   const won = winner === "a";
   const draw = winner === "draw";
-  const card = el("div", { class: "card pop", style: "text-align:center" });
+  const card = el("div", { class: "card pop", style: "text-align:center;padding-top:0;overflow:hidden" });
   card.append(
-    el("div", { style: "font-size:34px;font-weight:900;margin-top:6px" }, [draw ? "🤝 HÒA" : won ? "🏆 THẮNG!" : "💀 THUA"]),
-    el("div", { class: "tiny muted", style: "margin-top:4px" }, [`${mine.name} VS ${foe.name}`]),
+    el("div", { class: `result-banner ${draw ? "is-draw" : won ? "is-win" : "is-loss"}` }, [
+      el("div", { class: "result-word" }, [draw ? "🤝 HÒA" : won ? "🏆 THẮNG!" : "💀 THUA"]),
+      el("div", { class: "result-vs" }, [`${mine.name} VS ${foe.name}`]),
+    ]),
     el(
       "div",
-      { class: "row", style: "justify-content:center;gap:22px;margin-top:14px" },
+      { class: "row", style: "justify-content:center;gap:10px;margin-top:14px" },
       [
         statBlock("ST gây ra", Math.round(a.damageDealt)),
         statBlock("ST nhận", Math.round(a.damageTaken)),
@@ -541,9 +581,9 @@ function showResult(
 }
 
 function statBlock(label: string, value: string | number): HTMLElement {
-  const b = el("div");
+  const b = el("div", { class: "stat-tile" });
   b.append(
-    el("div", { class: "mono", style: "font-size:20px;font-weight:700" }, [String(value)]),
+    el("div", { class: "mono", style: "font-size:20px;font-weight:800" }, [String(value)]),
     el("div", { class: "tiny muted" }, [label]),
   );
   return b;

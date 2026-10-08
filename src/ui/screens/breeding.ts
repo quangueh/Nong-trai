@@ -34,10 +34,14 @@ export function renderBreeding(nav: Navigate): HTMLElement {
   title.append(el("span", {}, ["🧬 Phòng lai tạo"]));
   root.appendChild(title);
 
-  const slots = el("div", { class: "grid2" });
+  const slots = el("div", { class: "breed-pair" });
   const slotElA = el("div", { class: "slot" });
+  const link = el("div", { class: "breed-link" }, [
+    el("span", { class: "breed-link-ico" }, ["+"]),
+    el("span", { class: "breed-link-lbl" }, ["lai"]),
+  ]);
   const slotElB = el("div", { class: "slot" });
-  slots.append(slotElA, slotElB);
+  slots.append(slotElA, link, slotElB);
   root.appendChild(slots);
 
   const info = el("div", { class: "card", style: "margin-top:12px" });
@@ -48,7 +52,7 @@ export function renderBreeding(nav: Navigate): HTMLElement {
   const protocolBox = el("div", { class: "proto-box" });
   root.appendChild(protocolBox);
 
-  const breedBtn = el("button", { class: "btn primary block", style: "margin-top:12px" }, ["🧬 Lai tạo"]);
+  const breedBtn = el("button", { class: "btn primary block breed-cta" }, ["🧬 Lai tạo"]);
   root.appendChild(breedBtn);
 
   // The spend is irreversible, so it is named before it happens. Hidden until the
@@ -87,6 +91,11 @@ export function renderBreeding(nav: Navigate): HTMLElement {
     /* One slot filled turns the other into the invitation. */
     slotElA.classList.toggle("is-next", !slotA && Boolean(slotB));
     slotElB.classList.toggle("is-next", !slotB && Boolean(slotA));
+    // The link medallion is the only piece of the screen that reads the pair as a
+    // pair: empty "+", a live helix once both parents stand in their slots.
+    const ready = Boolean(slotA && slotB);
+    link.classList.toggle("is-ready", ready);
+    (link.firstElementChild as HTMLElement).textContent = ready ? "🧬" : "+";
     paintInfo();
   };
 
@@ -174,6 +183,7 @@ export function renderBreeding(nav: Navigate): HTMLElement {
     const weights = store.breedingPreview(a.plantId, b.plantId, protocol);
     if (!weights) return;
     info.append(
+      el("div", { class: "small", style: "font-weight:800;margin-bottom:6px" }, ["🔮 Dự đoán cây con"]),
       el("div", { class: "tiny muted", style: "margin-bottom:6px" }, ["Xác suất độ hiếm của cây con:"]),
       oddsBar(weights),
     );
@@ -278,10 +288,13 @@ function paintSlot(slot: HTMLElement, plant: Plant | undefined, onClick: () => v
   slot.replaceChildren();
   if (plant) {
     slot.classList.add("filled");
+    // The slot takes the plant's rarity colour on its rim — the same signal the
+    // arena avatar carries, so a rare parent reads as rare before any odds text.
+    slot.style.setProperty("--rarc", RARITY_META[plant.rarity]?.colour ?? "transparent");
     const thumb = el("div");
-    thumb.innerHTML = plantThumb(plant, 120).innerHTML;
-    thumb.style.width = "120px";
-    thumb.style.height = "120px";
+    thumb.innerHTML = plantThumb(plant, 132).innerHTML;
+    thumb.style.width = "132px";
+    thumb.style.height = "132px";
     // Both parent slots print against the whole garden, because that is the set the
     // player is choosing from and breeding destroys both of these plants. Two slots
     // reading "Rễ Gai hạt" is a way to destroy the wrong plant.
@@ -292,11 +305,13 @@ function paintSlot(slot: HTMLElement, plant: Plant | undefined, onClick: () => v
     slot.append(thumb, rarityTag(plant.rarity), name, meta);
   } else {
     slot.classList.remove("filled");
+    slot.style.removeProperty("--rarc");
     slot.append(
-      el("div", { style: "font-size:30px;opacity:.5" }, ["🌱"]),
+      el("div", { class: "slot-pod" }, ["🥚"]),
       // The label is parameterised: both slots used to read "Chọn cây A", so the
       // player could not tell which parent they were picking.
-      el("div", { class: "small muted" }, [`Chọn ${label}`]),
+      el("div", { class: "small", style: "font-weight:800" }, [`Chọn ${label}`]),
+      el("div", { class: "tiny muted" }, ["Cha mẹ sẽ chuyển gene cho con"]),
     );
   }
   slot.onclick = onClick;

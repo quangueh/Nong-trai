@@ -1228,6 +1228,21 @@ h4 {
   border-radius: 14px;
   background: rgba(0, 0, 0, 0.32);
   border: 1px solid rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.battle-arena::before {
+  /* a ghost "VS" behind the clock — the centre of the field reads as the clash
+     point even between phases, not as an empty gap between two nameplates */
+  content: "VS";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 44px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.06);
+  pointer-events: none;
 }
 
 /* Ground plane the plants stand on, so they are not floating in a void. */
@@ -2794,6 +2809,240 @@ input::placeholder {
 @keyframes slot-invite {
   0%, 100% { box-shadow: 0 0 0 0 rgba(47, 159, 98, 0); }
   50% { box-shadow: 0 0 0 5px rgba(47, 159, 98, 0.16); }
+}
+
+/* --- the breeding pair ---------------------------------------------------
+   The two slots and the link between them are one diagram, A + B -> child.
+   Without the link they were two unrelated dashed boxes. */
+
+.breed-pair {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 10px;
+  align-items: stretch;
+}
+
+/* The medallion sits at the same height as the slots' centres, not vertically
+   centred in the row — the row's height is set by the slots, so a self-centred
+   flex column lands exactly there. */
+.breed-link {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.breed-link-ico {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1.5px dashed var(--line);
+  transition: all 0.25s var(--ease);
+}
+.breed-link-lbl {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.breed-link.is-ready .breed-link-ico {
+  border-style: solid;
+  border-color: var(--accent);
+  color: #fff;
+  background: linear-gradient(135deg, #43b96f, #2f9f62);
+  box-shadow: 0 0 0 4px rgba(47, 159, 98, 0.18), 0 6px 14px rgba(46, 96, 57, 0.25);
+  animation: linkPulse 2s ease-in-out infinite;
+}
+.breed-link.is-ready .breed-link-lbl {
+  color: var(--accent);
+}
+@keyframes linkPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+/* The empty slot's pod: a dashed circle holding an egg, so an unfilled slot
+   reads as a place where a plant will stand rather than as blank card space. */
+.slot-pod {
+  width: 74px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 30px;
+  background: radial-gradient(circle at 50% 34%, #fffdf4, #f3ecd7);
+  border: 1.5px dashed #cfc4a4;
+  box-shadow: inset 0 -6px 12px rgba(150, 120, 60, 0.12);
+  margin-bottom: 4px;
+}
+.slot:hover .slot-pod,
+.slot.is-next .slot-pod {
+  border-color: var(--accent);
+  transform: scale(1.05);
+}
+.slot-pod { transition: transform 0.16s var(--spring), border-color 0.16s var(--ease); }
+
+/* A filled slot rims itself in the parent's rarity colour, set as --rarc. */
+.slot.filled {
+  border-color: var(--rarc, var(--accent));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--rarc, var(--accent)) 45%, transparent),
+    0 4px 14px rgba(46, 96, 57, 0.12);
+}
+
+/* The CTA carries the action's own colour when it can act, and dims to a plain
+   button when it cannot — the state is read off the button, not the text. */
+.breed-cta {
+  margin-top: 12px;
+}
+.breed-cta:not(:disabled) {
+  background: linear-gradient(135deg, #3fae68, #26814b);
+  box-shadow: 0 8px 20px rgba(38, 129, 75, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+/* --- arena hero -----------------------------------------------------------
+   A dusk-arena banner on a light screen: the record chips float on the same
+   dark the battlefield uses, so lobby and fight share one place. */
+
+.arena-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r);
+  padding: 16px 16px 13px;
+  color: #f2f6ee;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(120% 90% at 80% -20%, rgba(255, 185, 92, 0.2), transparent 55%),
+    radial-gradient(110% 70% at 50% 118%, rgba(110, 231, 160, 0.18), transparent 60%),
+    linear-gradient(180deg, #12271f 0%, #0b1c16 100%);
+  box-shadow: inset 0 -24px 40px rgba(0, 0, 0, 0.28), 0 6px 18px rgba(18, 34, 22, 0.18);
+}
+.arena-hero::before {
+  /* crossed-sword watermark in the far corner, quiet */
+  content: "⚔";
+  position: absolute;
+  right: 12px;
+  top: 2px;
+  font-size: 64px;
+  opacity: 0.1;
+  transform: rotate(-12deg);
+  pointer-events: none;
+}
+.arena-hero-title {
+  font-weight: 900;
+  font-size: 17px;
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.arena-hero-sub {
+  font-size: 12px;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+.arena-hero-chips {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.arena-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.arena-chip.is-win {
+  background: rgba(61, 220, 132, 0.18);
+  border-color: rgba(61, 220, 132, 0.4);
+  color: #9df0c0;
+}
+.arena-chip.is-loss {
+  background: rgba(255, 107, 107, 0.14);
+  border-color: rgba(255, 107, 107, 0.35);
+  color: #ffb0a8;
+}
+.arena-chip.is-streak {
+  background: rgba(255, 166, 60, 0.16);
+  border-color: rgba(255, 166, 60, 0.4);
+  color: #ffc98a;
+}
+
+/* Two doors side by side on desktop; on a phone they stack because the stacked
+   label+note layout already handles a narrow column. */
+.arena-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+.arena-actions .btn {
+  margin-bottom: 0;
+}
+@media (max-width: 480px) {
+  .arena-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Rarity rim on a roster card — the same signal the battle avatar carries. */
+.roster-card.rar-A { border-color: rgba(168, 120, 255, 0.55); }
+.roster-card.rar-S { border-color: rgba(255, 199, 64, 0.6); }
+.roster-card.rar-SS { border-color: rgba(255, 122, 169, 0.6); }
+.roster-card.rar-SSS { border-color: rgba(140, 205, 255, 0.7); }
+.roster-thumb {
+  width: 68px;
+  height: 68px;
+}
+
+/* --- battle result banner --------------------------------------------------
+   The verdict gets a colour band across the card's top edge; a plain 34px word
+   on cream read as a label, not an outcome. */
+
+.result-banner {
+  margin: 0 -14px 0;
+  padding: 20px 14px 16px;
+  text-align: center;
+  color: #fff;
+  border-radius: var(--r) var(--r) 0 0;
+}
+.result-word {
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.result-vs {
+  font-size: 12px;
+  opacity: 0.88;
+  margin-top: 3px;
+}
+.result-banner.is-win {
+  background: linear-gradient(180deg, #b78418, #8a5e08);
+}
+.result-banner.is-loss {
+  background: linear-gradient(180deg, #7c3a3a, #5c2828);
+}
+.result-banner.is-draw {
+  background: linear-gradient(180deg, #3a5f7c, #2a4458);
+}
+
+.stat-tile {
+  min-width: 86px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  text-align: center;
 }
 
 /* --- the breeding report -------------------------------------------------- */
