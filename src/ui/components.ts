@@ -474,6 +474,59 @@ export function sheet(content: HTMLElement, onClose?: () => void): { overlay: HT
   return { overlay, sheet: s };
 }
 
+/**
+ * A designed confirm dialog — the replacement for native `confirm()`.
+ *
+ * Native confirm is a browser chrome alert: unstyled, unlabelled buttons, no
+ * Escape/Tab/focus behaviour, and it blocks the thread. Destructive actions
+ * (breeding consumes the parents, selling is permanent) deserve the real
+ * thing: named buttons, the cost spelled out, focus parked on the safe choice.
+ */
+export function confirmDialog(opts: {
+  title: string;
+  body?: string | HTMLElement;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  /** Danger styling on the confirm button — for actions that cannot be undone. */
+  danger?: boolean;
+  onConfirm: () => void;
+}): void {
+  const shell = document.querySelector(".shell") ?? document.body;
+  const overlay = el("div", { class: "overlay" });
+  const s = el("div", { class: "sheet confirm-sheet" });
+  const close = (): void => {
+    overlay.remove();
+    s.remove();
+  };
+
+  const cancel = el("button", { class: "btn ghost" }, [opts.cancelLabel ?? "Huỷ"]);
+  cancel.addEventListener("click", close);
+  const ok = el("button", { class: `btn${opts.danger ? " danger" : " primary"}` }, [
+    opts.confirmLabel ?? "Đồng ý",
+  ]);
+  ok.addEventListener("click", () => {
+    close();
+    opts.onConfirm();
+  });
+
+  s.append(
+    el("h3", { style: "font-size:17px;margin:4px 0 8px" }, [opts.title]),
+    typeof opts.body === "string" || !opts.body
+      ? el("div", { class: "small muted", style: "line-height:1.55" }, [opts.body ?? ""])
+      : opts.body,
+    el("div", { class: "row", style: "gap:8px;justify-content:flex-end;margin-top:16px" }, [cancel, ok]),
+  );
+  overlay.addEventListener("click", close);
+  dismissOnEscape(s, close);
+  shell.append(overlay, s);
+  /*
+   * Focus lands on Huỷ, not the destructive button — confirmDialog is for
+   * actions that hurt, and Enter-by-habit should not fire them. The Escape
+   * entry is already pushed; moving focus afterwards is safe.
+   */
+  queueMicrotask(() => cancel.focus({ preventScroll: true }));
+}
+
 export function toast(message: string, ms = 2000): void {
   const host = document.querySelector(".shell");
   if (!host) return;

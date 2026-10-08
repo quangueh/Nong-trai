@@ -3,8 +3,10 @@
 import { GameStore, resetSave, type Notice } from "../core/store";
 import {
   applyGlass,
+  applyMotion,
   glassPref,
   setGlassPref,
+  watchSystemMotion,
   watchSystemTransparency,
   motionPref,
   setMotionPref,
@@ -773,7 +775,9 @@ export function boot(root: HTMLElement) {
    * `system`, and `applyGlass` resolves that itself.
    */
   applyGlass();
+  applyMotion();
   watchSystemTransparency(applyGlass);
+  watchSystemMotion(applyMotion);
 
   /*
    * Hover, in one listener rather than one per button.

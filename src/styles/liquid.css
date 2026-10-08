@@ -309,8 +309,25 @@ html[data-solid="1"] .topbar {
 }
 
 /* ------------------------------------------------------------- reduced motion
-   Player-level reduce already exists via prefs; the glass layer adds nothing
-   animated itself except view transitions the legacy rules already gate. */
+   The OS media query already gates ambient CSS in styles.css. This is the
+   *player's* override — `data-motion` is published by prefs.applyMotion and
+   resolves system/full/reduce to one attribute. Reduce must remove motion,
+   not information: ambient loops stop, and transitions compress to a fast
+   settle rather than zero so state changes still read as changes. */
+html[data-motion="reduce"] .bed .leaf,
+html[data-motion="reduce"] .plot-shine i,
+html[data-motion="reduce"] .need-water,
+html[data-motion="reduce"] .plantart.is-anim * {
+  animation: none !important;
+}
+html[data-motion="reduce"] .route-enter {
+  animation: none !important;
+}
+html[data-motion="reduce"] *,
+html[data-motion="reduce"] *::before,
+html[data-motion="reduce"] *::after {
+  transition-duration: 80ms !important;
+}
 /*
  * Solid mode is global, not per-component: `prefers-reduced-transparency`
  * means *no* layer may blur what sits under it, so the media answer applies

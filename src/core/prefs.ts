@@ -82,6 +82,17 @@ export function motionPref(): MotionPref {
 export function setMotionPref(next: MotionPref): void {
   motion = next;
   write(MOTION_KEY, next);
+  applyMotion();
+}
+
+/**
+ * Publish the resolved motion answer on `<html data-motion>` so CSS ambient
+ * animation (leaf flutter, plot shimmer, route transitions) follows the
+ * *player's* choice, not only the OS media query the stylesheet can see.
+ */
+export function applyMotion(): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.motion = reducedMotion() ? "reduce" : "full";
 }
 
 /**
@@ -104,6 +115,7 @@ export function reducedMotion(): boolean {
  * while the tab is open should see the change without reloading. Returns true when the
  * resolved answer differs from before.
  */
+/** Re-publish the resolved answer when the OS flips while pref is `system`. */
 export function watchSystemMotion(onChange: () => void): () => void {
   if (typeof matchMedia !== "function") return () => {};
   const q = matchMedia("(prefers-reduced-motion: reduce)");

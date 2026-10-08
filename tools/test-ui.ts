@@ -295,7 +295,11 @@ await render("breeding renders", () => navigate("breeding"));
   check("breed button is now enabled", (byText(".screen .btn", "🧬 Lai tạo") as HTMLButtonElement)?.disabled === false);
 
   const countBefore = store.state.plants.length;
-  await render("breed executes", () => click(byText(".screen .btn", "🧬 Lai tạo")));
+  // Breeding consumes both parents, so it now confirms first — one designed
+  // dialog, focus parked on Huỷ, rather than breeding on a stray tap.
+  await render("breed asks for confirmation", () => click(byText(".screen .btn", "🧬 Lai tạo")));
+  check("the destructive confirm appears", !!$(".sheet.confirm-sheet"));
+  await render("confirming breeds", () => click(byText(".confirm-sheet .btn", "Lai tạo")));
 
   // Breeding now plays a fusion ceremony before the report. It is skippable by
   // design, and this checks that: the report must be reachable in one tap, not

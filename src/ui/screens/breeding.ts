@@ -9,7 +9,7 @@ import {
   protocolUnlocked,
   type ProtocolId,
 } from "../../genetics/protocols";
-import { el, toast, oddsBar, probabilityRows, rarityTag, traitChips, plantThumb, archetypeRadar, fmt, dismissOnEscape, pickPlantSheet, breedBlock } from "../components";
+import { el, toast, oddsBar, probabilityRows, rarityTag, traitChips, plantThumb, archetypeRadar, fmt, dismissOnEscape, pickPlantSheet, breedBlock, confirmDialog } from "../components";
 import { store } from "../app";
 import type { Plant } from "../../core/types";
 
@@ -224,6 +224,25 @@ const meta = el("div");
 
   breedBtn.addEventListener("click", () => {
     if (!slotA || !slotB) return;
+    const a = store.get(slotA);
+    const b = store.get(slotB);
+    if (!a || !b) return;
+    /*
+     * Breeding is irreversible — both parents are consumed the moment the
+     * store settles it. The fee and the consequence are on the card above the
+     * button already; this dialog is the last deliberate step, not the first
+     * place the player learns the cost.
+     */
+    confirmDialog({
+      title: "Lai hai cây này?",
+      body: `${a.name} và ${b.name} sẽ được tiêu hao để tạo một cây con mới — kinh nghiệm của cha mẹ chuyển sang con. Không thể hoàn tác.`,
+      confirmLabel: "🧬 Lai tạo",
+      onConfirm: () => runBreed(),
+    });
+  });
+
+  const runBreed = () => {
+    if (!slotA || !slotB) return;
     const res = store.breed(slotA, slotB, protocol);
     if (!res.ok || !res.result) {
       sfx.play("error");
@@ -236,7 +255,7 @@ const meta = el("div");
     playFusion(res.result.plant, () => {
       openMutationReport(res.result!, () => nav("breeding"));
     });
-  });
+  };
 
   const paintCost = () => {
     const a = slotA ? store.get(slotA) : undefined;
