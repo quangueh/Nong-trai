@@ -622,6 +622,9 @@ export class GameStore {
     const def = PLOT_DEFS.find((p) => p.index === index);
     if (!def) return { ok: false, reason: "Ô không tồn tại" };
     if (def.index <= this.state.nurseryCap) return { ok: false, reason: "Ô này đã mở" };
+    // Plots open in order: buying a later one wholesale would open every plot
+    // before it for that single price, which undercuts the whole cost curve.
+    if (def.index !== this.state.nurseryCap + 1) return { ok: false, reason: `Mở theo thứ tự — ô kế tiếp là ${this.state.nurseryCap + 1}` };
 
     const ctx = this.unlockContext();
     const gate = checkUnlock(ctx, def.unlock);

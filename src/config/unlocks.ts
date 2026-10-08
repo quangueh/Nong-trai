@@ -280,13 +280,13 @@ export const STARTING_PLOTS = 6;
  * species, so the two systems read as one idea.
  */
 export const PLOT_DEFS: readonly PlotDef[] = Object.freeze(
-  Array.from({ length: 24 }, (_, i) => {
+  Array.from({ length: 36 }, (_, i) => {
     const index = i + 1;
     if (index <= STARTING_PLOTS) return { index, cost: 0 };
-    // 7..12 -> 900, 13..18 -> 2_600, 19..24 -> 7_400.
+    // 7..12 -> 900, 13..18 -> 2_600, 19..24 -> 7_400, 25..30 -> 19_000, 31..36 -> 52_000.
     const block = Math.floor((index - STARTING_PLOTS - 1) / 6);
-    const base = [900, 2600, 7400][block] ?? 7400;
-    const step = [900, 2600, 7400][block] ?? 7400;
+    const base = [900, 2600, 7400, 19_000, 52_000][block] ?? 52_000;
+    const step = base;
     // Within a block each plot costs a bit more than the last, so "open the next
     // one" is always the cheapest way forward and the player is never stuck
     // choosing between two unaffordable things.
@@ -297,7 +297,11 @@ export const PLOT_DEFS: readonly PlotDef[] = Object.freeze(
         ? { any: [{ k: "level", n: 4 }, { k: "plants", n: 4 }] }
         : block === 1
           ? { all: [{ k: "level", n: 14 }], any: [{ k: "species", n: 6 }, { k: "growthLevel", n: 12 }] }
-          : { all: [{ k: "level", n: 30 }], any: [{ k: "awakened", n: 1 }, { k: "generation", n: 3 }] };
+          : block === 2
+            ? { all: [{ k: "level", n: 30 }], any: [{ k: "awakened", n: 1 }, { k: "generation", n: 3 }] }
+            : block === 3
+              ? { all: [{ k: "level", n: 45 }], any: [{ k: "awakened", n: 3 }, { k: "generation", n: 5 }] }
+              : { all: [{ k: "level", n: 58 }], any: [{ k: "awakened", n: 6 }, { k: "generation", n: 7 }] };
     return { index, cost, unlock };
   }),
 );

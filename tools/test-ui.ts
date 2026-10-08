@@ -439,7 +439,7 @@ await render("lab renders", () => navigate("lab"));
   // What is worth asserting is that a plot, its price and its blocker are all on
   // screen — not that some button exists, because "a button exists" is exactly
   // the property that let the ungated shortcut through.
-  check("land tab shows the garden size", /Vườn: \d+\/24 ô/.test(t), t.slice(0, 100));
+  check("land tab shows the garden size", /Vườn: \d+\/\d+ ô/.test(t), t.slice(0, 100));
   check("land tab lists locked plots", t.includes("Ô 7"), "no plot rows");
   check("land tab prices the next plot", /xu/.test(t), "no price shown");
   check(

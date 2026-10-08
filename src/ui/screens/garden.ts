@@ -213,21 +213,6 @@ function paintPlots(body: HTMLElement, nav: Navigate, shell: Element, goTab: (t:
   );
   body.appendChild(scene);
   body.appendChild(qaBar.root);
-
-  // Kept on the plots tab rather than the today tab: it explains what the plots
-  // are for, and it is what a new player needs on their first visit to the soil.
-  const info = el("div", { class: "card strategy-card", style: "margin-top:18px" });
-  info.append(
-    el("div", { class: "small", style: "font-weight:800;margin-bottom:8px" }, ["Vòng chơi chính"]),
-    el("div", { class: "simple-loop" }, [
-      loopStep("1", "Gieo hạt"),
-      loopStep("2", "Chăm cây"),
-      loopStep("3", "Đợi trưởng thành"),
-      loopStep("4", "Đấu để lấy xu và vật tư"),
-      loopStep("5", "Chăm tiếp hoặc lai giống"),
-    ]),
-  );
-  body.appendChild(info);
 }
 
 /**
@@ -545,10 +530,6 @@ function paintSeeds(body: HTMLElement, nav: Navigate): void {
     ]),
   );
   body.appendChild(seedBelt(nav));
-}
-
-function loopStep(n: string, label: string): HTMLElement {
-  return el("div", { class: "loop-step" }, [el("span", {}, [n]), el("b", {}, [label])]);
 }
 
 function seedBelt(nav: Navigate): HTMLElement {
