@@ -64,6 +64,19 @@ export const BOARD_SIZE = 15;
 /** Pages of `list` to walk before giving up — a bound, not an expectation. */
 const MAX_PAGES = 10;
 
+/**
+ * Snapshot of every row, served to board reads.
+ *
+ * A `list` call costs 100× a `get` on the free tier (1k vs 100k ops a day),
+ * and the board used to list + re-get every entry on every fetch — a client
+ * polling each 45s spent a List per poll forever. The snapshot turns a board
+ * read into one `get`; a rebuild only happens once per TTL across *all*
+ * players, and `writeEntry` folds each save's row in so a fresh cache is also
+ * accurate.
+ */
+const CACHE_KEY = "lb:__cache__";
+const CACHE_TTL_MS = 45_000;
+
 function safeParse<T>(raw: string, fallback: T): T {
   try {
     return JSON.parse(raw) as T;
@@ -104,7 +117,18 @@ export function entryFromState(state: unknown, name: string, at = Date.now()): L
 
 /** Store the ranked summary for one account. Called from the save handler. */
 export async function writeEntry(env: LbEnv, accountKey: string, entry: LbEntry): Promise<void> {
-  await env.DB.put(lbKey(accountKey), JSON.stringify(entry));
+  const key = lbKey(accountKey);
+  await env.DB.put(key, JSON.stringify(entry));
+  /* Fold the row into the snapshot when one exists — +1 get +1 put on a save,
+     but the board keeps answering from the cache instead of re-listing, and
+     the saver's own row is right on their very next poll. */
+  const cachedRaw = await env.DB.get(CACHE_KEY);
+  if (!cachedRaw) return;
+  const cached = safeParse<{ at?: number; rows?: LbRow[] }>(cachedRaw, {});
+  if (!Array.isArray(cached.rows) || typeof cached.at !== "number") return;
+  const rows = cached.rows.filter((r) => r.key !== key);
+  rows.push({ key, name: entry.name, email: entry.email, power: entry.power, level: entry.level, at: entry.at });
+  await env.DB.put(CACHE_KEY, JSON.stringify({ at: cached.at, rows }));
 }
 
 /** Every entry in the index, newest write winning per key by construction. */
@@ -181,7 +205,18 @@ function isTestEntry(row: LbRow): boolean {
  * better)`, so being absent from the index reads as unranked rather than as last.
  */
 export async function handleLeaderboard(env: LbEnv, myKey: string): Promise<Response> {
-  const rows = (await readAll(env)).filter((r) => !isTestEntry(r));
+  /* Snapshot first: a fresh cache serves the whole board for the price of one
+     `get`. Only a missing or stale snapshot pays the list + per-entry gets. */
+  const cachedRaw = await env.DB.get(CACHE_KEY);
+  let rows: LbRow[];
+  const cached = cachedRaw ? safeParse<{ at?: number; rows?: LbRow[] }>(cachedRaw, {}) : null;
+  if (cached && typeof cached.at === "number" && Array.isArray(cached.rows) && Date.now() - cached.at < CACHE_TTL_MS) {
+    rows = cached.rows;
+  } else {
+    rows = await readAll(env);
+    await env.DB.put(CACHE_KEY, JSON.stringify({ at: Date.now(), rows }));
+  }
+  rows = rows.filter((r) => !isTestEntry(r));
   const power = [...rows].sort(byPower);
   const level = [...rows].sort(byLevel);
   // Rows carry their full KV name (`lb:acct:…`); the caller arrives as a bare key.

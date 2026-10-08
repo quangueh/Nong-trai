@@ -151,14 +151,31 @@ export function leaderboardPanel(): HTMLElement {
 
   card.querySelector(".lb-refresh")!.addEventListener("click", () => void refreshBoards(true));
   const off = onBoardsChange(repaint);
-  liveRepaints.add(repaint);
+
+  /* The interval fetch only pays while someone can see the board — each GET
+     is a server-side snapshot read, but polling a screen nobody is looking at
+     is still a request every 45s for the life of the tab. A detached card
+     also means a dead repaint, so it unregisters itself on next fire rather
+     than accumulating one zombie per visit. */
+  const liveRepaint = () => {
+    if (!card.isConnected) {
+      liveRepaints.delete(liveRepaint);
+      off();
+      return;
+    }
+    repaint();
+  };
+  liveRepaints.add(liveRepaint);
 
   repaint();
   void refreshBoards();
 
   if (!wired) {
     wired = true;
-    window.setInterval(() => void refreshBoards(), REFRESH_MS);
+    window.setInterval(() => {
+      if (document.hidden || !document.querySelector(".lb-panel")) return;
+      void refreshBoards();
+    }, REFRESH_MS);
     // The player's own row reads the live store, so a level-up or a new strongest
     // plant between fetches repaints instead of lying until the next poll.
     store.subscribe(() => {

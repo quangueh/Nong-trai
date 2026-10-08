@@ -484,6 +484,25 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
 
   // The index key is the account key — the same namespacing the rest of KV uses.
   check("entries live under lb:", lbKey("acct:x") === "lb:acct:x");
+
+  /* Board reads serve a snapshot: the first fetch pays the list + per-entry
+     gets, every fetch inside the TTL is one get. A re-list per poll is what
+     burned the free-tier List quota. */
+  let listCalls = 0;
+  const countingEnv = {
+    DB: {
+      ...lbDb,
+      list: async (o: { prefix: string }) => {
+        listCalls++;
+        return lbDb.list(o);
+      },
+    },
+  };
+  await handleLeaderboard(countingEnv, "acct:a");
+  await handleLeaderboard(countingEnv, "acct:a");
+  await handleLeaderboard(countingEnv, "acct:a");
+  check("repeated board reads reuse the snapshot — zero re-list inside the TTL", listCalls === 0, `${listCalls} lists`);
+
   const second = await handleLeaderboard(lbEnv, "acct:never-saved");
   const nobody = (await second.json()) as { me: unknown };
   check("a player with no save is unranked, not an error", nobody.me === null);
