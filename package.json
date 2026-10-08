@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "deploy:worker": "npm --prefix worker run deploy",
     "preview": "vite preview --port 4173",
     "verify:prod": "tsx tools/verify-prod.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
