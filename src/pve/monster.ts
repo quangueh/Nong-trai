@@ -268,7 +268,7 @@ export function monsterFor(
     archetype,
     tier,
     battleRecord: { wins: 0, losses: 0, draws: 0, scars: 0, streak: 0, bestStreak: 0 },
-    careMemory: { recent: [], counts: {}, lastAction: null },
+    careMemory: { recent: [], counts: {}, lastUse: {}, lastAction: null },
     stress: {},
     mood: "wild",
     powerRating: 0,

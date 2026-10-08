@@ -192,21 +192,30 @@ for (const [label, me] of accounts) {
    seat preference has somewhere to show up. Each matchup is run twice with the sides
    swapped, and side A's wins are counted from the first ordering while side B's come from the
    reversed one. */
-console.log("\nside bias, fought at parity");
+console.log("\nside bias, identical twins");
+/* Me-vs-monster at parity conflates seat position with roster strength — a
+   rebalance that shifts who hits harder reads as "seat bias". Identical
+   twins isolate the seat: same genome, same stats, same skills; whatever the
+   seat does to the fight is all that can differ. */
 let aWins = 0;
 let fights = 0;
-for (const [i, [, me]] of accounts.entries()) {
-  for (let k = 0; k < 24; k++) {
-    const m = monsterFor(`${ME}-s${k}`, 20, parity[i], 0, 0).plant;
-    const seed = seedToken("seat", String(i), String(k));
-    const asA = simulateBattle(me, m, { seed, maxSeconds: 90, arena: "sunny" });
-    const asB = simulateBattle(m, me, { seed, maxSeconds: 90, arena: "sunny" });
-    fights += 2;
-    if (asA.winner === "a") aWins++;
-    if (asB.winner === "b") aWins++;
+{
+  const twin = () => {
+    const p = createSeedPlant(SPECIES[3].id, ME, "seat-twin", 0);
+    p.growth.stage = "mature";
+    p.growth.level = 30;
+    p.tier = "bloom";
+    fitToBudget(p, 30);
+    return p;
+  };
+  const a = twin();
+  for (let k = 0; k < 96; k++) {
+    const r = simulateBattle(a, twin(), { seed: seedToken("seat", "t", String(k)), maxSeconds: 90, arena: "sunny" });
+    fights++;
+    if (r.winner === "a") aWins++;
   }
 }
-console.log(`  seat A took ${((aWins / fights) * 100).toFixed(1)}% of ${fights} contested fights (parity would be near 50%)`);
+console.log(`  seat A took ${((aWins / fights) * 100).toFixed(1)}% of ${fights} identical-twin fights (parity would be near 50%)`);
 check("neither seat is favoured", aWins / fights > 0.4 && aWins / fights < 0.6, `${((aWins / fights) * 100).toFixed(1)}%`);
 
 /* --- the curve, fought out ------------------------------------------------- */
@@ -327,18 +336,20 @@ check("and it costs about what the last stat stage cost", deep.share < 1.6, `${(
 check("power stops growing past the stat ladder", deeper.targetPower === deep.targetPower, `${deep.targetPower} vs ${deeper.targetPower}`);
 check("stage 4000 is as defined as stage 400", deeper.affixes.length >= 6 && deeper.rarity === "SSS");
 
-/* --- daily escalation ------------------------------------------------------ */
-
-console.log("\ndaily escalation");
+/* --- account age does not scale difficulty ---------------------------------
+   Blueprint 3.11: the campaign must not get harder because the account is
+   older. `dayIndex` survives only to rotate *which* affixes appear — target
+   power ignores it entirely. */
+console.log("\naccount-age neutrality");
 const ap = quickPower(accounts[3][1]);
 for (const day of [0, 7, 17, 60]) {
   console.log(`  day ${String(day).padStart(2)}: stage 30 target ${stageTargetPower(30, ap, day)}`);
 }
-check("day 0 and day 17 differ", stageTargetPower(30, ap, 0) !== stageTargetPower(30, ap, 17));
-check("escalation is capped", stageTargetPower(30, ap, 60) === stageTargetPower(30, ap, 400));
+check("target power ignores dayIndex", stageTargetPower(30, ap, 0) === stageTargetPower(30, ap, 17));
+check("and stays identical a year in", stageTargetPower(30, ap, 60) === stageTargetPower(30, ap, 400));
 check(
-  "a month away is a fight, not a wall",
-  stageTargetPower(30, ap, 30) / stageTargetPower(30, ap, 0) < 1.7,
+  "a month away changes nothing but which affixes rotate in",
+  stageTargetPower(30, ap, 30) / stageTargetPower(30, ap, 0) <= 1,
   `x${(stageTargetPower(30, ap, 30) / stageTargetPower(30, ap, 0)).toFixed(2)}`,
 );
 

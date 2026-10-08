@@ -25,6 +25,17 @@ const BENCHMARKS: BenchmarkId[] = [
 
 const SESSIONS_PER_BENCH = 6;
 
+/** Everything that decides a fight, canonically ordered — the measurement seed. */
+function combatKey(plant: Plant): string {
+  return JSON.stringify({
+    stats: plant.stats,
+    skills: plant.skills.map((s) => [s.id, s.power]),
+    traits: [...plant.traits].sort(),
+    arch: plant.archetype,
+    tier: plant.tier,
+  });
+}
+
 export interface EcrReport {
   ecr: number;
   medianWinRate: number;
@@ -52,7 +63,11 @@ export function computeEcr(plant: Plant, sessions = SESSIONS_PER_BENCH): EcrRepo
       const a = subjectFirst ? plant : bench;
       const b = subjectFirst ? bench : plant;
       const cfg: BattleConfig = {
-        seed: `ecr:${plant.plantId}:${benchId}:${s}`,
+        /* Seeded by the BUILD, not the plant's id — two genomes with identical
+           combat data must measure the same ECR, and a purely visual repaint
+           must not move it (docs/20 §4.4). Identity comes from stats, skills,
+           traits, archetype and tier — nothing else. */
+        seed: `ecr:${combatKey(plant)}:${benchId}:${s}`,
         maxSeconds: 90,
         arena: "sunny",
       };

@@ -90,10 +90,14 @@ export function entryFromState(state: unknown, name: string, at = Date.now()): L
     }
   }
   const level = Number((state as { breederLevel?: number })?.breederLevel);
+  /* Both numbers are client-claimed — the save IS the client's garden blob, so
+     this board is a shared diary, not ranked truth (docs/20 gates real ranked
+     on server-verified progression). Bounding them to plausible ceilings keeps
+     a doctored save from printing "Lv 9999999" on a public list. */
   return {
     name,
-    power: Math.round(power),
-    level: Number.isFinite(level) && level > 0 ? Math.floor(level) : 1,
+    power: Math.round(Math.min(Math.max(0, power), 100_000)),
+    level: Number.isFinite(level) && level > 0 ? Math.floor(Math.min(level, 10_000)) : 1,
     at,
   };
 }
@@ -143,7 +147,10 @@ const byLevel = (a: LbRow, b: LbRow): number => b.level - a.level || b.power - a
 const rowFor = (row: LbRow, rank: number, myKey: string) => ({
   rank,
   name: row.name,
-  email: row.email,
+  /* Emails stay in the index (the account identity), but only the caller's own
+     row is told it — a public board carrying 15 strangers' email addresses is
+     a leak, not a label. */
+  email: row.key === myKey ? row.email : undefined,
   power: row.power,
   level: row.level,
   me: row.key === myKey,

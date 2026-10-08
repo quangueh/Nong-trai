@@ -321,6 +321,9 @@ section("11. Care actually changes stats (docs/12 acceptance, Definition of Done
   }
   const first = applyCare(spamA, "water", 1000, { items: 99, geneCrystal: 99, leafCoin: 9999 });
   const firstGain = first.gains.reduce((a, g) => a + g.amount, 0);
+  /* Diminishing returns now come from the 24h rolling window (`recent`), not
+     the lifetime `counts` — seed six in-window uses. */
+  spamB.careMemory.recent = Array.from({ length: 6 }, () => ({ action: "water" as const, at: 999 }));
   spamB.careMemory.counts = { water: 6 };
   spamB.careMemory.lastAction = null;
   const sixth = applyCare(spamB, "water", 1000, { items: 99, geneCrystal: 99, leafCoin: 9999 });

@@ -153,7 +153,9 @@ export function createSeedPlant(species: SpeciesId, ownerId: string, nonce: stri
   dna.archetype = archetypeFromSpecies(def.archetype, rng);
 
   const stats = statsFromGenes(dna, "seedling");
-  const potential = potentialFromGenes(dna);
+  // Seed plants are "seedling" tier — defaulting the caps to "bloom" priced a
+  // seed's room to grow off a reference body it does not have.
+  const potential = potentialFromGenes(dna, "seedling");
 
   const plant: Plant = {
     plantId: `p_${seed}`,
@@ -368,7 +370,10 @@ export function breedPlants(parentA: Plant, parentB: Plant, ctx: BreedingContext
   const skills = buildSkillsFromGenes(dna, packages, skillSeed, ctx.tier, mutationTier, targetRarity);
 
   // --- traits ----------------------------------------------------------
-  const traitResult = assignTraits(rngTrait, dna, skills, packages, targetRarity, mutationTier);
+  const traitResult = assignTraits(rngTrait, dna, skills, packages, targetRarity, mutationTier, [
+    ...parentA.traits,
+    ...parentB.traits,
+  ]);
 
   // --- build the plant --------------------------------------------------
   const child: Plant = {
@@ -807,7 +812,12 @@ function nonStatValueOf(plant: Plant, tier: (typeof TIER_META)[CombatTier]): num
 function buildValueOf(plant: Plant, tier: (typeof TIER_META)[CombatTier]): number {
   const ref = tier.reference;
   let statValue = 0;
-  statValue += (plant.stats.hp / ref.hp - 1) * 100 * STAT_COST.hp;
+  /* Durability is priced as effective HP — a point of defense and a point of HP
+     buy the same survival, so charging for HP alone let tank builds pay half
+     price. EHP = hp × (1 + defense/kDefense), the same curve combat uses. */
+  const ehp = plant.stats.hp * (1 + plant.stats.defense / tier.kDefense);
+  const refEhp = ref.hp * (1 + ref.defense / tier.kDefense);
+  statValue += (ehp / refEhp - 1) * 100 * STAT_COST.hp;
   const dps = plant.stats.attack * (1 + plant.stats.crit * 0.8);
   const refDps = ref.attack * (1 + ref.crit * 0.8);
   statValue += (dps / refDps - 1) * 100 * STAT_COST.sustainedDamage;
@@ -815,7 +825,10 @@ function buildValueOf(plant: Plant, tier: (typeof TIER_META)[CombatTier]): numbe
   statValue += (plant.stats.skillPower / ref.skillPower - 1) * 100 * STAT_COST.healing * 0.8;
   statValue += (plant.stats.crit - ref.crit) * 100 * STAT_COST.crit;
   statValue += (plant.stats.evasion - ref.evasion) * 100 * STAT_COST.evasion;
-  return statValue + nonStatValueOf(plant, tier) - computeSynergyTax(plant);
+  /* The synergy tax is a COST — stacking synergies raises the build's price.
+     Subtracting it did the opposite: the most synergistic builds looked the
+     cheapest and sailed past the budget validator. */
+  return statValue + nonStatValueOf(plant, tier) + computeSynergyTax(plant);
 }
 
 /** Exported for the same reason as `statsFromGenes`: a monster is a genome. */
@@ -823,9 +836,15 @@ export function potentialFromGenes(dna: Dna, tier: CombatTier = "bloom"): Record
   const ref = TIER_META[tier].reference;
   const out: Record<string, PotentialStat> = {};
   for (const g of STAT_GENES) {
-    const base = g === "crit" || g === "evasion" ? ref[g] * 100 : ref[g];
-    const soft = Math.round(base * (0.85 + dna.statGenes[g] * 0.7));
-    out[g] = { softCap: soft, hardCap: Math.round(soft * 1.35) };
+    const base = ref[g];
+    const soft = base * (0.85 + dna.statGenes[g] * 0.7);
+    /* crit/evasion are decimal stats (0–0.6): their caps must be decimals too.
+       The old ×100 stored "20" beside a 0.16 stat, so the cap check compared a
+       percent against a fraction and never bound. */
+    out[g] =
+      g === "crit" || g === "evasion"
+        ? { softCap: round2(soft), hardCap: round2(soft * 1.35) }
+        : { softCap: Math.round(soft), hardCap: Math.round(soft * 1.35) };
   }
   return out;
 }
@@ -964,12 +983,27 @@ function assignTraits(
   packages: GenePackage[],
   target: Rarity,
   tier: MutationTier,
+  parentTraits: string[] = [],
 ): TraitAssignment {
   const dom = dominantElement(dna.elementGenes);
   const arch = dominantArchetype(dna.archetype);
   const traits: string[] = [];
   const inherited: string[] = [];
   const newTraits: string[] = [];
+
+  /* Inheritance: a trait a parent already expresses passes down at 35%, up to
+     two per child — this is the only way the breeding report's `inherited`
+     list ever fills, and the reason breeding two strong parents matters. The
+     budget fitter still prices the trait (traitValueOf), so a lucky inherit
+     costs budget elsewhere rather than coming free. */
+  let inheritedTaken = 0;
+  for (const tid of new Set(parentTraits)) {
+    if (inheritedTaken >= 2) break;
+    if (!rng.bool(0.35)) continue;
+    traits.push(tid);
+    inherited.push(tid);
+    inheritedTaken++;
+  }
 
   // How many traits this band deserves.
   const index = ["C", "B", "A", "S", "SS", "SSS"].indexOf(target);
@@ -1120,27 +1154,12 @@ export function validateGenome(child: Plant): Plant["validation"] {
   const tier = TIER_META[child.tier];
   const ref = tier.reference;
 
-  // --- stat value (docs/15 §5) ---
-  let statValue = 0;
-  // HP as effective HP vs reference.
-  statValue += (child.stats.hp / ref.hp - 1) * 100 * STAT_COST.hp;
-  // Sustained damage: attack weighted by expected crit output.
-  const dps = child.stats.attack * (1 + child.stats.crit * 0.8);
-  const refDps = ref.attack * (1 + ref.crit * 0.8);
-  statValue += (dps / refDps - 1) * 100 * STAT_COST.sustainedDamage;
-  // Action speed.
-  statValue += (child.stats.speed / ref.speed - 1) * 100 * STAT_COST.actionSpeed;
-  // Skill power.
-  statValue += (child.stats.skillPower / ref.skillPower - 1) * 100 * STAT_COST.healing * 0.8;
-  // Crit & evasion.
-  statValue += (child.stats.crit - ref.crit) * 100 * STAT_COST.crit;
-  statValue += (child.stats.evasion - ref.evasion) * 100 * STAT_COST.evasion;
-
-  // --- skills / traits / element / utility ---
-  // Priced by the same helpers the budget fitter uses, so the validator and the
-  // fitter can never disagree about what a build is worth.
+  // --- build value (docs/15 §5) ---
+  /* Priced through the exact function the budget fitter uses — the two copies
+     had already drifted (defense missing from both, and this one SUBTRACTED the
+     synergy tax the fitter was supposed to add). One implementation, forever. */
   const synergyTax = computeSynergyTax(child);
-  const buildValue = statValue + nonStatValueOf(child, tier) - synergyTax;
+  const buildValue = buildValueOf(child, tier);
 
   // --- forbidden combos ---
   const invalidCombos: string[] = [];

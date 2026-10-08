@@ -28,6 +28,7 @@ import { el, toast, statGainFloat } from "../components";
 import { store } from "../app";
 import type { Plant } from "../../core/types";
 import { CARE_ACTIONS, type CareActionId } from "../../config/careActions";
+import { careCooldownLeft } from "../../growth/care";
 import { canBattle } from "../../growth/stages";
 import { plotStatuses } from "../../config/unlocks";
 import { sfx } from "../../audio/audio";
@@ -123,12 +124,11 @@ export function resourceBlockReason(tool: CareActionId): string | null {
   return null;
 }
 
-/** Seconds until this plant can take this action again. Zero means now. */
+/** Seconds until this plant can take this action again. Zero means now.
+    Delegates to the engine's own `careCooldownLeft` so the button never
+    predicts a "ready" the engine would refuse (per-action + shared rest). */
 export function tendCooldownLeft(plant: Plant, tool: CareActionId, now = Date.now()): number {
-  const last = plant.careMemory.lastAction;
-  if (!last || last.id !== tool) return 0;
-  const left = CARE_ACTIONS[tool].cooldownSeconds - (now - last.at) / 1000;
-  return Math.max(0, Math.ceil(left));
+  return Math.ceil(careCooldownLeft(plant, tool, now) / 1000);
 }
 
 /**

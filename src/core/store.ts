@@ -6,7 +6,7 @@
 
 import { Rng, clamp, round2, seedToken } from "./rng";
 import type { Plant } from "./types";
-import { DEFAULT_PLAYER_NAME, STAGE_ORDER, STAGE_SECONDS } from "./types";
+import { DEFAULT_PLAYER_NAME, STAGE_ORDER, STAGE_SECONDS, emptyArchetype } from "./types";
 import { createSeedPlant, breedPlants, genomeSignature, validateGenome, estimatePower, type BreedingContext, type BreedingResult } from "../genetics/genomeGenerator";
 import { applyCatalyst, getProtocol, protocolDiversity, protocolUnlocked, type ProtocolId } from "../genetics/protocols";
 import { plantName, nameKey } from "../genetics/names";
@@ -40,7 +40,7 @@ import {
 import { getActiveAccountId, saveSlotKey } from "./saveSlot";
 import { computeEcr } from "../genetics/ecrCalculator";
 import { applyCare, gainXp, xpRequired } from "../growth/care";
-import type { CareActionId } from "../config/careActions";
+import { MOOD_EFFECTS, type CareActionId } from "../config/careActions";
 import { tickGrowth } from "../growth/stages";
 import { addSkillXp } from "../genetics/skillGenerator";
 import { evaluateObjectives, objectiveContext, readCombo, type ObjectiveOutcome } from "../progression/objectives";
@@ -135,7 +135,7 @@ export type GardenWeather = "mist" | "sun" | "storm" | "moon";
  */
 export interface Notice {
   id: number;
-  kind: "level" | "unlock" | "quest" | "plot" | "milestone";
+  kind: "level" | "unlock" | "quest" | "plot" | "milestone" | "warn";
   title: string;
   body?: string;
   /**
@@ -471,10 +471,25 @@ export class GameStore {
        * older, so the cloud wins rather than the other way round.
        */
       localStorage.setItem(saveSlotKey(getActiveAccountId()), JSON.stringify({ ...this.state, savedAt: this.savedAt }));
+      this.saveFailed = false;
     } catch {
-      // ignore quota / privacy mode
+      /* Storage refused (quota or private mode): the run stays alive in memory
+         but nothing is on disk. Say so once instead of letting the player trust
+         a save that silently does not exist — and keep `saveFailed` readable so
+         the sync strip can show it too. */
+      if (!this.saveFailed) {
+        this.saveFailed = true;
+        this.pushNotice({
+          kind: "warn",
+          title: "⚠ Không lưu được trên máy này",
+          body: "Bộ nhớ trình duyệt đang chặn ghi. Tiến trình giữ trong phiên này và vẫn đồng bộ cloud nếu đã đăng nhập.",
+        });
+      }
     }
   }
+
+  /** True once a localStorage write has been refused — progress is RAM-only until it clears. */
+  saveFailed = false;
 
   /**
    * Re-read the save for whichever slot is now active.
@@ -998,7 +1013,15 @@ export class GameStore {
     // child, so a pair of level-30 plants produces a child that starts well ahead of one
     // from a pair of level-1s. The parent's XP used to be granted to the parent itself
     // (`addPlantXp(a, 25)`), which is now pointless — the plant is about to be removed.
-    const inheritedXp = Math.round(((a.growth.level + b.growth.level) / 2) * 6) + 50;
+    /* "Một phần XP bố mẹ" means a part of what they actually earned — 30% of
+       both parents' LIFETIME xp, not a number guessed from the current level.
+       A pair of level-30s passes down noticeably more than a pair of 5s. */
+    const lifetimeXpOf = (p: Plant): number => {
+      let total = p.growth.xp;
+      for (let l = 1; l < p.growth.level; l++) total += xpRequired(l);
+      return total;
+    };
+    const inheritedXp = Math.floor(0.3 * (lifetimeXpOf(a) + lifetimeXpOf(b)));
     this.updatePity(result.plant.rarity);
 
     this.state.plants.push(result.plant);
@@ -1073,7 +1096,13 @@ addPlantXp(plant: Plant, xp: number) {
  * breeder experience is what makes tending a plant worth doing at all.
  */
 private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
-  const gained = breederXpForPlantLevel(plant.growth.level);
+  /* Each level crossed pays its own chunk — a +4-level burst earned four
+     payouts, not one priced at the landing level. Batching and drip-feeding
+     the same xp must pay the same breeder xp. */
+  let gained = 0;
+  for (let l = plant.growth.level - levels + 1; l <= plant.growth.level; l++) {
+    gained += breederXpForPlantLevel(l);
+  }
   const gainedText = levels > 1 ? ` +${levels} cấp` : "";
 
   this.pushNotice({
@@ -1881,7 +1910,7 @@ function loadOrCreate(rawOverride?: string): PlayerState {
           pl.dna.skillGenes = pl.dna.skillGenes ?? ({} as Plant["dna"]["skillGenes"]);
           pl.dna.mutationGenes = pl.dna.mutationGenes ?? ({} as Plant["dna"]["mutationGenes"]);
           pl.baseLineage = Array.isArray(pl.baseLineage) ? pl.baseLineage : [];
-          pl.careMemory = { recent: [], counts: {}, lastAction: null, ...(pl.careMemory as Partial<Plant["careMemory"]> | undefined) };
+          pl.careMemory = { recent: [], counts: {}, lastUse: {}, lastAction: null, ...(pl.careMemory as Partial<Plant["careMemory"]> | undefined) };
           pl.stress = pl.stress ?? {};
           pl.locks = { favorite: false, manual: false, battle: false, breeding: false, transaction: false, ...(pl.locks as Partial<Plant["locks"]> | undefined) };
           /* Battle/breeding/transaction locks describe an operation that was live
@@ -1900,7 +1929,26 @@ function loadOrCreate(rawOverride?: string): PlayerState {
           pl.skills = Array.isArray(pl.skills) ? pl.skills : [];
           pl.parents = pl.parents ?? { a: null, b: null };
           pl.potential = pl.potential ?? {};
-          if (typeof pl.mood !== "string") pl.mood = "calm";
+          /* Saves written while crit/evasion caps were stored ×100 carry caps
+             like `20` next to a `0.16` stat — every cap check compared numbers a
+             hundred-fold apart and never bound. Divide them back into the
+             stat's own unit. */
+          for (const g of ["crit", "evasion"] as const) {
+            const pot = pl.potential[g] as { softCap: number; hardCap: number } | undefined;
+            if (pot && Number.isFinite(pot.hardCap) && pot.hardCap > 1) {
+              pot.softCap = round2(pot.softCap / 100);
+              pot.hardCap = round2(pot.hardCap / 100);
+            }
+          }
+          /* An unrecognised mood crashes every care preview (`mood.gain` on
+             undefined). Anything outside MOOD_EFFECTS falls back to calm. */
+          pl.mood = typeof pl.mood === "string" && pl.mood in MOOD_EFFECTS ? pl.mood : "calm";
+          /* Same shape for archetype: a missing or malformed vector crashed
+             `Object.keys(...).map` inside the mutation roll. Merge over the
+             zeroed default so partial saves keep what they had. */
+          pl.archetype = pl.archetype && typeof pl.archetype === "object" && !Array.isArray(pl.archetype)
+            ? { ...emptyArchetype(), ...(pl.archetype as Partial<Plant["archetype"]>) }
+            : emptyArchetype();
           pl.growth.stage = STAGE_ORDER.includes(pl.growth.stage) ? pl.growth.stage : "seed";
           if (!Number.isFinite(pl.growth.stageStartedAt)) pl.growth.stageStartedAt = Date.now();
           if (!Number.isFinite(pl.growth.stageReadyAt)) pl.growth.stageReadyAt = pl.growth.stageStartedAt + STAGE_SECONDS[pl.growth.stage] * 1000;

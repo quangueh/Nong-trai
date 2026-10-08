@@ -466,8 +466,10 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   check("power board sorts strongest first", board.power[0].name === "Bob" && board.power[0].power === 900, JSON.stringify(board.power.map(r => r.name)));
   check("level board sorts highest first", board.level[0].name === "Carol" && board.level[0].level === 30);
   check("the caller is marked in the list", board.power.find((r) => r.name === "Alice")?.me === true);
-  check("rows carry the account email", board.power[0].email === "bob@gmail.com" && board.me?.email === "alice@gmail.com",
-    JSON.stringify(board.power[0]));
+  /* Emails identify the account internally, but a public board must not hand
+     out other players' addresses — only the caller's own row carries it. */
+  check("other players' rows do NOT leak email", board.power[0].email === undefined, JSON.stringify(board.power[0]));
+  check("the caller's own row still carries its email", board.me?.email === "alice@gmail.com", JSON.stringify(board.me));
   check("an email-less entry still boards", board.level[0].name === "Carol" && board.level[0].email === undefined);
   check("the caller's own ranks are returned", board.me?.powerRank === 2 && board.me?.levelRank === 2, JSON.stringify(board.me));
   check("the roster size is reported", board.total === 3);

@@ -476,7 +476,13 @@ async function handleGetSave(auth: Session, env: Env): Promise<Response> {
  */
 async function handlePutSave(req: Request, auth: Session, env: Env): Promise<Response> {
   const body = (await req.json().catch(() => null)) as { savedAt?: number; state?: unknown } | null;
-  if (typeof body?.savedAt !== "number" || body.state === undefined) return RKO("bad_body");
+  if (typeof body?.savedAt !== "number" || !Number.isFinite(body.savedAt) || typeof body?.state !== "object" || body.state === null) {
+    return RKO("bad_body");
+  }
+  /* A client clock is untrusted input, and `savedAt` decides last-write-wins:
+     a clock set days ahead would pin this save "newest" forever. A day of slack
+     covers genuinely skewed clocks; beyond that is a manipulated stamp. */
+  if (body.savedAt > Date.now() + 86_400_000) return RKO("future_stamp");
 
   const key = keyFor(auth, env);
   const existing = await env.DB.get(key);

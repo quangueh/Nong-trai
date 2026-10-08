@@ -146,6 +146,12 @@ export function finalRarityWeights(
     if (pity.sinceS >= PITY.sAfter) raw.S *= 1 + Math.min(1.2, (pity.sinceS - PITY.sAfter) * 0.025);
     if (pity.sinceSS >= PITY.ssAfter) raw.SS *= 1 + Math.min(1.5, (pity.sinceSS - PITY.ssAfter) * 0.02);
     if (pity.sinceSSS >= PITY.sssSoft) raw.SSS *= 1 + Math.min(0.5, (pity.sinceSSS - PITY.sssSoft) * 0.002);
+    /* sssHard is a guarantee, not a bigger weight: at the promised counter the
+       next roll IS SSS — and because the odds bar reads this same table, the
+       published 100% and the rolled outcome cannot disagree. */
+    if (pity.sinceSSS >= PITY.sssHard) {
+      return { C: 0, B: 0, A: 0, S: 0, SS: 0, SSS: 10000 };
+    }
   }
 
   const total = RARITY_ORDER.reduce((a, r) => a + raw[r], 0) || 1;

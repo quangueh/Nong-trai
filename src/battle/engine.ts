@@ -52,9 +52,11 @@ export type BattleEventType =
   | "DAMAGE_APPLIED"
   | "HEAL_APPLIED"
   | "SHIELD_APPLIED"
+  | "ENERGY_GAINED"
   | "STATUS_APPLIED"
   | "STATUS_TICK"
   | "STATUS_EXPIRED"
+  | "CLEANSED"
   | "MORPH_STARTED"
   | "MORPH_ENDED"
   | "MISS"
@@ -185,6 +187,11 @@ export interface BattleSideState {
   stance: Stance;
   stanceChangeAt: number;
   lastStanceChange: number;
+  /** Config-pinned stance: harness/replay battles pass `config.stances` meaning
+     "this side fights in this stance". Personality drift would erase the
+     directive within ten seconds, which makes stance behaviour impossible to
+     test deterministically — a pinned side keeps what it was given. */
+  stancePinned: boolean;
   damageDealt: number;
   damageTaken: number;
   shields: number;
@@ -240,8 +247,14 @@ function personalityFor(plant: Plant): Personality {
 }
 
 function actionInterval(stats: Plant["stats"]): number {
-  // Higher speed -> shorter gap between basic attacks.
-  return clamp(2.2 - stats.speed / 60, 0.5, 2.2);
+  /* Diminishing returns, not a wall: attack rate follows s/(s+K), so every extra
+     point of speed still helps — just less than the one before it, and there is
+     no "past this speed the stat is dead" cliff like the old linear scale had.
+     Anchored at the reference point (speed 60 swings every 1.2s) and asymptotes
+     to a 0.9s floor. */
+  const K = 60;
+  const rate = (1 + stats.speed / (stats.speed + K)) / (1 + 60 / (60 + K));
+  return clamp(1.2 / rate, 0.4, 2.4);
 }
 
 /**
@@ -273,7 +286,7 @@ export function sustainMultiplier(phase: BattlePhase): number {
   }
 }
 
-function initSide(snap: BattleSideSnapshot, stance: Stance, now: number): BattleSideState {
+function initSide(snap: BattleSideSnapshot, stance: Stance, now: number, stancePinned = false): BattleSideState {
   return {
     snap,
     hp: snap.hp,
@@ -292,6 +305,7 @@ function initSide(snap: BattleSideSnapshot, stance: Stance, now: number): Battle
     stance,
     stanceChangeAt: now,
     lastStanceChange: -999,
+    stancePinned,
     damageDealt: 0,
     damageTaken: 0,
     shields: 0,
@@ -321,15 +335,24 @@ function computeDamage(
   attacker: BattleSideState,
   defender: BattleSideState,
   opts: { base: number; isSkill: boolean; pierce: number },
-): { amount: number; isCrit: boolean; missed: boolean; elementReason: string } {
+): { amount: number; isCrit: boolean; missed: boolean; evaded?: boolean; elementReason: string } {
   const st = STANCE_EFFECTS[attacker.stance];
+  const defSt = STANCE_EFFECTS[defender.stance];
   const atk = attacker.snap.stats.attack * st.atk;
 
-  // Miss check (evasion vs accuracy).
+  // Miss check (evasion vs accuracy). Evasion scales with the DEFENDER's stance —
+  // a swift attacker does not make the target easier to hit, and vice versa.
   const acc = clamp(0.9 * st.acc, 0.5, 0.99);
-  const eva = clamp(defender.snap.stats.evasion * st.eva, 0, 0.6);
-  if (!defender.evadeFirstUsed && attacker.snap.traits.includes("evade_reflex")) {
-    // handled by caller
+  const eva = clamp(defender.snap.stats.evasion * defSt.eva, 0, 0.6);
+
+  /* Phản Xạ Nhanh (evade_reflex): the DEFENDER's trait — a 45% chance to dodge
+     the first incoming hit, once per battle. The flag is consumed on the first
+     attempted hit whether the dodge fires or not. */
+  if (!defender.evadeFirstUsed && defender.snap.traits.includes("evade_reflex")) {
+    defender.evadeFirstUsed = true;
+    if (rng.next() < 0.45) {
+      return { amount: 0, isCrit: false, missed: true, evaded: true, elementReason: "" };
+    }
   }
   const missChance = clamp(0.05 + (eva - 0.08) - (acc - 0.9), 0, 0.5);
   if (rng.next() < missChance) return { amount: 0, isCrit: false, missed: true, elementReason: "" };
@@ -346,8 +369,7 @@ function computeDamage(
   const em = elementMultiplier(attacker.snap.elements, defender.snap.elements);
 
   // Defense with stance + pierce.
-  const defStance = STANCE_EFFECTS[defender.stance];
-  const def = defender.snap.stats.defense * defStance.def;
+  const def = defender.snap.stats.defense * defSt.def;
   const dr = defenseReduction(def, defender.snap.tier) * (1 - opts.pierce);
 
   // Raw.
@@ -478,7 +500,7 @@ function tickStatuses(
     const st = self.statuses[i];
     if (time >= st.until) {
       self.statuses.splice(i, 1);
-      events.push({ seq: seq.v++, type: "STATUS_EXPIRED", t: round2(time), side: foeSide, status: st.kind, text: `${statusName(st.kind)} hết hiệu lực` });
+      events.push({ seq: seq.v++, type: "STATUS_EXPIRED", t: round2(time), side, other: foeSide, status: st.kind, text: `${statusName(st.kind)} hết hiệu lực` });
       continue;
     }
     if (st.kind === "poison" || st.kind === "burn") {
@@ -504,9 +526,12 @@ function tickStatuses(
       st.tickAccum += dt;
       while (st.tickAccum >= 1) {
         st.tickAccum -= 1;
-        const heal = st.power;
-        self.hp = Math.min(self.snap.maxHp, self.hp + heal);
-        events.push({ seq: seq.v++, type: "HEAL_APPLIED", t: round2(time), side, amount: round2(heal), hpAfter: shownHp(self), text: `Tái tạo +${Math.round(heal)}` });
+        /* Report the HP actually restored — at full HP a tick heals nothing, and
+           showing `st.power` anyway tells the viewer regen out-healed the cap. */
+        const hpBefore = self.hp;
+        self.hp = Math.min(self.snap.maxHp, self.hp + st.power);
+        const healed = self.hp - hpBefore;
+        events.push({ seq: seq.v++, type: "HEAL_APPLIED", t: round2(time), side, amount: round2(healed), hpAfter: shownHp(self), text: `Tái tạo +${Math.round(healed)}` });
       }
     }
     if (st.kind === "stun" && time < self.stunnedUntil) {
@@ -526,7 +551,7 @@ function tickStatuses(
 }
 
 function maybeDriftStance(self: BattleSideState, foe: BattleSideState, time: number) {
-  if (time - self.lastStanceChange < 10) return;
+  if (self.stancePinned || time - self.lastStanceChange < 10) return;
   const hpPct = self.hp / self.snap.maxHp;
   const foeHpPct = foe.hp / foe.snap.maxHp;
   let want: Stance = "aggressive";
@@ -560,7 +585,9 @@ function performBasicAttack(
   events.push({ seq: seq.v++, type: "BASIC_ATTACK", t: round2(time), side, other: foeSide, text: `${attacker.snap.name} đánh thường` });
 
   if (res.missed) {
-    events.push({ seq: seq.v++, type: "MISS", t: round2(time), side, other: foeSide, text: `${defender.snap.name} né được` });
+    /* A trait-dodge is an EVADED (the defender earned it); a stat roll is a
+       MISS — the view animates them differently. */
+    events.push({ seq: seq.v++, type: res.evaded ? "EVADED" : "MISS", t: round2(time), side, other: foeSide, text: res.evaded ? `${defender.snap.name} né được nhờ Phản Xạ Nhanh` : `${defender.snap.name} né được` });
     return;
   }
 
@@ -819,7 +846,7 @@ function resolveSkill(
   events.push({ seq: seq.v++, type: "SKILL_RESOLVED", t: round2(time), side, other: foeSide, skillId: skill.id, skillName: skill.name, text: `${self.snap.name} dùng ${skill.name}` });
 
   if (res.missed) {
-    events.push({ seq: seq.v++, type: "MISS", t: round2(time), side, other: foeSide, text: `${skill.name} bị né` });
+    events.push({ seq: seq.v++, type: res.evaded ? "EVADED" : "MISS", t: round2(time), side, other: foeSide, text: res.evaded ? `${foe.snap.name} né được ${skill.name} nhờ Phản Xạ Nhanh` : `${skill.name} bị né` });
     return;
   }
 
@@ -909,12 +936,17 @@ function applySupportEffect(
     self.shields += shield;
     events.push({ seq: seq.v++, type: "SHIELD_APPLIED", t: round2(time), side, amount: round2(shield), shieldAfter: Math.round(self.shield), skillName: skill.name, text: `${self.snap.name} tạo khiên ${Math.round(shield)}` });
   } else if (effect === "regen") {
-    self.statuses.push({ kind: "regen", until: time + 6, power: power * 0.3, source: "a", tickAccum: 0 });
-    events.push({ seq: seq.v++, type: "HEAL_APPLIED", t: round2(time), side, amount: round2(power), skillName: skill.name, text: `${self.snap.name} bật Tái tạo` });
+    /* Regen is a status, not a heal: the heal lands 0.3×power per second for 6s,
+       so announcing `power` as immediate healing lies about the numbers. Emit
+       STATUS_APPLIED; the real ticks emit HEAL_APPLIED per second. */
+    self.statuses.push({ kind: "regen", until: time + 6, power: power * 0.3, source: side, tickAccum: 0 });
+    events.push({ seq: seq.v++, type: "STATUS_APPLIED", t: round2(time), side, status: "regen", skillName: skill.name, text: `${self.snap.name} bật Tái tạo` });
   } else if (effect === "cleanse") {
     const before = self.statuses.length;
     self.statuses = self.statuses.filter((s) => s.kind !== "poison" && s.kind !== "burn");
-    events.push({ seq: seq.v++, type: "HEAL_APPLIED", t: round2(time), side, amount: 0, skillName: skill.name, text: `${self.snap.name} tẩy sạch ${before - self.statuses.length} trạng thái` });
+    /* Cleansing removes statuses — HEAL_APPLIED with amount 0 was both wrong
+       semantically and invisible (the view filters zero heals). */
+    events.push({ seq: seq.v++, type: "CLEANSED", t: round2(time), side, amount: before - self.statuses.length, skillName: skill.name, text: `${self.snap.name} tẩy sạch ${before - self.statuses.length} trạng thái` });
   }
 }
 
@@ -999,8 +1031,8 @@ export class BattleSession {
     this.rng = new Rng(config.seed);
     const snapA = snapshotFromPlant(plantA);
     const snapB = snapshotFromPlant(plantB);
-    this.a = initSide(snapA, config.stances?.a ?? "aggressive", 0);
-    this.b = initSide(snapB, config.stances?.b ?? "aggressive", 0);
+    this.a = initSide(snapA, config.stances?.a ?? "aggressive", 0, config.stances?.a != null);
+    this.b = initSide(snapB, config.stances?.b ?? "aggressive", 0, config.stances?.b != null);
     this.a.nextActionAt = 1.0 + this.rng.float(0, 0.6);
     this.b.nextActionAt = 1.0 + this.rng.float(0, 0.6);
     this.push({ seq: 0, type: "BATTLE_START", t: 0, text: `${snapA.name} VS ${snapB.name}` });
@@ -1107,8 +1139,9 @@ export class BattleSession {
     if (self.focusUsed || self.died) return false;
     self.focusUsed = true;
     // Focus: immediate ulti-like surge — next skill empowered for the rest of the match.
+    // It grants ENERGY, not HP — it must not emit HEAL_APPLIED or the view draws "+40 heal".
     self.energy = clamp(self.energy + 40, 0, self.maxEnergy);
-    this.push({ seq: 600000 + this.eventLog.length, type: "HEAL_APPLIED", t: round2(this.time), side: which, amount: 40, text: `${self.snap.name} tập trung bản năng!` });
+    this.push({ seq: 600000 + this.eventLog.length, type: "ENERGY_GAINED", t: round2(this.time), side: which, amount: 40, text: `${self.snap.name} tập trung bản năng!` });
     return true;
   }
 

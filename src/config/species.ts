@@ -661,7 +661,12 @@ const PRICE_BAND: Record<CurrencyId, [number, number]> = {
   leafCoin: [60, 7800],
   nectar: [40, 5400],
   pollen: [15, 5600],
-  ember: [4, 4200],
+  /* Ember earns 3/day and the shop is the only sink — at [4,4200] the top of
+     the shelf asked for 1400 days of drops. 21–63 is 7–21 days: a real goal,
+     not a wall (docs/20 §3.8). The narrow band means prices repeat between
+     species — allowed on purpose: two seeds at 40🔥 compete on build, and the
+     uniqueness probe below would exhaust a 43-wide band anyway. */
+  ember: [21, 63],
 };
 
 function uniquePrice(
@@ -678,6 +683,13 @@ function uniquePrice(
      collision resolution into the price. */
   const w = clamp(0.06 + tier * 0.175 + strength * 0.14 + rng.float(0, 0.22), 0.02, 0.995);
   const price = Math.round(lo + w * (hi - lo));
+  /* Ember's band is intentionally narrow (a fixed 7–21 days of drops) — shared
+     prices there are a feature, and probing would hit the throw below on every
+     catalogue build. Every other band is wide enough to keep unique prices. */
+  if (currency === "ember") {
+    used.add(`ember:${price}`);
+    return price;
+  }
   /* Collision resolution probes both directions from the draw — the price
      stays near where it landed, so a dense cluster spreads locally instead of
      teleporting to the band floor and dragging the tier's median with it. */

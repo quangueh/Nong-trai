@@ -14,7 +14,7 @@ import { RARITY_META } from "../../config/rarity";
 import { ELEMENT_INFO, dominantElement } from "../../config/elements";
 import { STAGE_LABEL, type Plant } from "../../core/types";
 import { canBattle, canBreed, stageProgress } from "../../growth/stages";
-import { CARE_ACTIONS } from "../../config/careActions";
+import { careCooldownLeft } from "../../growth/care";
 import { plantSnapshot, xpRemainingText } from "../../progression/levels";
 import { consumeStageUp, consumeUnlock } from "../fx/gardenFx";
 
@@ -30,9 +30,7 @@ import { consumeStageUp, consumeUnlock } from "../fx/gardenFx";
  */
 export function canWaterNow(plant: Plant, now: number): boolean {
   if (canBattle(plant)) return false;
-  const last = plant.careMemory.lastAction;
-  if (last && last.id === "water" && now - last.at < CARE_ACTIONS.water.cooldownSeconds * 1000) return false;
-  return true;
+  return careCooldownLeft(plant, "water", now) <= 0;
 }
 
 /**

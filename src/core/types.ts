@@ -141,7 +141,13 @@ export interface CareMemoryEntry {
 
 export interface CareMemory {
   recent: CareMemoryEntry[];
+  /** Lifetime counts — quests and economy read these; the anti-spam penalty
+      reads `recent` (a rolling window) instead, or repeats would punish a
+      player forever. */
   counts: Record<string, number>;
+  /** Per-action last-use stamps — the cooldown clock. `recent` caps at 30
+      entries, so a long cooldown could fall out of the window otherwise. */
+  lastUse: Record<string, number>;
   lastAction: { id: string; at: number } | null;
 }
 
@@ -266,7 +272,7 @@ export function dominantArchetype(a: Record<Archetype, number>): Archetype {
 }
 
 export function emptyCareMemory(): CareMemory {
-  return { recent: [], counts: {}, lastAction: null };
+  return { recent: [], counts: {}, lastUse: {}, lastAction: null };
 }
 
 export function emptyStress(): StressMap {

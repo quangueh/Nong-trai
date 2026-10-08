@@ -121,15 +121,14 @@ const LADDER_TOP_POWER = 1300;
  */
 export const STAGE_GROWTH = Math.pow(LADDER_TOP_POWER / FIRST_STAGE_POWER, 1 / (STAT_LADDER_END - 1));
 
-/**
- * Daily escalation: how much stronger the world is for each distinct day played.
- *
- * 2% a day, capped at +35%. This is the "càng ngày độ khó càng cao" the ladder is named
- * for, and it is capped because an uncapped daily multiplier makes a player who takes a
- * week off unable to log back in, which reads as the game punishing them for having a life.
+/*
+ * There used to be a "daily escalation" here: +2% monster power per calendar
+ * day of account age, capped at +35%. It read as "the game punishes you for
+ * having a life" in the doc comment and that is exactly what it did — a player
+ * back after a month returned to a ladder 30% harder for no reason of theirs.
+ * Difficulty now scales with the stage alone (docs/20 §3.11): the stage number
+ * is the difficulty, and `dayIndex` only rotates *which* affixes appear.
  */
-const DAILY_STEP = 0.02;
-const DAILY_CAP = 0.35;
 
 import type { CombatTier } from "../config/balance";
 import type { MutationTier, Rarity } from "../config/rarity";
@@ -479,7 +478,7 @@ const AFFIX_MAX = AFFIX_POOL_SIZE;
  * Day only ever adds, never removes. A player who comes back after a week should not find
  * stage 30 easier than it was.
  */
-export function stageAffixes(playerId: string, stage: number, dayIndex: number): AscentAffix[] {
+export function stageAffixes(playerId: string, stage: number, _dayIndex: number): AscentAffix[] {
   // Nothing before the body stops growing: an affix there would double-dip, asking for the
   // kit on top of a stat line that is already climbing on its own.
   if (stage <= STAT_LADDER_END) return [];
@@ -488,7 +487,11 @@ export function stageAffixes(playerId: string, stage: number, dayIndex: number):
   // just a gap where the difficulty stalls flat - measured, the first two stages past the
   // ladder came out with no affix while the third had one.
   const from = stage - STAT_LADDER_END;
-  const raw = 1 + Math.floor((from - 1) / AFFIX_EVERY) + Math.floor(dayIndex / 7);
+  /* Affix COUNT scales with depth alone — the weekly `+dayIndex/7` term meant an
+     older account faced a thicker affix stack on the same stage, i.e. absence
+     literally made the game harder. `dayIndex` survives as an argument for
+     callers that rotate which affixes show, never how many. */
+  const raw = 1 + Math.floor((from - 1) / AFFIX_EVERY);
   /*
    * Past the pool size the count stops climbing and starts oscillating just under the cap.
    *
@@ -607,11 +610,10 @@ export function stageTargetPower(stage: number, _playerBestPower: number, dayInd
   // on `STAGE_GROWTH` for what happens if the geometric term is left running here.
   const steps = Math.min(n, STAT_LADDER_END) - 1;
   const body = FIRST_STAGE_POWER * Math.pow(STAGE_GROWTH, Math.max(0, steps));
-  const daily = 1 + Math.min(DAILY_CAP, dayIndex * DAILY_STEP);
   // A boss is a wall with more room behind it. ×1,115 lifts the bar enough to feel different
   // without pushing past the player's own ceiling, which would turn "boss" into "impossible".
   const boss = isBossStage(n) ? 1.115 : 1;
-  return Math.max(60, Math.round(body * (1 + affixPowerBonus(stage, dayIndex)) * daily * boss));
+  return Math.max(60, Math.round(body * (1 + affixPowerBonus(stage, dayIndex)) * boss));
 }
 
 /**

@@ -44,6 +44,63 @@ export function remainingPotential(plant: Plant, stat: string): number {
   return clamp((pot.softCap - cur) / pot.softCap, 0.15, 1);
 }
 
+/** Anti-spam looks back 24h — `counts` is a lifetime counter, not a window. */
+const CARE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function windowCount(plant: Plant, actionId: string, now: number): number {
+  return careWindowCount(plant, actionId, now);
+}
+
+/* A small shared rest between any two actions — the per-action cooldown alone
+   let players rotate water→sunlight→water with zero delay and never wait out
+   the 45s a single action was supposed to cost. */
+const SHARED_REST_MS = 6_000;
+
+/**
+ * Seconds×1000 until `actionId` may run on this plant — the single source of
+ * truth both `applyCare` and the garden UI read, so the button never says
+ * "ready" for an action the engine would refuse.
+ */
+export function careCooldownLeft(plant: Plant, actionId: CareActionId, now: number): number {
+  const action = CARE_ACTIONS[actionId];
+  const lastSame = plant.careMemory.lastUse?.[actionId]
+    ?? (plant.careMemory.lastAction?.id === actionId ? plant.careMemory.lastAction!.at : 0);
+  const ownLeft = lastSame ? action.cooldownSeconds * 1000 - (now - lastSame) : 0;
+  const lastAny = plant.careMemory.lastAction;
+  const sharedLeft = lastAny && lastAny.id !== actionId ? SHARED_REST_MS - (now - lastAny.at) : 0;
+  return Math.max(0, ownLeft, sharedLeft);
+}
+
+/**
+ * How much one gain "point" moves the underlying stat — combat stats are 1:1,
+ * crit/evasion add 1/200 per point and the farm stats 1/100 (see applyStatGain).
+ * Cap checks must run in *points* or a decimal hard cap never binds.
+ */
+function pointDelta(stat: string): number {
+  if (stat === "crit" || stat === "evasion") return 1 / 200;
+  if (stat === "growthRate" || stat === "mutationChance") return 1 / 100;
+  return 1;
+}
+
+/** Hard cap in stat units: per-plant potential, bounded by the global floors. */
+function statHardCap(plant: Plant, stat: string): number {
+  if (stat === "growthRate") return 0.9;
+  if (stat === "mutationChance") return 0.45;
+  const global = stat === "crit" || stat === "evasion" ? 0.6 : Infinity;
+  return Math.min(plant.potential[stat]?.hardCap ?? Infinity, global);
+}
+
+/** Cap headroom expressed in gain points, so preview and apply agree exactly.
+    Floor, not round: a partial point of room must not be granted as a full one. */
+function capRoomPoints(plant: Plant, stat: string): number {
+  return Math.max(0, Math.floor((statHardCap(plant, stat) - statValue(plant, stat)) / pointDelta(stat) + 1e-6));
+}
+
+/** How many times this action ran inside the rolling 24h anti-spam window. */
+export function careWindowCount(plant: Plant, actionId: string, now: number): number {
+  return plant.careMemory.recent.filter((e) => e.action === actionId && now - e.at < CARE_WINDOW_MS).length;
+}
+
 /**
  * What a care action is expected to yield — the decision-facing half of
  * `applyCare`, run without the random roll and without touching the plant.
@@ -62,11 +119,11 @@ export interface CarePreview {
   affinityElement?: ElementId;
 }
 
-export function previewCare(plant: Plant, actionId: CareActionId): CarePreview {
+export function previewCare(plant: Plant, actionId: CareActionId, now = Date.now()): CarePreview {
   const action = CARE_ACTIONS[actionId];
   const stageMult = STAGE_GAIN[plant.growth.stage] ?? 1;
-  const mood = MOOD_EFFECTS[plant.mood];
-  const count24h = plant.careMemory.counts[actionId] ?? 0;
+  const mood = MOOD_EFFECTS[plant.mood] ?? MOOD_EFFECTS.calm;
+  const count24h = windowCount(plant, actionId, now);
   const memoryFactor = clamp(1 - count24h * 0.14, 0.4, 1);
   const stressFactor = 1 - stressForAction(plant, actionId);
 
@@ -76,9 +133,9 @@ export function previewCare(plant: Plant, actionId: CareActionId): CarePreview {
     const expected =
       action.baseGain * stageMult * weight * (0.5 + geneAffinityFor(plant, stat)) *
       remainingPotential(plant, stat) * memoryFactor * stressFactor * mood.gain;
-    const cur = statValue(plant, stat);
-    const hardCap = plant.potential[stat]?.hardCap ?? Infinity;
-    const room = Math.max(0, Math.round(hardCap - cur));
+    /* The same cap-room arithmetic `applyCare` uses — in points, not stat units —
+       so the promised gain is what the plant can actually absorb. */
+    const room = capRoomPoints(plant, stat);
     if (room <= 0) return;
     gains.push({ stat, amount: Math.min(Math.max(1, Math.round(expected)), room), label: statLabel(stat) });
   };
@@ -100,7 +157,12 @@ export function previewCare(plant: Plant, actionId: CareActionId): CarePreview {
 
 function statValue(plant: Plant, stat: string): number {
   const s = plant.stats as unknown as Record<string, number>;
-  const v = s[stat];
+  if (stat in s) return s[stat];
+  /* Farm-side stats live in growthStats — without this lookup the preview saw
+     growthRate/mutationChance as 0 and promised gains the apply step could
+     never deliver past the 0.9/0.45 clamps. */
+  const g = plant.growthStats as unknown as Record<string, number>;
+  const v = g[stat];
   return typeof v === "number" ? v : 0;
 }
 
@@ -108,10 +170,10 @@ export function applyCare(plant: Plant, actionId: CareActionId, now: number, pla
   const action = CARE_ACTIONS[actionId];
   const res: CareResult = { ok: false, gains: [], xp: 0, levels: 0, traitsUnlocked: [], logLines: [] };
 
-  // Cooldown.
-  const last = plant.careMemory.lastAction;
-  if (last && last.id === actionId && now - last.at < action.cooldownSeconds * 1000) {
-    res.reason = `Cây cần nghỉ thêm ${Math.ceil((action.cooldownSeconds * 1000 - (now - last.at)) / 1000)}s`;
+  // Cooldown — per-action clock plus the small shared rest between any two actions.
+  const cooldownLeft = careCooldownLeft(plant, actionId, now);
+  if (cooldownLeft > 0) {
+    res.reason = `Cây cần nghỉ thêm ${Math.ceil(cooldownLeft / 1000)}s`;
     return res;
   }
 
@@ -134,10 +196,11 @@ export function applyCare(plant: Plant, actionId: CareActionId, now: number, pla
 
   const rng = new Rng(`${plant.dna.seed}|${actionId}|${now}|${plant.economy.careCycles}`);
   const stageMult = STAGE_GAIN[plant.growth.stage] ?? 1;
-  const mood = MOOD_EFFECTS[plant.mood];
+  const mood = MOOD_EFFECTS[plant.mood] ?? MOOD_EFFECTS.calm;
 
-  // Anti-spam memory factor: each repeat of the same action reduces gains.
-  const count24h = plant.careMemory.counts[actionId] ?? 0;
+  // Anti-spam memory factor: each repeat of the same action WITHIN 24H reduces
+  // gains — the old lifetime counter punished careful players forever.
+  const count24h = windowCount(plant, actionId, now);
   const memoryFactor = clamp(1 - count24h * 0.14, 0.4, 1);
 
   // Stress reduces gains.
@@ -153,16 +216,10 @@ export function applyCare(plant: Plant, actionId: CareActionId, now: number, pla
     const baseGain = action.baseGain * stageMult;
     const growth = baseGain * weight * (0.5 + geneAffinity) * potentialFactor * memoryFactor * stressFactor * mood.gain;
     const finalGain = Math.max(1, Math.round(growth * rng.float(0.85, 1.15)));
-    // Respect hard cap.
-    const cur = statValue(plant, stat);
-    const hardCap = plant.potential[stat]?.hardCap ?? Infinity;
-    if (cur + finalGain > hardCap) {
-      const room = Math.max(0, Math.round(hardCap - cur));
-      if (room <= 0) return;
-      addGain(gains, stat, Math.min(finalGain, room));
-      return;
-    }
-    addGain(gains, stat, finalGain);
+    // Respect the hard cap — measured in gain points, the same unit preview uses.
+    const room = capRoomPoints(plant, stat);
+    if (room <= 0) return;
+    addGain(gains, stat, Math.min(finalGain, room));
     void tag;
   };
 
@@ -173,7 +230,7 @@ export function applyCare(plant: Plant, actionId: CareActionId, now: number, pla
   if (rng.bool(0.12)) {
     const surprisePool: GrowthStatId[] = ["attack", "speed", "skillPower", "defense", "evasion", "crit"];
     const pickStat = rng.pick(surprisePool);
-    if (pickStat && !gains.has(pickStat)) {
+    if (pickStat && !gains.has(pickStat) && capRoomPoints(plant, pickStat) > 0) {
       addGain(gains, pickStat, 1);
       res.logLines.push(`Bất ngờ: +1 ${statLabel(pickStat)}`);
     }
@@ -192,10 +249,11 @@ export function applyCare(plant: Plant, actionId: CareActionId, now: number, pla
   }
 
   // Stress & memory.
-  updateStressForAction(plant, actionId);
+  updateStressForAction(plant, actionId, now);
   plant.careMemory.counts[actionId] = (plant.careMemory.counts[actionId] ?? 0) + 1;
   plant.careMemory.recent.push({ action: actionId, at: now });
   if (plant.careMemory.recent.length > 30) plant.careMemory.recent.shift();
+  plant.careMemory.lastUse = { ...(plant.careMemory.lastUse ?? {}), [actionId]: now };
   plant.careMemory.lastAction = { id: actionId, at: now };
   plant.economy.careCycles++;
 
@@ -252,10 +310,11 @@ function stressForAction(plant: Plant, actionId: CareActionId): number {
   }
 }
 
-function updateStressForAction(plant: Plant, actionId: CareActionId) {
+function updateStressForAction(plant: Plant, actionId: CareActionId, now: number) {
   const s = plant.stress;
-  // Neglect grows over time.
-  if (Date.now() - plant.updatedAt > 120_000) s.neglect = clamp((s.neglect ?? 0) + 0.1, 0, 1);
+  // Neglect grows over time — measured off the caller's clock, not Date.now(),
+  // so the same care sequence replays deterministically in tests and probes.
+  if (now - plant.updatedAt > 120_000) s.neglect = clamp((s.neglect ?? 0) + 0.1, 0, 1);
   switch (actionId) {
     case "water":
       s.overwater = clamp((s.overwater ?? 0) + 0.08, 0, 1);
@@ -389,11 +448,14 @@ export function gainXp(plant: Plant, xp: number): number {
     if (plant.growth.xp < req) break;
     plant.growth.xp -= req;
     plant.growth.level++;
-    // Level up nudges potential caps.
+    // Level up nudges potential caps. Caps for crit/evasion live in decimals
+    // (0.08, not 8) — Math.round(0.0824) is 0, which would zero the cap on the
+    // first level-up instead of nudging it. Round to the cap's own scale.
     for (const key of Object.keys(plant.potential)) {
       const p = plant.potential[key];
-      p.softCap = Math.round(p.softCap * 1.03);
-      p.hardCap = Math.round(p.hardCap * 1.03);
+      const nudge = (v: number) => (v < 1 ? Math.round(v * 1.03 * 10000) / 10000 : Math.round(v * 1.03));
+      p.softCap = nudge(p.softCap);
+      p.hardCap = nudge(p.hardCap);
     }
   }
   return plant.growth.level - from;

@@ -28,7 +28,7 @@ import {
   TIER_UNLOCK,
   type CatalogueSort,
 } from "../../economy/shop";
-import { canSell } from "../../growth/stages";
+import { canSell, growRangeMinutes } from "../../growth/stages";
 
 import type { Navigate } from "./types";
 
@@ -455,7 +455,7 @@ function seedCard(sp: SpeciesDef, refresh: () => void, ownedOverride?: number): 
     el("div", { class: "row wrap", style: "gap:4px;margin-top:5px" }, [
       el("span", { class: "tag" }, ["C"]),
       el("span", { class: "tag" }, [`${ARCHETYPE_ROLE[sp.archetype]}`]),
-      el("span", { class: "tag" }, [`${sp.growMinutes} phút`]),
+      el("span", { class: "tag" }, [`~${growRangeMinutes()[0]}–${growRangeMinutes()[1]} phút`]),
       owned > 0 ? el("span", { class: "tag good" }, [`Có ${owned}`]) : null,
     ]),
   );

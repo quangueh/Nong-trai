@@ -134,6 +134,19 @@ let pendingGuest: { state: unknown; savedAt: number } | null = null;
  */
 let cloudRead = false;
 
+/**
+ * Session revision — bumps on every account/slot change (sign-in, sign-out).
+ *
+ * A request captures it before the first `await` and checks it afterwards: a
+ * response landing for an abandoned session used to write straight into the
+ * NEW account's slot through the shared bridge — one race and account A's
+ * cloud save overwrote account B's garden (or the anonymous one).
+ */
+let sessionRev = 0;
+function sessionIsCurrent(rev: number, reqToken: string): boolean {
+  return rev === sessionRev && token === reqToken;
+}
+
 function emit(patch: Partial<AccountStatus>): void {
   status = { ...status, ...patch };
   for (const fn of [...listeners]) {
@@ -179,6 +192,9 @@ export function initAccount(theBridge: SaveBridge): void {
   }
   emit({ email, state: "idle", message: "Đã đăng nhập." });
   void pull();
+  /* A restored session needs the auto-sync timer too — before this, reload made
+     the cloud-read happen once but never pushed again until the next sign-in. */
+  startAuto();
 }
 
 function stopAuto(): void {
@@ -191,7 +207,12 @@ function stopAuto(): void {
 function startAuto(): void {
   stopAuto();
   autoTimer = window.setInterval(() => {
-    void push();
+    /* A failed pull leaves `cloudRead` false and every push rightly refuses —
+       "sẽ thử lại tự động" was a promise nobody kept until the next reload.
+       Retrying the pull is the recovery; once the account is read, the next
+       tick pushes as normal. */
+    if (token && !cloudRead) void pull();
+    else void push();
   }, AUTO_SYNC_MS);
 }
 
@@ -375,6 +396,7 @@ export async function updateName(name: string): Promise<void> {
  * on a device that already has a password session.
  */
 function adoptSession(newToken: string, email: string, playerId: string, kind: SessionKind = "password"): void {
+  sessionRev++;
   token = newToken;
   // A different account means a different cloud copy, so whatever this device had learned
   // about the previous one no longer authorises a write. The pull below re-establishes it.
@@ -501,6 +523,7 @@ export async function signInWithGoogle(idToken: string): Promise<{ created: bool
  */
 export function signOut(): Promise<void> {
   const teardown = (): void => {
+    sessionRev++;
     token = null;
     cloudRead = false;
     pendingGuest = null;
@@ -596,12 +619,21 @@ export async function pull(
   guest?: { state: unknown; savedAt: number } | null,
 ): Promise<void> {
   if (!token || !bridge) return;
+  /* Session identity captured before the first await — the account or token can
+     change while the fetch is in flight, and the response must not then write
+     into a slot that belongs to someone else. */
+  const reqToken = token;
+  const rev = sessionRev;
   // A new pull re-asks the question, so a fork offered by the previous one is void.
   pendingGuest = null;
   emit({ state: "syncing", message: "Đang tải vườn từ tài khoản…" });
 
   try {
-    const remote = await fetchSave(token);
+    const remote = await fetchSave(reqToken);
+    /* The response is only allowed to touch this session's state if the session
+       is still the one that asked. A stale answer returns void — the new session
+       will pull for itself. */
+    if (!sessionIsCurrent(rev, reqToken)) return;
     // Reached the endpoint and it answered. Whether it held anything is now known, which is
     // what authorises a later push. See `cloudRead`.
     cloudRead = true;
@@ -644,7 +676,7 @@ export async function pull(
      */
     if (remote.savedAt <= localAt) {
       emit({ state: "synced", message: "Vườn trên máy này là bản mới nhất.", lastSyncedAt: Date.now(), serverWasNewer: false });
-      await push();
+      if (sessionIsCurrent(rev, reqToken)) await push();
     } else {
       /*
        * `adoptState` folds an identity fix — the in-game name — into the remote copy
@@ -671,7 +703,7 @@ export async function pull(
       });
     }
   } catch (err) {
-    report(err, "Không tải được vườn từ tài khoản.");
+    if (sessionIsCurrent(rev, reqToken)) report(err, "Không tải được vườn từ tài khoản.");
   }
 }
 
@@ -705,9 +737,16 @@ export async function push(): Promise<void> {
 
   emit({ state: "syncing", message: "Đang lưu lên tài khoản…" });
 
+  const reqToken = token;
+  const rev = sessionRev;
+
   try {
     const { state, savedAt } = bridge.read();
-    const res = await pushSave(token, Number(savedAt) || Date.now(), state);
+    const res = await pushSave(reqToken, Number(savedAt) || Date.now(), state);
+    /* The write went out under this session's token — but if the session moved
+       on while it was in flight, the result (and its status text) belongs to a
+       garden nobody is looking at any more. Drop it. */
+    if (!sessionIsCurrent(rev, reqToken)) return;
     noteWrite();
 
     if (res.kept === "theirs") {
@@ -723,37 +762,60 @@ export async function push(): Promise<void> {
     }
     emit({ state: "synced", message: "Đã lưu lên tài khoản.", lastSyncedAt: Date.now(), serverWasNewer: false });
   } catch (err) {
-    report(err, "Không lưu được lên tài khoản.");
+    if (sessionIsCurrent(rev, reqToken)) report(err, "Không lưu được lên tài khoản.");
   }
 }
 
 /** Resolve a conflict by taking the server's copy. */
 export async function takeServer(): Promise<void> {
   if (!token || !bridge) return;
+  const reqToken = token;
+  const rev = sessionRev;
   pendingGuest = null;
   try {
-    const remote = await fetchSave(token);
-    if (!remote) return;
+    const remote = await fetchSave(reqToken);
+    if (!remote || !sessionIsCurrent(rev, reqToken)) return;
     bridge.write(remote.state, remote.savedAt);
     emit({ state: "synced", message: "Đã dùng bản trên máy chủ.", lastSyncedAt: Date.now(), serverWasNewer: false });
   } catch (err) {
-    report(err, "Không tải được bản trên máy chủ.");
+    if (sessionIsCurrent(rev, reqToken)) report(err, "Không tải được bản trên máy chủ.");
   }
 }
 
 /** Overwrite the server with this device's copy. */
 export async function keepLocal(): Promise<void> {
   if (!token || !bridge) return;
+  const reqToken = token;
+  const rev = sessionRev;
   pendingGuest = null;
+  emit({ state: "syncing", message: "Đang giữ bản trên máy này…" });
   try {
+    /* "Keep local" must actually WIN the last-write-wins compare — pushing
+       `local.savedAt + 1` only beats a remote that is at most 1ms older, which
+       is precisely the conflict case where it loses. Read the server's stamp
+       first and nudge past THAT. */
+    const remote = await fetchSave(reqToken);
+    if (!sessionIsCurrent(rev, reqToken)) return;
     const { state, savedAt } = bridge.read();
-    // Nudged a millisecond past whatever the server holds, so last-write-wins
-    // resolves the way the player just chose.
-    await pushSave(token, (Number(savedAt) || Date.now()) + 1, state);
+    const stamp = Math.max(Number(savedAt) || Date.now(), (remote?.savedAt ?? 0) + 1);
+    const res = await pushSave(reqToken, stamp, state);
+    if (!sessionIsCurrent(rev, reqToken)) return;
     noteWrite();
+    if (res.kept === "theirs") {
+      /* The server still refused to yield — its copy was newer than even the
+         stamp we just sent. Report the conflict honestly instead of claiming a
+         win the player did not get. */
+      emit({
+        state: "conflict",
+        message: "Máy chủ vẫn giữ bản mới hơn — vườn trên máy này chưa được đẩy lên.",
+        lastSyncedAt: Date.now(),
+        serverWasNewer: true,
+      });
+      return;
+    }
     emit({ state: "synced", message: "Đã giữ bản của máy này.", lastSyncedAt: Date.now(), serverWasNewer: false });
   } catch (err) {
-    report(err, "Không ghi được bản của máy này.");
+    if (sessionIsCurrent(rev, reqToken)) report(err, "Không ghi được bản của máy này.");
   }
 }
 

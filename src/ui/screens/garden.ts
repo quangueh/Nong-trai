@@ -5,7 +5,7 @@ import { store } from "../app";
 import type { Plant } from "../../core/types";
 import { STAGE_LABEL, STAT_LABEL } from "../../core/types";
 import type { GardenWeather } from "../../core/store";
-import { canBattle, stageProgress } from "../../growth/stages";
+import { canBattle, growRangeMinutes, stageProgress } from "../../growth/stages";
 import { previewCare } from "../../growth/care";
 import { plotCard, canWaterNow } from "./plotCard";
 import { WEATHER_INFO, streakLabel } from "../../config/quests";
@@ -767,7 +767,7 @@ function openSeedPicker(nav: Navigate, _anchor?: HTMLElement): void {
       el("b", {}, [sp.name]),
       el("small", {}, [sp.blurb]),
       el("div", { class: "seed-hero-chips" }, [
-        el("span", { class: "tag" }, [`⏱ ~${sp.growMinutes}p`]),
+        el("span", { class: "tag" }, [`⏱ ~${growRangeMinutes()[0]}–${growRangeMinutes()[1]}p`]),
         el("span", { class: "tag" }, [ARCHETYPE_ROLE[sp.archetype] ?? sp.archetype]),
         owned > 0
           ? el("span", { class: "tag ok" }, [`Còn ${owned} hạt`])
@@ -806,7 +806,7 @@ function openSeedPicker(nav: Navigate, _anchor?: HTMLElement): void {
         el("small", {}, [ARCHETYPE_ROLE[sp.archetype] ?? sp.archetype]),
       ]),
       el("span", { class: "seed-pick-meta" }, [
-        el("span", {}, [`⏱ ${sp.growMinutes}p`]),
+        el("span", {}, [`⏱ ${growRangeMinutes()[0]}–${growRangeMinutes()[1]}p`]),
         el("span", {}, [owned > 0 ? `còn ${owned}` : `${sp.seedPrice.toLocaleString("vi-VN")}${cur.icon}`]),
       ]),
     );

@@ -88,7 +88,10 @@ export function createBenchmarkPlant(id: BenchmarkId, tier: CombatTier = "bloom"
     accuracy: 0.9,
     statusChance: statusChance ?? 0,
     statusDuration: statusDuration ?? 0,
-    energyCost: 0,
+    /* Sustain skills pay energy like the player's own (skillGenerator prices
+       heal/shield at 18±) — a benchmark that casts for free measures a rigged
+       fight: the subject spent real energy while the yardstick spent none. */
+    energyCost: effect === "heal" || effect === "shield" ? 18 : 0,
     windup: 0.4,
     recovery: 0.3,
     budgetCost: 30,
@@ -152,7 +155,7 @@ export function createBenchmarkPlant(id: BenchmarkId, tier: CombatTier = "bloom"
     archetype: archetype as never,
     tier,
     battleRecord: { wins: 0, losses: 0, draws: 0, scars: 0, streak: 0, bestStreak: 0 },
-    careMemory: { recent: [], counts: {}, lastAction: null },
+    careMemory: { recent: [], counts: {}, lastUse: {}, lastAction: null },
     stress: {},
     mood: "calm",
     powerRating: 500,

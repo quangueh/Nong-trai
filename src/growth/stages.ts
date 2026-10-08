@@ -16,6 +16,18 @@ export function stageDurationMs(stage: GrowthStage, plant: Plant): number {
   return Math.round(STAGE_SECONDS[stage] * 1000 * clamp(1.25 - gr * 0.5, 0.75, 1.25));
 }
 
+/**
+ * Honest "time to mature" range, in minutes, for the seed cards — the species
+ * sheet's `growMinutes` is flavour text that the engine never read, so a card
+ * promising "20 phút" while the plant actually popped in ~4 was a lie. This is
+ * the same clock `stageDurationMs` runs on: seed+sprout+young, swung across
+ * the growth-rate band the genomes actually get.
+ */
+export function growRangeMinutes(): [number, number] {
+  const s = (STAGE_SECONDS.seed + STAGE_SECONDS.sprout + STAGE_SECONDS.young) / 60;
+  return [Math.max(1, Math.round(s * 0.75)), Math.round(s * 1.25)];
+}
+
 export function tickGrowth(plant: Plant, now: number): { stageChanged: boolean; newStage?: GrowthStage; readyToHarvest: boolean } {
   if (plant.growth.stage === "mature" || plant.growth.stage === "awakened") {
     return { stageChanged: false, readyToHarvest: true };

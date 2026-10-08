@@ -507,6 +507,7 @@ const NOTICE_MS: Record<Notice["kind"], number> = {
   quest: 3200,
   plot: 3000,
   milestone: 4000,
+  warn: 6000,
 };
 
 const NOTICE_SOUND: Partial<Record<Notice["kind"], Parameters<typeof sfx.play>[0]>> = {

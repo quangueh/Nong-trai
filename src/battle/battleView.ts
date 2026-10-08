@@ -731,6 +731,21 @@ estartTimer. */
         }
         break;
       }
+      case "ENERGY_GAINED": {
+        /* Focus and friends feed the energy bar, not the HP bar — a "heal"
+           coloured float would read as healed HP that never happened. */
+        const amount = ev.amount ?? 0;
+        if (ev.side && amount > 0) {
+          this.fx.float(ev.side as FxSide, `⚡ +${Math.round(amount)}`, "hi");
+        }
+        this.pushLog(ev.text ?? "", "hi");
+        break;
+      }
+      case "CLEANSED": {
+        if (ev.side) this.fx.impact(ev.side as FxSide, "status");
+        this.pushLog(ev.text ?? "", "hi");
+        break;
+      }
       case "MORPH_STARTED": {
         // Three channels at once, because the state is worth more than the hit:
         // the plant resizes and stays resized, the arena flashes in the element's

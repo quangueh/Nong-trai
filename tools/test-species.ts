@@ -86,14 +86,24 @@ check(
    (currency, price) is forced unique at build time; this is the check that
    keeps it that way. */
 {
+  /* Ember's band is deliberately narrow ([21,63] — a fixed 7–21 days of drops)
+     and cannot hold unique prices for every ember species, so uniqueness is
+     enforced for the three wide bands only. Ember instead must stay inside its
+     declared band. */
   const pairs = new Set<string>();
   let dups = 0;
+  let emberOutOfBand = 0;
   for (const s of SPECIES) {
+    if (s.currency === "ember") {
+      if (s.seedPrice < 21 || s.seedPrice > 63) emberOutOfBand++;
+      continue;
+    }
     const k = `${s.currency}:${s.seedPrice}`;
     if (pairs.has(k)) dups++;
     pairs.add(k);
   }
   check("no two species share a price in the same currency", dups === 0, `${dups} duplicates`);
+  check("every ember price stays inside the 7–21 day band", emberOutOfBand === 0, `${emberOutOfBand} out`);
   check("the shelf uses all four currencies", new Set(SPECIES.map((s) => s.currency)).size === 4);
 }
 check("the five starters come first", STARTER_IDS.every((id, i) => SPECIES[i].id === id));
