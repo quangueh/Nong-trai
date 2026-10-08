@@ -16,10 +16,12 @@ import {
   NECTAR_PER_CARE,
   POLLEN_PER_BREED,
   currencyInfo,
+  currencyName,
   shortOf,
   type CurrencyId,
 } from "./currency";
 import { EMBER_DAILY_CAP, rollDrops, type DropRoll } from "./drops";
+import { EXCHANGE_DAILY_CAP, quoteExchange } from "../economy/exchange";
 import {
   describeStage,
   gateCheck,
@@ -266,6 +268,16 @@ export interface PlayerState {
   emberDay: string;
   /** Ember already earned today. Compared against the cap before a drop fires. */
   emberToday: number;
+  /** The day `exchangedLeaf` was counted on — the same by-date reset as the Ember cap. */
+  exchangeDay: string;
+  /**
+   * LeafCoin-equivalent already poured through the exchange today.
+   *
+   * Measured on the money *in*, in xu, so the cap means the same thing whichever
+   * pair is converted: a day of Ember cash-outs and a day of pollen trades both
+   * stop at the same place.
+   */
+  exchangedLeaf: number;
   geneCrystal: number;
   items: number;
   plants: Plant[];
@@ -679,6 +691,65 @@ export class GameStore {
       this.state.emberToday = 0;
     }
     return Math.max(0, EMBER_DAILY_CAP - this.state.emberToday);
+  }
+
+  /**
+   * LeafCoin-equivalent still convertible today.
+   *
+   * Same by-date reset as `emberLeftToday`, for the same reason: closing the game
+   * must not hand out a fresh allowance. Read through here because the shop tab's
+   * printed number and the debit both have to agree on what "còn lại" means.
+   */
+  exchangeAllowanceLeft(): number {
+    const today = dayKey(Date.now());
+    if (this.state.exchangeDay !== today) {
+      this.state.exchangeDay = today;
+      this.state.exchangedLeaf = 0;
+    }
+    return Math.max(0, EXCHANGE_DAILY_CAP - this.state.exchangedLeaf);
+  }
+
+  /**
+   * Đổi `amountIn` của `from` sang `to`, theo bảng tỉ giá trong economy/exchange.
+   *
+   * Đây là đường quy đổi duy nhất — mua hạt hay ô đất bằng tiền khác đi qua đây,
+   * nên phí, tỉ giá và hạn mức ngày chỉ tồn tại một bản. Từ chối thay vì đi quá:
+   * hai hạch toán ledger (trừ `from`, cộng `to`) chỉ ghi khi mọi điều kiện đã qua,
+   * để "đổi lúc 23:59 hết hạn mức" không bao giờ là một lệnh nửa chừng.
+   */
+  exchangeCurrency(from: CurrencyId, to: CurrencyId, amountIn: number): { ok: boolean; reason?: string; out?: number } {
+    if (!CURRENCY_IDS.includes(from) || !CURRENCY_IDS.includes(to)) {
+      return { ok: false, reason: "Loại tiền không hợp lệ" };
+    }
+    if (from === to) return { ok: false, reason: "Chọn hai loại tiền khác nhau" };
+    if (to === "ember") {
+      return { ok: false, reason: "Mảnh lửa không đổi được — chỉ kiếm từ chiến đấu" };
+    }
+    const quote = quoteExchange(from, to, amountIn);
+    if (!quote) return { ok: false, reason: "Số lượng không hợp lệ" };
+    if (quote.out < 1) return { ok: false, reason: "Số tiền quá nhỏ — đổi được 0" };
+    if (this.state[from] < amountIn) {
+      return {
+        ok: false,
+        reason: `${shortOf(from)} — đang có ${currencyInfo(from).icon}${GameStore.say(this.state[from])}`,
+      };
+    }
+    const left = this.exchangeAllowanceLeft();
+    if (quote.leafIn > left) {
+      return {
+        ok: false,
+        reason: `Vượt hạn mức quy đổi hôm nay — còn đổi được ~${GameStore.say(left)}🪙 giá trị`,
+      };
+    }
+    // Balance was checked above; a failed debit here would mean the state moved
+    // between the check and the write, which single-threaded calls cannot do.
+    if (!this.debitCurrency(from, amountIn, `Đổi sang ${currencyName(to)}`)) {
+      return { ok: false, reason: shortOf(from) };
+    }
+    this.state.exchangedLeaf += quote.leafIn;
+    this.creditCurrency(to, quote.out, `Đổi từ ${currencyName(from)}`);
+    this.commit("exchange");
+    return { ok: true, out: quote.out };
   }
 
   /**
@@ -1857,6 +1928,10 @@ function loadOrCreate(rawOverride?: string): PlayerState {
         // that no longer applies, and neither is knowable from a bare number.
         parsed.emberDay = typeof parsed.emberDay === "string" ? parsed.emberDay : dayKey(Date.now());
         parsed.emberToday = Number.isFinite(parsed.emberToday) ? parsed.emberToday : 0;
+        // The exchange cap is the same shape as the Ember cap: a date plus a counter,
+        // repaired to "today, nothing spent" when an old save lacks it.
+        parsed.exchangeDay = typeof parsed.exchangeDay === "string" ? parsed.exchangeDay : dayKey(Date.now());
+        parsed.exchangedLeaf = Number.isFinite(parsed.exchangedLeaf) ? parsed.exchangedLeaf : 0;
         // Repair plants saved before battle streaks existed. Done per plant because
         // the streak lives on the fighter, and a save written by an older build has no
         // such field on any of them. Read as 0 rather than undefined so the arena screen
@@ -1953,6 +2028,8 @@ function loadOrCreate(rawOverride?: string): PlayerState {
     ember: 0,
     emberDay: dayKey(now),
     emberToday: 0,
+    exchangeDay: dayKey(now),
+    exchangedLeaf: 0,
     geneCrystal: 5,
     items: 30,
     plants: [],

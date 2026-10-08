@@ -19,6 +19,9 @@
  * That last one is the point of the set. Ember has exactly one source and one use, both
  * on the same screen, so it reads as a prize rather than as a fourth number to watch.
  *
+ * The exchange desk (`economy/exchange.ts`) converts between currencies at a fixed
+ * table plus a fee, but never *into* Ember — the prize stays a prize.
+ *
  * Every currency's price is **shown on the card before the purchase**, and the same
  * number is taken. A card that says one currency and charges another is the failure mode
  * a multi-currency shop actually has.
@@ -147,9 +150,9 @@ export function currencyForTier(tier: number, rarityHint: number): CurrencyId {
 /**
  * How many of a currency a balance should be read as worth in the top bar.
  *
- * Not a conversion - nothing is exchangeable, and pretending otherwise would let a
- * player wonder why the shop would not take it. This only orders the pills, so the rare
- * one is not sitting between two large numbers where it disappears.
+ * Not a conversion — exchange rates live in `economy/exchange.ts` and are the only
+ * ones. This only orders the pills, so the rare one is not sitting between two large
+ * numbers where it disappears.
  */
 export function currencyRank(id: CurrencyId): number {
   return CURRENCIES.findIndex((c) => c.id === id);

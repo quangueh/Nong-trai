@@ -6,8 +6,17 @@ import { MAX_PLOTS, RULE_LABEL, checkUnlock, plotStatuses } from "../../config/u
 import { el, toast, fmt, seedChip, seedIcon } from "../components";
 import { store } from "../app";
 import { plantDisplayName } from "../../core/plantNames";
-import { CURRENCIES } from "../../core/currency";
-import { currencyIcon } from "../../core/currency";
+import { CURRENCIES, type CurrencyId } from "../../core/currency";
+import { currencyIcon, currencyInfo } from "../../core/currency";
+import {
+  EXCHANGE_DAILY_CAP,
+  EXCHANGE_FEE,
+  LEAF_VALUE,
+  costIn,
+  exchangeTargets,
+  maxExchangeIn,
+  quoteExchange,
+} from "../../economy/exchange";
 import { getSpecies, SPECIES_BY_ID, type SpeciesDef, type SpeciesId } from "../../config/species";
 import { ELEMENTS, ELEMENT_INFO } from "../../config/elements";
 import { ARCHETYPE_ROLE } from "../../config/balance";
@@ -23,7 +32,7 @@ import { canSell } from "../../growth/stages";
 
 import type { Navigate } from "./types";
 
-type Tab = "seeds" | "items" | "land" | "orders";
+type Tab = "seeds" | "items" | "land" | "exchange" | "orders";
 
 export function renderLab(_nav: Navigate, params?: unknown): HTMLElement {
   const root = el("div", { class: "fadein" });
@@ -38,6 +47,7 @@ export function renderLab(_nav: Navigate, params?: unknown): HTMLElement {
     { id: "seeds", label: "Hạt cơ bản" },
     { id: "items", label: "Vật tư" },
     { id: "land", label: "Vườn" },
+    { id: "exchange", label: "💱 Quy đổi" },
     { id: "orders", label: "Đơn hàng" },
   ];
   let active: Tab = "seeds";
@@ -70,6 +80,7 @@ export function renderLab(_nav: Navigate, params?: unknown): HTMLElement {
     if (active === "seeds") paintSeeds(body, seedFocus);
     else if (active === "items") paintItems(body, paint);
     else if (active === "land") paintLand(body, paint);
+    else if (active === "exchange") paintExchange(body, paint);
     else paintOrders(body, paint);
     void shell;
   };
@@ -343,7 +354,7 @@ function paintSeeds(body: HTMLElement, seedFocus?: SpeciesId) {
           onPick: (chip) => {
             const r = store.buySeed(sp.id);
             if (r.ok) {
-              if (chip) spendChip(chip, `-${fmt(sp.seedPrice)}🪙`);
+              if (chip) spendChip(chip, `-${fmt(sp.seedPrice)}${currencyIcon(sp.currency)}`);
               sfx.play("buy");
               toast(`Đã mua hạt ${sp.name}`);
               repaint();
@@ -480,6 +491,22 @@ function seedCard(sp: SpeciesDef, refresh: () => void, ownedOverride?: number): 
   const paidIcon = currencyIcon(paid);
   const afford = (n: number) => store.state[paid] >= n;
 
+  // Giá tương đương qua sàn quy đổi — tham khảo, không phải nút mua. Card giá 🔥
+  // nói thẳng là không đổi được, vì "đổi ra sao" là câu hỏi tự nhiên khi thấy
+  // một giá bằng loại tiền mình không có.
+  if (paid === "ember") {
+    info.appendChild(
+      el("div", { class: "tiny muted", style: "margin-top:4px" }, ["🔥 chỉ kiếm từ chiến đấu — không quy đổi được"]),
+    );
+  } else if (paid !== "leafCoin") {
+    const alt = costIn(sp.seedPrice, paid, "leafCoin");
+    if (alt) {
+      info.appendChild(
+        el("div", { class: "tiny muted", style: "margin-top:4px" }, [`≈ ${fmt(alt)}🪙 — đổi ở tab Quy đổi`]),
+      );
+    }
+  }
+
   const buy = el(
     "button",
     { class: "btn sm primary" + (gate.met ? "" : " is-locked") },
@@ -492,7 +519,7 @@ function seedCard(sp: SpeciesDef, refresh: () => void, ownedOverride?: number): 
   buy.addEventListener("click", () => {
     const r = store.buySeed(sp.id);
     if (r.ok) {
-      spendChip(buy, `-${fmt(sp.seedPrice)}🪙`);
+      spendChip(buy, `-${fmt(sp.seedPrice)}${paidIcon}`);
       sfx.play("buy");
       toast(`Đã mua hạt ${sp.name}`);
       refresh();
@@ -513,7 +540,7 @@ function seedCard(sp: SpeciesDef, refresh: () => void, ownedOverride?: number): 
   pack.addEventListener("click", () => {
     const r = store.buySeed(sp.id, 10);
     if (r.ok) {
-      spendChip(pack, `-${fmt(packPrice)}🪙`);
+      spendChip(pack, `-${fmt(packPrice)}${paidIcon}`);
       sfx.play("buy");
       toast(`Đã mua 10 hạt ${sp.name}`);
       refresh();
@@ -625,6 +652,19 @@ function paintLand(body: HTMLElement, refresh: () => void) {
     ]);
     card.appendChild(head);
 
+    // Giá tương đương qua sàn quy đổi: ô đất tính bằng xu, nhưng mật/phấn/lửa đổi
+    // ra xu được — dòng này trả lời "tôi cần đổi bao nhiêu" mà không bắt mở tab kia.
+    const alts = CURRENCIES.filter((c) => c.id !== "leafCoin")
+      .map((c) => {
+        const n = costIn(row.def.cost, "leafCoin", c.id);
+        return n ? `${fmt(n)}${c.icon}` : null;
+      })
+      .filter(Boolean)
+      .join(" · ");
+    card.appendChild(
+      el("div", { class: "tiny muted", style: "margin-top:4px" }, [`≈ ${alts} — đổi ở tab Quy đổi`]),
+    );
+
     // Every route, with progress. Unlike the garden tile — which shows only the
     // blocker because there is no room — a list row has space, and "level 14 OR
     // plant level 12" is a choice the player should be able to see.
@@ -660,6 +700,136 @@ function paintLand(body: HTMLElement, refresh: () => void) {
 
     body.appendChild(card);
   }
+}
+
+/**
+ * Sàn quy đổi.
+ *
+ * Một tab riêng thay vì nút "trả bằng tiền khác" trên từng card: bảng tỉ giá là một
+ * thứ người chơi phải đọc được trọn vẹn — bốn con số, một phí, một hạn mức ngày —
+ * và một card hạt giống không có chỗ cho tất cả. Card chỉ in giá tương đương làm
+ * tham khảo; việc đổi thật xảy ra ở đây, một lần, một chỗ.
+ *
+ * Mảnh lửa có trong danh sách "đổi từ" nhưng không bao giờ trong "đổi sang":
+ * `exchangeTargets` là nguồn chân lý duy nhất cho quy tắc đó.
+ */
+function paintExchange(body: HTMLElement, refresh: () => void) {
+  body.appendChild(
+    el("div", { class: "callout", style: "margin-bottom:12px" }, [
+      `Mọi loại tiền đổi qua lại được — riêng 🔥 Mảnh lửa chỉ đổi ra, không đổi vào. Đổi mất ${EXCHANGE_FEE * 100}% giá trị, tối đa ${EXCHANGE_DAILY_CAP.toLocaleString("vi-VN")}🪙 giá trị một ngày.`,
+    ]),
+  );
+
+  // Bảng tỉ giá — đọc từ LEAF_VALUE, không phải chữ gõ tay, nên con số trên màn
+  // hình luôn là con số engine thật sự tính.
+  const rateCard = el("div", { class: "card", style: "margin-bottom:12px" });
+  rateCard.appendChild(el("div", { class: "small", style: "font-weight:700;margin-bottom:6px" }, ["💱 Bảng tỉ giá"]));
+  for (const c of CURRENCIES) {
+    if (c.id === "leafCoin") continue;
+    rateCard.appendChild(
+      el("div", { class: "row", style: "padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05)" }, [
+        el("span", { class: "grow small" }, [`${c.icon} 1 ${c.name}`]),
+        el("span", { class: "mono", style: "font-weight:700" }, [`= ${LEAF_VALUE[c.id].toLocaleString("vi-VN")} 🪙`]),
+      ]),
+    );
+  }
+  const allowance = store.exchangeAllowanceLeft();
+  rateCard.appendChild(
+    el("div", { class: "tiny muted", style: "margin-top:8px" }, [
+      `Phí quy đổi ${EXCHANGE_FEE * 100}% · Hôm nay còn đổi được ~${fmt(allowance)}🪙 giá trị`,
+    ]),
+  );
+  body.appendChild(rateCard);
+
+  // Form đổi.
+  let from: CurrencyId = "leafCoin";
+  let to: CurrencyId = exchangeTargets(from)[0];
+
+  const form = el("div", { class: "card" });
+  form.appendChild(el("div", { class: "small", style: "font-weight:700;margin-bottom:8px" }, ["Đổi tiền"]));
+
+  const pickRow = el("div", { class: "row", style: "gap:8px;margin-bottom:8px" });
+  const fromSel = el("select", { class: "input grow" }) as HTMLSelectElement;
+  const toSel = el("select", { class: "input grow" }) as HTMLSelectElement;
+  const arrow = el("span", { class: "muted" }, ["→"]);
+  pickRow.append(fromSel, arrow, toSel);
+
+  const amountRow = el("div", { class: "row", style: "gap:8px;margin-bottom:8px" });
+  const amountBox = el("input", { class: "input grow", placeholder: "Số lượng", type: "number", min: "1" }) as HTMLInputElement;
+  const maxBtn = el("button", { class: "btn sm" }, ["Tối đa"]);
+  amountRow.append(amountBox, maxBtn);
+
+  const preview = el("div", { class: "tiny muted", style: "margin-bottom:8px" }, [""]);
+  const go = el("button", { class: "btn sm primary" }, ["Đổi"]);
+
+  const refillTargets = () => {
+    const current = toSel.value as CurrencyId;
+    toSel.replaceChildren();
+    for (const id of exchangeTargets(from)) {
+      toSel.appendChild(el("option", { value: id }, [`${currencyInfo(id).icon} ${currencyInfo(id).name}`]));
+    }
+    to = exchangeTargets(from).includes(current) ? current : exchangeTargets(from)[0];
+    toSel.value = to;
+  };
+
+  const refillFrom = () => {
+    fromSel.replaceChildren();
+    for (const c of CURRENCIES) {
+      const held = Math.round(store.state[c.id] ?? 0);
+      fromSel.appendChild(el("option", { value: c.id }, [`${c.icon} ${c.name} — có ${held.toLocaleString("vi-VN")}`]));
+    }
+    fromSel.value = from;
+  };
+
+  const updatePreview = () => {
+    const n = Math.floor(Number(amountBox.value));
+    if (!Number.isFinite(n) || n < 1) {
+      preview.textContent = "Nhập số lượng cần đổi.";
+      return;
+    }
+    const q = quoteExchange(from, to, n);
+    if (!q) {
+      preview.textContent = "Cặp tiền này không đổi được.";
+      return;
+    }
+    const held = Math.floor(store.state[from] ?? 0);
+    const left = store.exchangeAllowanceLeft();
+    const note = q.leafIn > left ? ` — vượt hạn mức ngày (còn ~${fmt(left)}🪙)` : n > held ? " — không đủ số dư" : "";
+    preview.textContent = `→ Nhận ${fmt(q.out)} ${currencyIcon(to)}${note}`;
+  };
+
+  fromSel.addEventListener("change", () => {
+    from = fromSel.value as CurrencyId;
+    refillTargets();
+    updatePreview();
+  });
+  toSel.addEventListener("change", () => {
+    to = toSel.value as CurrencyId;
+    updatePreview();
+  });
+  amountBox.addEventListener("input", updatePreview);
+  maxBtn.addEventListener("click", () => {
+    amountBox.value = String(maxExchangeIn(from, store.state[from] ?? 0, store.exchangeAllowanceLeft()));
+    updatePreview();
+  });
+  go.addEventListener("click", () => {
+    const n = Math.floor(Number(amountBox.value));
+    const r = store.exchangeCurrency(from, to, n);
+    if (!r.ok) {
+      deny(form);
+      toast(r.reason ?? "Không đổi được");
+      updatePreview();
+      return;
+    }
+    sfx.play("buy");
+    toast(`Đã đổi: +${fmt(r.out ?? 0)} ${currencyIcon(to)} ${currencyInfo(to).name}`);
+    refresh();
+  });
+
+  refillFrom();
+  refillTargets();
+  form.append(pickRow, amountRow, preview, go);
+  body.appendChild(form);
 }
 
 function paintOrders(body: HTMLElement, refresh: () => void) {

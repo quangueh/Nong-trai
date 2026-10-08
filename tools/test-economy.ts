@@ -36,6 +36,13 @@ import {
   shortOf,
 } from "../src/core/currency";
 import { DROP_TABLE, EMBER_DAILY_CAP, dropOdds, rollDrops, type Outcome } from "../src/core/drops";
+import {
+  EXCHANGE_DAILY_CAP,
+  costIn,
+  exchangeTargets,
+  maxExchangeIn,
+  quoteExchange,
+} from "../src/economy/exchange";
 import { SPECIES } from "../src/config/species";
 import type { CurrencyId } from "../src/core/currency";
 
@@ -414,6 +421,11 @@ check("a loss can drop Ember, but far more rarely than a win",
   localStorage.setItem("mutant-sprout-save-v1", JSON.stringify(raw2));
   const back2 = new GameStore();
   check("a non-numeric balance is repaired to a number", back2.state.pollen === 0, `${String(back2.state.pollen)}`);
+  // The exchange cap is the same shape as the Ember cap — a missing day/counter
+  // pair repairs to "today, nothing converted", not to undefined.
+  check("the exchange day is filled in", typeof back2.state.exchangeDay === "string" && back2.state.exchangeDay.length > 0);
+  check("and its counter", back2.state.exchangedLeaf === 0);
+  check("a repaired save has full exchange allowance", back2.exchangeAllowanceLeft() === EXCHANGE_DAILY_CAP);
 }
 
 /* --- 10. a structurally damaged save keeps what is playable --------------- */
@@ -473,6 +485,97 @@ check("a loss can drop Ember, but far more rarely than a win",
   check("a zero count is refused too", !zero.ok, zero.reason);
   const frac = s.buySeed("thornroot", 2.5);
   check("a fractional count is refused", !frac.ok);
+}
+
+/* --- 12. quy đổi ---------------------------------------------------------
+ * The exchange exists so any currency can buy a seed or a plot — but it must
+ * lose value doing it, stop at a daily cap, and never create Ember out of
+ * thin air. Each rule is a check, because each is independently breakable.
+ */
+{
+  // Rates: the table itself, and the floor/ceil maths it drives.
+  check("nectar converts 1:1 before the fee", quoteExchange("nectar", "leafCoin", 100)?.out === 80, `${quoteExchange("nectar", "leafCoin", 100)?.out}`);
+  check("coins convert into nectar the same way", quoteExchange("leafCoin", "nectar", 100)?.out === 80);
+  check("pollen is worth 8x", quoteExchange("pollen", "leafCoin", 100)?.out === 640, `${quoteExchange("pollen", "leafCoin", 100)?.out}`);
+  check("ember sells at 300 per shard", quoteExchange("ember", "leafCoin", 1)?.out === 240, `${quoteExchange("ember", "leafCoin", 1)?.out}`);
+  check("ember cross-rate lands on pollen", quoteExchange("ember", "pollen", 1)?.out === 30, `${quoteExchange("ember", "pollen", 1)?.out}`);
+
+  // The three rules that protect the design: no self-exchange, never into
+  // Ember, and only whole positive amounts.
+  check("same currency is not a trade", quoteExchange("nectar", "nectar", 10) === null);
+  check("nothing converts into Ember", quoteExchange("pollen", "ember", 1000) === null && quoteExchange("leafCoin", "ember", 99999) === null);
+  check("ember is not a target on the desk", !exchangeTargets("leafCoin").includes("ember") && !exchangeTargets("pollen").includes("ember"));
+  check("zero and negative amounts are refused", quoteExchange("leafCoin", "nectar", 0) === null && quoteExchange("leafCoin", "nectar", -5) === null);
+  check("fractional amounts are refused", quoteExchange("leafCoin", "nectar", 1.5) === null);
+
+  // A round trip always loses — the fee is what makes "farm one thing, convert
+  // to everything" worse than just doing the activity.
+  const trip = quoteExchange("nectar", "leafCoin", quoteExchange("leafCoin", "nectar", 100)!.out)!.out;
+  check("a round trip loses to the fee", trip < 100, `100 -> ${trip}`);
+
+  // Equivalent prices printed on cards must be enough to cover the price via
+  // the desk — the reference would be a lie if it came up short.
+  const alt = costIn(100, "nectar", "leafCoin")!;
+  check("a 100-nectar price quotes 125 coins", alt === 125, `${alt}`);
+  check("the quoted coins actually cover it", (quoteExchange("leafCoin", "nectar", alt)?.out ?? 0) >= 100);
+  const plotNectar = costIn(900, "leafCoin", "nectar")!;
+  check("a 900-coin plot quotes in nectar", plotNectar === 1125, `${plotNectar}`);
+  check("and in pollen", costIn(900, "leafCoin", "pollen") === 141, `${costIn(900, "leafCoin", "pollen")}`);
+  check("and in ember", costIn(900, "leafCoin", "ember") === 4, `${costIn(900, "leafCoin", "ember")}`);
+  check("ember prices have no equivalent", costIn(500, "ember", "leafCoin") === null);
+  check("same-currency cost is the price itself", costIn(900, "leafCoin", "leafCoin") === 900);
+  check("cap-limited max spend honours the allowance", maxExchangeIn("pollen", 500, 100) === 12, `${maxExchangeIn("pollen", 500, 100)}`);
+
+  // The store: real balances moving, both ledger lines, the cap.
+  mem.clear();
+  const s = new GameStore();
+  s.state.leafCoin = 5000;
+  s.state.nectar = 0;
+  const r1 = s.exchangeCurrency("leafCoin", "nectar", 1000);
+  check("exchange succeeds", r1.ok && r1.out === 800, `${r1.out} (${r1.reason})`);
+  check("coins left", s.state.leafCoin === 4000, `${s.state.leafCoin}`);
+  check("nectar gained", s.state.nectar === 800, `${s.state.nectar}`);
+  check("allowance counted in", s.exchangeAllowanceLeft() === EXCHANGE_DAILY_CAP - 1000, `${s.exchangeAllowanceLeft()}`);
+  check(
+    "both sides hit the ledger",
+    s.state.ledger.some((l) => l.delta === -1000 && /Đổi sang/.test(l.reason)) &&
+      s.state.ledger.some((l) => l.delta === 800 && /Đổi từ/.test(l.reason)),
+  );
+
+  const noEmber = s.exchangeCurrency("leafCoin", "ember", 100);
+  check("store refuses to mint Ember", !noEmber.ok && !!noEmber.reason, noEmber.reason);
+  const poor = s.exchangeCurrency("pollen", "leafCoin", 10);
+  check("no balance, no trade", !poor.ok && s.state.pollen === 0);
+  const tiny = s.exchangeCurrency("leafCoin", "pollen", 1);
+  check("a trade that pays out 0 is refused", !tiny.ok, tiny.reason);
+
+  // The cap is real: converting more than remains stops, and says so.
+  const over = s.exchangeCurrency("leafCoin", "nectar", 2500);
+  check("over the daily cap is refused", !over.ok && /hạn mức/.test(over.reason ?? ""), over.reason);
+  check("and nothing moved", s.state.leafCoin === 4000 && s.state.nectar === 800);
+
+  // A new day reopens the desk — by date, not by relog.
+  s.state.exchangeDay = "2000-01-01";
+  check("the cap resets by date", s.exchangeAllowanceLeft() === EXCHANGE_DAILY_CAP, `${s.exchangeAllowanceLeft()}`);
+
+  // Ember out: the one direction it is allowed.
+  s.state.ember = 2;
+  const sell = s.exchangeCurrency("ember", "leafCoin", 1);
+  check("ember cashes out", sell.ok && sell.out === 240 && s.state.leafCoin === 4240, `${sell.out}, ${s.state.leafCoin}`);
+
+  // End to end: coins -> nectar -> a nectar-priced seed lands in the bag.
+  const nectarSp = SPECIES.find((sp) => sp.currency === "nectar" && !sp.unlock);
+  if (nectarSp) {
+    const need = nectarSp.seedPrice;
+    s.state.leafCoin = 999_999;
+    s.state.exchangedLeaf = 0;
+    const ex = s.exchangeCurrency("leafCoin", "nectar", costIn(need, "nectar", "leafCoin")!);
+    check("converted enough for the seed", ex.ok && s.state.nectar >= need, `${s.state.nectar} vs ${need}`);
+    const bought = s.buySeed(nectarSp.id);
+    check("and the seed buys", bought.ok && (s.state.seeds[nectarSp.id] ?? 0) >= 1, bought.reason);
+  } else {
+    check("a nectar species exists for the end-to-end check", false, "none unlocked");
+  }
 }
 
 console.log(`Result: ${passed} passed, ${failed} failed`);

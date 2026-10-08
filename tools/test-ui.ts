@@ -449,6 +449,29 @@ await render("lab renders", () => navigate("lab"));
     "no requirement shown",
   );
   check("land tab has no ungated shortcut", !t.includes("+2 ô đất"), "the old +2 button is still there");
+  check("land tab shows converted prices", /≈ .*🍯.*Quy đổi/.test(t), "no equivalent price line");
+
+  await render("switch to exchange tab", () => click(byText(".screen .btn", "Quy đổi")));
+  t = $(".screen")?.textContent ?? "";
+  check("exchange tab shows the rate table", /1 Mật ong/.test(t) && /1 Phấn hoa/.test(t) && /1 Mảnh lửa/.test(t), t.slice(0, 140));
+  check("the rates come from the table", /= 8 🪙/.test(t) && /= 300 🪙/.test(t), t.slice(0, 140));
+  check("the fee and the daily cap are printed", /20%/.test(t) && /3\.000/.test(t), t.slice(0, 140));
+  const xSelects = $$<HTMLSelectElement>(".screen select");
+  const xTargets = [...(xSelects[1]?.options ?? [])].map((o) => o.textContent ?? "");
+  check("the desk offers two non-ember targets", xTargets.length === 2, xTargets.join(","));
+  check("and ember is never one of them", xTargets.every((o) => !/lửa/i.test(o)), xTargets.join(","));
+  // An actual conversion, end to end: the default pair is coins -> nectar.
+  const nectarBefore = store.state.nectar;
+  const amountInput = $(".screen input") as HTMLInputElement | null;
+  check("the desk has an amount box", !!amountInput);
+  if (amountInput) {
+    amountInput.value = "100";
+    amountInput.dispatchEvent(new w.Event("input", { bubbles: true }));
+    check("the preview quotes the payout", /Nhận 80/.test($(".screen")?.textContent ?? ""), $(".screen")?.textContent?.slice(-160));
+    await render("run the exchange", () => click(byText(".screen .btn", "Đổi")));
+    check("the exchange paid out", store.state.nectar === nectarBefore + 80, `${nectarBefore} -> ${store.state.nectar}`);
+    check("and the cap counted it", store.exchangeAllowanceLeft() < 3000, `${store.exchangeAllowanceLeft()}`);
+  }
 
   await render("switch to orders tab", () => click(byText(".screen .btn", "Đơn hàng")));
   t = $(".screen")?.textContent ?? "";
