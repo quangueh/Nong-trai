@@ -12,6 +12,7 @@
  */
 
 import { GameStore, createGardenDay } from "../src/core/store";
+import { saveSlotKey } from "../src/core/saveSlot";
 import { QUEST_CATALOG, QUEST_TABS } from "../src/quests/catalog";
 import {
   DAILY_COUNT,
@@ -72,6 +73,10 @@ function ctx(over: Partial<QuestContext> = {}): QuestContext {
     playerId: "test-player",
     seeds: {},
     discovered: new Set<string>(),
+    planted: {},
+    breeds: 0,
+    cares: 0,
+    lineageWins: {},
     ...over,
   };
 }
@@ -140,6 +145,15 @@ section("2. Engine — unlocks and sync");
     highLevel.entries["ach_level_5"]?.status === "completed",
     `status=${highLevel.entries["ach_level_5"]?.status}`,
   );
+
+  // The same for the quests that were missing it: work done while a quest is
+  // still locked still counts, because the save already recorded it.
+  const tended = syncQuests(emptyQuestSave(DAY), ctx({ claimed: new Set(["main_01_plant"]), cares: 1 }), QUEST_CATALOG);
+  check("care given before the quest opened counts", tended.entries["main_02_care"]?.status === "completed", `status=${tended.entries["main_02_care"]?.status}`);
+  const bredCtx = ctx({ claimed: new Set(["main_01_plant", "main_02_care", "main_03_stage", "main_04_level3"]), breeds: 3 });
+  const bred = syncQuests(emptyQuestSave(DAY), bredCtx, QUEST_CATALOG);
+  check("a breed spent before the quest opened counts", bred.entries["main_05_breed"]?.status === "completed", `status=${bred.entries["main_05_breed"]?.status}`);
+  check("lifetime breeds feed the achievement too", bred.entries["ach_breed_5"]?.progress === 3, `progress=${bred.entries["ach_breed_5"]?.progress}`);
 
   // Day rollover re-rolls the shelf and forgets the old dailies.
   const nextDay = syncQuests(synced, { ...dayCtx, day: "2026-10-08" }, QUEST_CATALOG);
@@ -226,6 +240,19 @@ section("5. Store — real actions move real quests");
   store.plantSeed("thornroot");
   check("planting completes the first main quest", view("main_01_plant")?.status === "completed");
   check("the badge counts it", store.questClaimableCount() >= 1, `${store.questClaimableCount()} claimable`);
+  check("the planting is recorded, by species", store.state.discovery.planted.thornroot === 1, `${store.state.discovery.planted.thornroot}`);
+
+  /*
+   * The reported failure, at tutorial scale: work done while the next main is
+   * still locked — "completed but unclaimed" keeps the chain waiting — used to
+   * be dropped. Caring before claiming must still complete the care quest the
+   * moment it opens, because the plant remembers the care.
+   */
+  const p = store.state.plants[0];
+  p.careMemory.lastAction = null;
+  store.care(p.plantId, "water" as CareActionId);
+  check("caring while the care quest is locked is still recorded", (p.careMemory.counts.water ?? 0) >= 1);
+  check("the locked quest's stream stays at zero", store.state.quests.entries["main_02_care"]?.status === "locked");
 
   // Claim it through the store: coins arrive through the ledger, exp through the plant.
   const coins = store.state.leafCoin;
@@ -233,13 +260,7 @@ section("5. Store — real actions move real quests");
   check("the first main quest claims", res.ok, res.reason);
   check("its coin reward lands", store.state.leafCoin === coins + (res.rewards?.coins ?? 0));
   check("it cannot be claimed twice", !store.claimQuest("main_01_plant").ok);
-  check("claiming opened the next main", view("main_02_care")?.status === "active");
-
-  // Care advances the new main quest.
-  const p = store.state.plants[0];
-  p.careMemory.lastAction = null;
-  store.care(p.plantId, "water" as CareActionId);
-  check("caring completes the care quest", view("main_02_care")?.status === "completed", `status=${view("main_02_care")?.status}`);
+  check("the care already done completed the next main", view("main_02_care")?.status === "completed", `status=${view("main_02_care")?.status}`);
 
   // While main_02 is complete but unclaimed, the tracker points at the claim itself —
   // the chain only moves on a claim, so "collect the reward" is the next thing to do.
@@ -266,6 +287,26 @@ section("6. Persistence");
   const repaired = repairQuestSave({ entries: { gone: { progress: 2, status: "bogus" }, main_01_plant: { progress: 1, status: "completed" } }, day: DAY }, DAY);
   check("a broken entry is repaired, not trusted", repaired.entries["gone"].status === "active");
   check("a good entry is kept", repaired.entries["main_01_plant"].status === "completed");
+
+  /*
+   * A save written before `discovery.planted` existed has no planting history to
+   * reload — so the garden still standing seeds the record. That is what lets a
+   * planting quest count the plants a returning player already grew.
+   */
+  {
+    const key = saveSlotKey(null);
+    const stored = JSON.parse(mem.get(key)!) as { discovery: { planted?: unknown }; plants: { baseLineage: string[] }[] };
+    delete stored.discovery.planted;
+    mem.set(key, JSON.stringify(stored));
+    const legacy = new GameStore();
+    const thornLiving = legacy.state.plants.filter((p) => p.baseLineage.includes("thornroot")).length;
+    check("a legacy save's garden seeds the planting record", (legacy.state.discovery.planted.thornroot ?? 0) === thornLiving, `planted=${legacy.state.discovery.planted.thornroot} living=${thornLiving}`);
+    // And a save that already has the record is not double-counted by the backfill.
+    legacy.save();
+    const storedAgain = JSON.parse(mem.get(key)!) as { discovery: { planted: Record<string, number> } };
+    const again = new GameStore();
+    check("the recorded history is not backfilled twice", again.state.discovery.planted.thornroot === storedAgain.discovery.planted.thornroot, `recorded=${storedAgain.discovery.planted.thornroot} loaded=${again.state.discovery.planted.thornroot}`);
+  }
 }
 
 section("7. Weather and streak survive");
@@ -326,6 +367,28 @@ section("8. The generated main line — it never runs out");
   adv = advance(adv.save, afterA, cat(), { name: "plant", amount: 1, species: [sp] });
   check("the right species counts", adv.save.entries[gen0[1].id].progress === 1);
   save = adv.save;
+
+  /*
+   * The reported bug: a player buys the seed for `a`, plants it while `a` is
+   * complete but still unclaimed — `b` is locked, so the events drop — then
+   * claims `a`. The planting must still count: `planted` is a measure the quest
+   * reads, not a stream it had to be open for.
+   */
+  {
+    const grower = (claimedSet: Set<string>) => ctx({ level: 6, claimed: claimedSet, seeds: { [sp]: 2 }, planted: { [sp]: 2 } });
+    let s = syncQuests(emptyQuestSave(DAY), grower(doneAll), cat());
+    s = advance(s, grower(doneAll), cat(), { name: "plant", amount: 1, species: [sp] }).save;
+    s = advance(s, grower(doneAll), cat(), { name: "plant", amount: 1, species: [sp] }).save;
+    check("events fired at the locked quest add nothing to the entry", s.entries[gen0[1].id].progress === 0 && s.entries[gen0[1].id].status === "locked");
+    const sClaimed = claim(s, grower(doneAll), cat(), gen0[0].id);
+    const sOpen = syncQuests(sClaimed.save, grower(new Set([...doneAll, gen0[0].id])), cat());
+    check("the garden grown while locked completes `b` when it opens", sOpen.entries[gen0[1].id].status === "completed", `status=${sOpen.entries[gen0[1].id]?.status}`);
+
+    // `c` measures the same way: wins this bloodline earned before it opened count.
+    const foughtCtx = ctx({ level: 6, claimed: new Set([...doneAll, gen0[0].id, gen0[1].id]), lineageWins: { [sp]: 99 } });
+    const sFought = syncQuests(sOpen, foughtCtx, cat());
+    check("wins earned while `c` was locked count when it opens", sFought.entries[gen0[2].id].status === "completed", `status=${sFought.entries[gen0[2].id]?.status}`);
+  }
 
   // Claim the rest of the cycle by marking it done — the mechanics of *earning* are
   // covered above; what is on trial here is that the chain keeps handing out work.

@@ -223,28 +223,48 @@ export async function signIn(email: string, password: string, preferredName?: st
   adoptSession(session.token, email, session.playerId);
   // Bounded for the same reason as the Google path: a slow Worker must not be able to
   // keep a player out of the game they have just signed in to.
-  await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull());
-  if (adoptInGameName(email, preferredName)) void push();
+  let adoptedInPull = false;
+  await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull((state) => {
+    const name = adoptableName(email, preferredName, state);
+    if (name) {
+      (state as { name?: string }).name = name;
+      adoptedInPull = true;
+    }
+  }));
+  if (adoptedInPull || adoptInGameName(email, preferredName)) void push();
 }
 
 /**
- * Give the save a real name once there is an account to name it after.
+ * The name the account should wear, if the save does not already have a real one.
  *
  * A fresh garden calls its owner the stock "Nhà Lai Tạo" — a placeholder, not an
  * identity. Once a session exists the fallback is the account's email prefix, and
  * a name typed at registration wins over both. A save that already carries a
  * chosen name keeps it: signing in must never rename anyone.
+ */
+function adoptableName(email: string, preferredName: string | undefined, state: unknown): string | null {
+  const current = typeof (state as { name?: unknown } | null | undefined)?.name === "string" ? (state as { name: string }).name.trim() : "";
+  const isPlaceholder = !current || current === DEFAULT_PLAYER_NAME;
+  const chosen = preferredName?.trim() ?? "";
+  const next = chosen || (isPlaceholder ? (email.split("@")[0] ?? "").trim() : "");
+  return next && next !== current ? next : null;
+}
+
+/**
+ * Give the save a real name once there is an account to name it after.
+ *
+ * Covers the pull branches where no remote state was written — a fresh account
+ * pushing its garden up, or a local save newer than the cloud — where renaming
+ * through the store is correct because this device's copy is the authoritative
+ * one. When the cloud copy is adopted, the name goes into `pull`'s write instead,
+ * so the server timestamp that save arrives with survives.
  *
  * Returns whether a rename happened, so the caller can push it up once.
  */
 function adoptInGameName(email: string, preferredName?: string): boolean {
   if (!bridge?.renamePlayer) return false;
-  const state = bridge.read().state as { name?: unknown } | null;
-  const current = typeof state?.name === "string" ? state.name.trim() : "";
-  const isPlaceholder = !current || current === DEFAULT_PLAYER_NAME;
-  const chosen = preferredName?.trim() ?? "";
-  const next = chosen || (isPlaceholder ? (email.split("@")[0] ?? "").trim() : "");
-  if (!next || next === current) return false;
+  const next = adoptableName(email, preferredName, bridge.read().state);
+  if (!next) return false;
   bridge.renamePlayer(next);
   return true;
 }
@@ -352,10 +372,17 @@ export async function signInWithGoogle(idToken: string): Promise<{ created: bool
   const session = await apiGoogleSignIn(idToken);
   const email = session.email ?? session.name ?? "Google";
   adoptSession(session.token, email, session.playerId, "google");
-  await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull());
+  let adoptedInPull = false;
+  await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull((state) => {
+    const name = adoptableName(email, undefined, state);
+    if (name) {
+      (state as { name?: string }).name = name;
+      adoptedInPull = true;
+    }
+  }));
   // A Google account names itself after the address it signed in with — the same
   // handle the friends list searches by — until the player picks a real one.
-  if (adoptInGameName(email)) void push();
+  if (adoptedInPull || adoptInGameName(email)) void push();
   return { created: session.created, email: session.email ?? "" };
 }
 
@@ -477,7 +504,7 @@ export function currentToken(): string | null {
  * pulled save and this device's for a local one. So they decide, in both directions: an older
  * local slot is replaced by the cloud, and a newer one is kept and pushed up.
  */
-export async function pull(): Promise<void> {
+export async function pull(adoptState?: (state: unknown) => void): Promise<void> {
   if (!token || !bridge) return;
   emit({ state: "syncing", message: "Đang tải vườn từ tài khoản…" });
 
@@ -510,6 +537,13 @@ export async function pull(): Promise<void> {
       return;
     }
 
+    /*
+     * `adoptState` folds an identity fix — the in-game name — into the remote copy
+     * before it is written, rather than committing one on top. A commit would
+     * re-stamp `savedAt` with this machine's clock and the adopted save would
+     * forever look newer than the cloud it came from.
+     */
+    adoptState?.(remote.state);
     bridge.write(remote.state, remote.savedAt);
     emit({
       state: "synced",

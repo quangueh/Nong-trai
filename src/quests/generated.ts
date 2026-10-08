@@ -129,6 +129,12 @@ function chainDef(cycle: number, slot: Slot, sp: SpeciesId, unlock: QuestUnlock 
         unlock,
         next: [`${PREFIX}${cycle}c_${sp}`],
         track: { event: "plant", mode: "count", match: { species: sp } },
+        // The chain only opens this quest when `a` is claimed, and a player who
+        // buys the seed for `a` naturally plants it before claiming — without a
+        // measure, those plantings are events fired at a locked quest and are
+        // gone forever. Counting what was ever planted makes the quest right the
+        // moment it opens, however the garden got that way.
+        current: (ctx) => ctx.planted[sp] ?? 0,
       };
     }
     case "c": {
@@ -146,6 +152,9 @@ function chainDef(cycle: number, slot: Slot, sp: SpeciesId, unlock: QuestUnlock 
         unlock,
         next: [`${PREFIX}${cycle}d_${sp}`],
         track: { event: "enemy_defeated", mode: "count", match: { species: sp } },
+        // Wins a living plant already earned for this bloodline count — the same
+        // lineage the event match counts, read from the save instead of the stream.
+        current: (ctx) => ctx.lineageWins[sp] ?? 0,
       };
     }
     case "d": {

@@ -231,6 +231,15 @@ export interface DiscoveryState {
    * produces.
    */
   genomes: string[];
+  /**
+   * Seeds ever planted, by species.
+   *
+   * Written in `plantSeed`, never decremented: "trồng n cây X" asks whether the
+   * planting happened, and consuming the plant afterwards does not un-plant it.
+   * This is also the record the planting quest measures, which is what lets it
+   * count plants grown while the quest was still locked.
+   */
+  planted: Partial<Record<SpeciesId, number>>;
 }
 
 export interface PlayerState {
@@ -745,6 +754,7 @@ export class GameStore {
     plant.economy.purchaseCost = SPECIES_BY_ID[species].seedPrice;
     this.state.plants.push(plant);
     this.recordPlantDiscovery(plant);
+    this.state.discovery.planted[species] = (this.state.discovery.planted[species] ?? 0) + 1;
     this.questEvent({ name: "plant", amount: 1, species: [species] });
     this.commit("plantSeed");
     return { ok: true, plantId: plant.plantId };
@@ -1589,6 +1599,18 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     for (const [id, entry] of Object.entries(this.state.quests.entries)) {
       if (entry.status === "claimed") claimed.add(id);
     }
+    /*
+     * The measures the quests read live. Care and wins-by-lineage are summed over
+     * the plants still standing — a spent plant's history is gone, which is the
+     * honest lower bound the save can offer; `discovery.planted` is the one that
+     * survives, because it is written rather than derived.
+     */
+    let cares = 0;
+    const lineageWins: Record<string, number> = {};
+    for (const p of this.state.plants) {
+      for (const n of Object.values(p.careMemory.counts)) cares += n ?? 0;
+      for (const sp of p.baseLineage) lineageWins[sp] = (lineageWins[sp] ?? 0) + (p.battleRecord.wins || 0);
+    }
     return {
       level: this.state.breederLevel,
       highestStage: this.state.ascent.highest,
@@ -1601,6 +1623,10 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
       playerId: this.state.playerId,
       seeds: this.state.seeds,
       discovered: new Set<string>(this.state.discovery.species),
+      planted: this.state.discovery.planted,
+      breeds: this.state.discovery.breeds,
+      cares,
+      lineageWins,
     };
   }
 
@@ -1841,6 +1867,9 @@ function loadOrCreate(rawOverride?: string): PlayerState {
           pl.battleRecord.bestStreak = Number(pl.battleRecord.bestStreak) || 0;
         }
         parsed.gardenDay = parsed.gardenDay ?? createGardenDay(dayKey(Date.now()), undefined, parsed.breederLevel ?? 1, parsed.playerId ?? "player");
+        // Whether the save already knows its planting history decides if the plants
+        // loop below may backfill `planted` from the living garden.
+        const plantedWasRecorded = !!parsed.discovery && typeof parsed.discovery.planted === "object" && parsed.discovery.planted !== null;
         parsed.discovery = repairDiscovery(parsed.discovery);
         /*
          * The quest shelf.
@@ -1888,6 +1917,18 @@ function loadOrCreate(rawOverride?: string): PlayerState {
           // Living plants seed the genome history on old saves, so a bred child
           // can never silently equal one already standing in the garden.
           addUnique(parsed.discovery.genomes, genomeSignature(plant));
+          /*
+           * A save written before `planted` existed cannot say which plants were
+           * sown — a bred child is indistinguishable from a seed-grown one — so
+           * the living garden's lineage is used as the lower bound. It is
+           * generous rather than exact, and it is what lets a planting quest
+           * count the garden the player already grew.
+           */
+          if (!plantedWasRecorded) {
+            for (const species of plant.baseLineage) {
+              parsed.discovery.planted[species] = (parsed.discovery.planted[species] ?? 0) + 1;
+            }
+          }
         }
         return parsed;
       }
@@ -1961,12 +2002,19 @@ function loadOrCreate(rawOverride?: string): PlayerState {
 }
 
 function emptyDiscovery(): DiscoveryState {
-  return { species: [], elements: [], traits: [], careActions: [], battles: 0, breeds: 0, claimed: [], genomes: [] };
+  return { species: [], elements: [], traits: [], careActions: [], battles: 0, breeds: 0, claimed: [], genomes: [], planted: {} };
 }
 
 function repairDiscovery(input: DiscoveryState | undefined): DiscoveryState {
   const base = emptyDiscovery();
   if (!input) return base;
+  const planted: DiscoveryState["planted"] = {};
+  if (input.planted && typeof input.planted === "object") {
+    for (const [sp, n] of Object.entries(input.planted)) {
+      const count = Math.floor(Number(n));
+      if (Number.isFinite(count) && count > 0) planted[sp as SpeciesId] = count;
+    }
+  }
   return {
     species: Array.isArray(input.species) ? input.species : [],
     elements: Array.isArray(input.elements) ? input.elements : [],
@@ -1976,6 +2024,7 @@ function repairDiscovery(input: DiscoveryState | undefined): DiscoveryState {
     breeds: Number.isFinite(input.breeds) ? input.breeds : 0,
     claimed: Array.isArray(input.claimed) ? input.claimed : [],
     genomes: Array.isArray(input.genomes) ? input.genomes : [],
+    planted,
   };
 }
 

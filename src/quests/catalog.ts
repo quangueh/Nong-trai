@@ -52,6 +52,9 @@ const MAIN: QuestDef[] = [
     unlock: { kind: "quest", id: "main_01_plant" },
     next: ["main_03_stage"],
     track: { event: "care", mode: "count" },
+    // A player who tends their first plant before claiming "gieo mầm đầu tiên"
+    // still cared — the memory of it is on the plant, so the quest can read it.
+    current: (ctx) => ctx.cares,
   },
   {
     id: "main_03_stage",
@@ -96,6 +99,9 @@ const MAIN: QuestDef[] = [
     unlock: { kind: "quest", id: "main_04_level3" },
     next: ["main_06_boss"],
     track: { event: "breed", mode: "count" },
+    // Breeding spends the parents — a breed run before this opened must still
+    // count, or the player pays twice for one step of the tutorial.
+    current: (ctx) => ctx.breeds,
   },
   {
     id: "main_06_boss",
@@ -363,6 +369,9 @@ const ACHIEVEMENTS: QuestDef[] = [
     rewards: { coins: 400, items: 20 },
     unlock: null,
     track: { event: "breed", mode: "count" },
+    // The save already counts breeds — a garden with five generations behind it
+    // has earned the mark whether the quest shelf noticed at the time or not.
+    current: (ctx) => ctx.breeds,
   },
   {
     id: "ach_combo_15",

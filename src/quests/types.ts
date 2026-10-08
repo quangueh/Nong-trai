@@ -215,6 +215,26 @@ export interface QuestContext {
   seeds: Partial<Record<string, number>>;
   /** Species ever discovered — the dex. A species a player already tamed is no quest. */
   discovered: Set<string>;
+  /**
+   * Seeds ever planted, by species — what "trồng n cây X" measures.
+   *
+   * Counted in the save rather than reconstructed from the garden, because a plant
+   * that was later consumed still counts as planted. The point is the same one
+   * `current` exists for: the plant events may have fired while the quest was still
+   * locked, and the measure must be right the moment it opens.
+   */
+  planted: Partial<Record<string, number>>;
+  /** Breeds ever run — `discovery.breeds` read through. */
+  breeds: number;
+  /** Care actions ever recorded, summed over every living plant's care memory. */
+  cares: number;
+  /**
+   * Wins per lineage species — each living plant's `battleRecord.wins` attributed
+   * to every species in its `baseLineage`. Lets "win with this bloodline" count
+   * fights that happened while the quest was still locked, the same way the
+   * event's species match counts a bred descendant.
+   */
+  lineageWins: Record<string, number>;
 }
 
 /** A quest, resolved against the save, ready for the UI. */
