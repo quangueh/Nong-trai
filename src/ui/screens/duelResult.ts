@@ -48,6 +48,7 @@ export function duelSummaryCard(
   result: DuelResult,
   iAm: "a" | "b",
   onExit: () => void,
+  onReplay?: () => void,
 ): HTMLElement {
   const out = summarise(result, iAm);
   const mine = iAm === "a" ? result.a : result.b;
@@ -56,22 +57,19 @@ export function duelSummaryCard(
   const myPower = iAm === "a" ? result.aPower : result.bPower;
   const theirPower = iAm === "a" ? result.bPower : result.aPower;
 
-  const card = el("div", { class: "card pop duel-result", style: "text-align:center" });
+  const card = el("div", { class: "card pop duel-result", style: "text-align:center;padding-top:0;overflow:hidden" });
 
   card.append(
-    el(
-      "div",
-      { style: "font-size:34px;font-weight:900;margin-top:6px" },
-      [out.draw ? "🤝 HÒA" : out.won ? "🎉 THẮNG!" : "💀 THUA"],
-    ),
-    el("div", { class: "tiny muted", style: "margin-top:4px" }, [`${mineName} VS ${theirName}`]),
-    el("div", { class: "tiny muted", style: "margin-top:2px" }, [
+    el("div", { class: `result-banner ${out.draw ? "is-draw" : out.won ? "is-win" : "is-loss"}` }, [
+      el("div", { class: "result-word" }, [out.draw ? "🤝 HÒA" : out.won ? "� THẮNG!" : "💀 THUA"]),
+      el("div", { class: "result-vs" }, [`${mineName} VS ${theirName}`]),
+    ]),
+    el("div", { class: "tiny muted", style: "margin-top:8px" }, [
       `Lực ${myPower} · ${theirPower} · máy chủ quyết định toàn bộ kết quả trận`,
     ]),
-    el("div", { class: "divider" }),
     el(
       "div",
-      { class: "row", style: "justify-content:center;gap:22px;margin-top:4px" },
+      { class: "row", style: "justify-content:center;gap:10px;margin-top:10px" },
       [
         stat("ST gây ra", Math.round(mine.damageDealt)),
         stat("ST nhận", Math.round(mine.damageTaken)),
@@ -96,7 +94,15 @@ export function duelSummaryCard(
     card.appendChild(box);
   }
 
-  const back = el("button", { class: "btn primary block", style: "margin-top:12px" }, ["Về vườn"]);
+  if (onReplay) {
+    const again = el("button", { class: "btn primary block", style: "margin-top:12px" }, ["📺 Xem lại trận"]);
+    again.addEventListener("click", () => {
+      sfx.play("tap");
+      onReplay();
+    });
+    card.appendChild(again);
+  }
+  const back = el("button", { class: "btn block", style: `margin-top:${onReplay ? 8 : 12}px` }, ["Về vườn"]);
   back.addEventListener("click", () => {
     sfx.play("tap");
     onExit();
@@ -107,8 +113,8 @@ export function duelSummaryCard(
 }
 
 function stat(label: string, value: string | number): HTMLElement {
-  return el("div", {}, [
-    el("div", { style: "font-size:19px;font-weight:800" }, [String(value)]),
+  return el("div", { class: "stat-tile" }, [
+    el("div", { class: "mono", style: "font-size:19px;font-weight:800" }, [String(value)]),
     el("div", { class: "tiny muted" }, [label]),
   ]);
 }

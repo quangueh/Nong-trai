@@ -76,6 +76,76 @@ export function renderArena(nav: Navigate, params?: unknown): HTMLElement {
 
 // --- menu ---
 
+/**
+ * Watch a duel the Worker already settled.
+ *
+ * The result carries both fighters and the seed the Worker ran, so this replays the
+ * actual fight through the battle view rather than printing the score — "xem trận"
+ * should show the trận, not a receipt of it. Spectate only: no stances, no skills, no
+ * inputs, because the outcome is already recorded.
+ *
+ * Duels settled before the snapshots were stored carry no plants; those still get the
+ * summary card, since a replay without the fighters is impossible.
+ */
+function watchDuel(nav: Navigate, result: import("../../account/social").DuelResult, iAm: "a" | "b"): void {
+  const host = document.querySelector(".screen");
+  if (!host) return;
+
+  const summary = () =>
+    duelSummaryCard(
+      result,
+      iAm,
+      () => nav("arena"),
+      result.aPlant && result.bPlant ? () => watchDuel(nav, result, iAm) : undefined,
+    );
+
+  if (!result.aPlant || !result.bPlant) {
+    host.replaceChildren(summary());
+    host.scrollTop = 0;
+    return;
+  }
+
+  const root = el("div", { class: "fadein" });
+  root.appendChild(
+    el("div", { class: "sec-title" }, [
+      `📺 ${result.aName} VS ${result.bName}`,
+    ]),
+  );
+  const stage = el("div");
+  root.appendChild(stage);
+  host.replaceChildren(root);
+  host.scrollTop = 0;
+
+  const view = new BattleView({
+    container: stage,
+    plantA: result.aPlant,
+    plantB: result.bPlant,
+    mySide: iAm,
+    // The same seed and opening stances the Worker settled with, so the fight on
+    // screen is the fight that was recorded rather than a second opinion.
+    seed: result.seed,
+    stances: { a: "aggressive", b: "aggressive" },
+    interactive: false,
+    hideControls: true,
+    onFinish: () => {
+      // A replay abandoned mid-fight must not overwrite whatever screen the
+      // player navigated to — the view keeps ticking on a detached stage, so the
+      // swap is guarded on the replay still being the thing on display.
+      if (!stage.isConnected) return;
+      host.replaceChildren(summary());
+      host.scrollTop = 0;
+    },
+  });
+  view.start();
+
+  const exit = el("button", { class: "btn ghost block", style: "margin-top:10px" }, ["← Bỏ xem"]);
+  exit.addEventListener("click", () => {
+    view.destroy();
+    nav("arena");
+  });
+  root.appendChild(exit);
+}
+
 function renderMenu(nav: Navigate): HTMLElement {
   const root = el("div", { class: "fadein" });
 
@@ -84,14 +154,7 @@ function renderMenu(nav: Navigate): HTMLElement {
   // The order is the argument. A room code is a workaround for not knowing who you want to
   // fight; a friend list is the answer to that. Leaving the code box at the top keeps
   // asking people to transcribe six characters when there is a button with a name on it.
-  const friends = friendsPanel((result, iAm) => {
-    const summary = duelSummaryCard(result, iAm, () => nav("arena"));
-    const host = document.querySelector(".screen");
-    if (host) {
-      host.replaceChildren(summary);
-      host.scrollTop = 0;
-    }
-  });
+  const friends = friendsPanel((result, iAm) => watchDuel(nav, result, iAm));
   root.appendChild(friends.el);
 
   root.appendChild(el("div", { class: "sec-title" }, ["⚔ Đại chiến"]));

@@ -190,6 +190,16 @@ export interface DuelResult {
   bName: string;
   aPower: number;
   bPower: number;
+  /**
+   * Both fighters, snapshotted at accept time.
+   *
+   * A replay needs the plants themselves, not just their names: the client rebuilds the
+   * battle view from these and the seed rather than trusting the summary numbers. Optional
+   * because duel rows written before this field existed have to stay watchable — those fall
+   * back to the summary card.
+   */
+  aPlant?: Plant;
+  bPlant?: Plant;
 }
 
 // --- keys -------------------------------------------------------------------
@@ -595,6 +605,8 @@ export async function handleDuelAccept(
     bName: mine.name,
     aPower: Math.round(theirs.powerRating ?? 0),
     bPower: Math.round(mine.powerRating ?? 0),
+    aPlant: theirs,
+    bPlant: mine,
   };
   await env.DB.put(duelResultKey(invite.id), JSON.stringify(payload));
 

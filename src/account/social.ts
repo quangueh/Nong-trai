@@ -14,6 +14,7 @@
 
 import { currentToken } from "./sync";
 import { accountServiceAvailable } from "./api";
+import type { Plant } from "../core/types";
 
 export interface Friend {
   handle: string;
@@ -61,6 +62,9 @@ export interface DuelResult {
   bName: string;
   aPower: number;
   bPower: number;
+  /** Fighter snapshots, written since the replay landed; old duels lack them. */
+  aPlant?: Plant;
+  bPlant?: Plant;
 }
 
 export type Refusal =

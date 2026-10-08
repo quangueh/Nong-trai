@@ -311,9 +311,18 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
       bPower: number;
       log: string[];
       seed: string;
+      aPlant?: { name: string; plantId: string };
+      bPlant?: { name: string; plantId: string };
     };
   }>(accepted);
   check("with a real event log", Array.isArray(result.events) && result.events.length > 20, `${result.events?.length} events`);
+  // The replay contract: without both fighter snapshots the client can only show
+  // the score, so their presence is part of what "accept" owes the viewer.
+  check(
+    "carrying both fighter snapshots for replay",
+    result.aPlant?.name === "A2" && result.bPlant?.name === "B2" && result.aPlant?.plantId.length! > 0,
+    `${result.aPlant?.name}/${result.bPlant?.name}`,
+  );
   check("naming both fighters", result.aName === "A2" && result.bName === "B2", `${result.aName} vs ${result.bName}`);
   check("and both powers", result.aPower === 201 && result.bPower === 201, `${result.aPower}/${result.bPower}`);
   check("and a winner", ["a", "b", "draw"].includes(result.winner), result.winner);
