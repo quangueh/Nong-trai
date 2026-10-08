@@ -149,15 +149,18 @@ function watchDuel(nav: Navigate, result: import("../../account/social").DuelRes
 function renderMenu(nav: Navigate): HTMLElement {
   const root = el("div", { class: "fadein" });
 
-  // Friends first, above the room code.
-  //
-  // The order is the argument. A room code is a workaround for not knowing who you want to
-  // fight; a friend list is the answer to that. Leaving the code box at the top keeps
-  // asking people to transcribe six characters when there is a button with a name on it.
-  const friends = friendsPanel((result, iAm) => watchDuel(nav, result, iAm));
-  root.appendChild(friends.el);
-
-  root.appendChild(el("div", { class: "sec-title" }, ["⚔ Đại chiến"]));
+  /*
+   * Two columns on a wide window: the left is the way in (hero, the fight
+   * buttons, room code, friends, the roster), the right is why to bother
+   * (payout, drops, record). On a phone they stack in the same order. Before
+   * this the screen was every card at full width in one file — six panels of
+   * unrelated things in a single endless column.
+   */
+  const main = el("div", { class: "arena-main" });
+  const side = el("div", { class: "arena-side" });
+  const grid = el("div", { class: "arena-grid" });
+  grid.append(main, side);
+  root.appendChild(grid);
 
   const ready = store.state.plants.filter((p) => canBattle(p));
 
@@ -191,7 +194,7 @@ function renderMenu(nav: Navigate): HTMLElement {
         streak > 0 ? el("span", { class: "arena-chip is-streak" }, [`🔥 ${streak}`]) : el("span"),
       ]),
     );
-    root.appendChild(hero);
+    main.appendChild(hero);
   }
 
   // A wide button: the label and its explanation are stacked in one column beside the
@@ -221,21 +224,23 @@ function renderMenu(nav: Navigate): HTMLElement {
   const create = wideAction("🏠", "Tạo phòng", "Sinh mã 6 ký tự để mời đối thủ", false);
   create.addEventListener("click", () => pickPlant((plant) => renderRoomHost(nav, plant)));
   actions.appendChild(create);
-  root.appendChild(actions);
+  main.appendChild(actions);
 
-  const joinBox = el("div", { class: "card" });
-  joinBox.appendChild(el("div", { class: "small", style: "font-weight:700;margin-bottom:8px" }, ["🔑 Nhập mã phòng"]));
+  // The room code is a strip, not a card with a heading: the key icon on the
+  // input is the label. One row — code field, join button — and the network
+  // caveat folded small underneath.
+  const joinBox = el("div", { class: "card join-strip" });
   // A 20px monospace placeholder, letter-spaced, read as a broken field rather than as a
   // hint - the eye took it for rendered content. Small and quiet now, with the box
   // carrying the spacing instead.
-  const input = el("input", { class: "codeinput", placeholder: "ABC123", maxlength: "6" }) as HTMLInputElement;
+  const input = el("input", { class: "codeinput", placeholder: "Mã phòng", maxlength: "6" }) as HTMLInputElement;
   input.style.textTransform = "uppercase";
   input.style.textAlign = "center";
   input.style.fontFamily = "JetBrains Mono, monospace";
   input.addEventListener("input", () => {
     input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
   });
-  const joinBtn = el("button", { class: "btn primary", style: "flex:none" }, ["Vào phòng"]);
+  const joinBtn = el("button", { class: "btn primary", style: "flex:none" }, ["🔑 Vào phòng"]);
   joinBtn.addEventListener("click", () => {
     const code = input.value.trim().toUpperCase();
     if (code.length < 6) {
@@ -244,13 +249,19 @@ function renderMenu(nav: Navigate): HTMLElement {
     }
     pickPlant((plant) => renderRoomGuest(nav, code, plant));
   });
-  const joinRow = el("div", { class: "row", style: "gap:8px;margin-top:2px" });
+  const joinRow = el("div", { class: "row", style: "gap:8px" });
   input.style.margin = "0";
   joinRow.append(input, joinBtn);
-  joinBox.append(joinRow, el("div", { class: "callout", style: "margin-top:8px" }, [roomRelayAvailable
-    ? "Nhập mã của đối thủ để vào phòng — đấu qua mạng, không cần cùng thiết bị. Chủ phòng quyết định toàn bộ kết quả trận."
+  joinBox.append(joinRow, el("div", { class: "tiny muted", style: "margin-top:7px;line-height:1.45" }, [roomRelayAvailable
+    ? "Nhập mã của đối thủ — đấu qua mạng, không cần cùng thiết bị. Chủ phòng quyết định kết quả trận."
     : "Chưa cấu hình máy chủ: phòng chỉ nối được giữa hai tab CÙNG trình duyệt. Đặt VITE_ACCOUNT_API rồi deploy Worker để đấu qua mạng."]));
-  root.appendChild(joinBox);
+  main.appendChild(joinBox);
+
+  // Friends sit with the other PvP doors rather than floating above the whole
+  // screen — the sign-in card used to spend the first scroll's worth of space
+  // saying "đăng nhập để kết bạn" before the arena itself even appeared.
+  const friends = friendsPanel((result, iAm) => watchDuel(nav, result, iAm));
+  main.appendChild(friends.el);
 
   // --- the fighters, and what fighting is worth --------------------------
   //
@@ -278,7 +289,7 @@ function renderMenu(nav: Navigate): HTMLElement {
     const base = 60;
     const now = Math.round(base * battleStreakBonus(bestStreak));
 
-    root.appendChild(el("div", { class: "sec-title", style: "margin-top:14px" }, ["Đội hình"]));
+    main.appendChild(el("div", { class: "sec-title", style: "margin-top:14px" }, ["Đội hình"]));
 
     const roster = el("div", { class: "roster" });
     for (const p of ready.slice(0, 6)) {
@@ -301,9 +312,9 @@ function renderMenu(nav: Navigate): HTMLElement {
       card.addEventListener("click", () => nav("arena", { plantId: p.plantId }));
       roster.appendChild(card);
     }
-    root.appendChild(roster);
+    main.appendChild(roster);
 
-    const pay = el("div", { class: "card", style: "margin-top:10px" });
+    const pay = el("div", { class: "card" });
     pay.append(
       el("div", { class: "kv" }, [
         el("span", { class: "kv-k" }, ["Thắng với " + plantDisplayName(best, store.state.plants)]),
@@ -318,7 +329,7 @@ function renderMenu(nav: Navigate): HTMLElement {
         ),
       ]),
     );
-    root.appendChild(pay);
+    side.appendChild(pay);
 
     // What else a fight might leave behind, with the odds.
     //
@@ -326,7 +337,7 @@ function renderMenu(nav: Navigate): HTMLElement {
     // are certain - a certain payout needs no odds column, and mixing the two would blur
     // exactly which part of the reward is luck.
     const emberLeft = store.emberLeftToday();
-    const loot = el("div", { class: "card", style: "margin-top:10px" });
+    const loot = el("div", { class: "card" });
     loot.appendChild(el("div", { class: "sec-title" }, ["Có thể rớt"]));
     for (const line of dropOdds("win")) {
       const capped = line.currency === "ember" && emberLeft <= 0;
@@ -354,10 +365,10 @@ function renderMenu(nav: Navigate): HTMLElement {
         emberLeft > 0 && emberLeft < EMBER_DAILY_CAP ? ` 🔥 Còn ${emberLeft}/${EMBER_DAILY_CAP} Mảnh lửa hôm nay.` : "",
       ]),
     );
-    root.appendChild(loot);
+    side.appendChild(loot);
   }
 
-  const hist = el("div", { class: "card", style: "margin-top:14px" });
+  const hist = el("div", { class: "card" });
   hist.append(
     el("div", { class: "sec-title" }, ["Thành tích"]),
     el("div", { class: "row between small" }, [el("span", { class: "muted" }, ["Tổng trận"]), el("span", { class: "mono" }, [String(total)])]),
@@ -371,10 +382,10 @@ function renderMenu(nav: Navigate): HTMLElement {
       el("span", { class: "mono" }, [String(ready.reduce((m, p) => Math.max(m, p.battleRecord.bestStreak), 0))]),
     ]),
   );
-  root.appendChild(hist);
+  side.appendChild(hist);
 
   if (!ready.length) {
-    root.appendChild(el("div", { class: "callout warn", style: "margin-top:12px" }, ["Chưa có cây trưởng thành. Chăm cây cho tới khi lớn rồi đem đi đấu."]));
+    main.appendChild(el("div", { class: "callout warn", style: "margin-top:12px" }, ["Chưa có cây trưởng thành. Chăm cây cho tới khi lớn rồi đem đi đấu."]));
   }
   return root;
 }

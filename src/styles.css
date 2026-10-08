@@ -3349,6 +3349,48 @@ html[data-motion="reduce"] .breed-link.is-ready .flow-dot.b {
 
 /* Two doors side by side on desktop; on a phone they stack because the stacked
    label+note layout already handles a narrow column. */
+/* Two columns on a wide window: the left is the way in, the right is why to
+   bother. One file on a phone, in the same order. */
+.arena-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.arena-main > .card,
+.arena-main > .friends > .card {
+  margin-top: 10px;
+}
+
+.arena-side {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  align-content: start;
+}
+
+.arena-side .sec-title {
+  margin-bottom: 6px;
+}
+
+@media (min-width: 900px) {
+  .arena-grid {
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+  }
+
+  .arena-side {
+    margin-top: 0;
+  }
+}
+
+/* The room-code strip: input + button in one row, no heading card. */
+.join-strip {
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
 .arena-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;

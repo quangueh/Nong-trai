@@ -340,7 +340,7 @@ await render("arena menu renders", () => navigate("arena"));
   const t = $(".screen")?.textContent ?? "";
   check("offers PvE", t.includes("Đấu với AI"));
   check("offers room creation", t.includes("Tạo phòng"));
-  check("offers code entry", t.includes("Nhập mã phòng"));
+  check("offers code entry", t.includes("Vào phòng"));
   check("shows the record", t.includes("Thành tích"));
   const input = $<HTMLInputElement>(".screen input");
   check("code input uppercases", !!input);
