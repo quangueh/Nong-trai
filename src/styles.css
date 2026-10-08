@@ -1888,6 +1888,29 @@ h4 {
   }
 }
 
+/* Leaf flutter: a small secondary wobble per leaf, out of phase via the
+   renderer's `--d` delay, so the canopy reads as foliage moving in air rather
+   than one rigid silhouette rocking. Kept to garden beds — the battle avatar
+   has its own motion vocabulary and unfurl is handled by `.is-anim`. */
+.plot .bed .leaf {
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  animation: leafFlutter 3.6s ease-in-out infinite;
+  animation-delay: calc(var(--d, 0s) * -1);
+}
+.plot:nth-child(2n) .bed .leaf {
+  animation-duration: 4.4s;
+}
+@keyframes leafFlutter {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(2.6deg);
+  }
+}
+
 /* The plant stands in the light of its own element. `--elc`/`--elglow` come
    from ELEMENT_INFO in plotCard.ts, so the garden tile, the collection shelf
    and the arena avatar all speak the same colour for the same plant. */

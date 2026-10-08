@@ -230,8 +230,10 @@ export function renderPlantSvg(plant: Plant, size = 120, opts: { anim?: boolean 
   <defs>
     
     <linearGradient id="${gid}stem" x1="0" y1="1" x2="0" y2="0"><stop offset="0%" stop-color="${pal.stemShade}"/><stop offset="60%" stop-color="${pal.stem}"/><stop offset="100%" stop-color="${pal.stemLight}"/></linearGradient>
-    <linearGradient id="${gid}leaf-lit" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0%" stop-color="${pal.leafLight}"/><stop offset="45%" stop-color="${pal.leaf}"/><stop offset="100%" stop-color="${pal.leafDark}"/></linearGradient>
-    <linearGradient id="${gid}leaf-shade" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0%" stop-color="${pal.leaf}"/><stop offset="100%" stop-color="${pal.leafDark}"/></linearGradient>
+    <linearGradient id="${gid}leaf-lit" x1="0" y1="0" x2="1" y2="0.15"><stop offset="0%" stop-color="${pal.leafDark}"/><stop offset="42%" stop-color="${pal.leaf}"/><stop offset="100%" stop-color="${pal.leafLight}"/></linearGradient>
+    <linearGradient id="${gid}leaf-shade" x1="0" y1="0" x2="1" y2="0.15"><stop offset="0%" stop-color="${shadeHex(pal.leafDark, -8)}"/><stop offset="50%" stop-color="${pal.leafDark}"/><stop offset="100%" stop-color="${pal.leaf}"/></linearGradient>
+    <radialGradient id="${gid}bloomCore" cx="38%" cy="32%" r="75%"><stop offset="0%" stop-color="${pal.bloom}"/><stop offset="55%" stop-color="${pal.accent}"/><stop offset="100%" stop-color="${pal.bloomShade}"/></radialGradient>
+    <radialGradient id="${gid}occl"><stop offset="0%" stop-color="${pal.stemShade}" stop-opacity="0.55"/><stop offset="70%" stop-color="${pal.stemShade}" stop-opacity="0.18"/><stop offset="100%" stop-color="${pal.stemShade}" stop-opacity="0"/></radialGradient>
     <radialGradient id="${gid}glow"><stop offset="0%" stop-color="${pal.accent}" stop-opacity="0.5"/><stop offset="55%" stop-color="${pal.accent}" stop-opacity="0.16"/><stop offset="100%" stop-color="${pal.accent}" stop-opacity="0"/></radialGradient>
     <filter id="${gid}soft" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="6"/></filter>
     <linearGradient id="${gid}bloom" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${pal.bloom}"/><stop offset="100%" stop-color="${pal.bloomShade}"/></linearGradient>
@@ -699,18 +701,25 @@ function groundLayer(cx: number, soilY: number, scale: number, pal: PlantPalette
     });
   }
 
-  return soilMound({
-    cx,
-    y: soilY,
-    rx,
-    ry: moundRy,
-    top,
-    face,
-    rim,
-    grit,
-    blades: grassBlades(cx, soilY, rx, moundRy, pal.stemShade, Math.round(2 + scale * 3), () => rng.next()),
-    shadow: pal.shadow,
-  });
+  // A soft cast shadow pooling under the mound and stretching away from the
+  // light. It is what grounds the plant — without it the mound floats.
+  const cast = `<ellipse cx="${r2(cx + rx * 0.28)}" cy="${r2(soilY + moundRy * 1.35)}" rx="${r2(rx * 1.22)}" ry="${r2(moundRy * 0.6)}" fill="${pal.shadow}" opacity="0.22"/>`;
+
+  return (
+    cast +
+    soilMound({
+      cx,
+      y: soilY,
+      rx,
+      ry: moundRy,
+      top,
+      face,
+      rim,
+      grit,
+      blades: grassBlades(cx, soilY, rx, moundRy, pal.stemShade, Math.round(2 + scale * 3), () => rng.next()),
+      shadow: pal.shadow,
+    })
+  );
 }
 
 function auraLayer(v: VisualGenes, auraCx: number, baseY: number, scale: number, pal: PlantPalette, gid: string, rng: Rng): string {
@@ -983,11 +992,19 @@ const taper = rosette ? 1 : 1 - t * 0.3;
     const px = anchor.x + dirPt.x;
     const py = anchor.y + dirPt.y;
     petioles += `<path d="M ${r2(anchor.x)} ${r2(anchor.y)} Q ${r2(anchor.x + dirPt.x * 0.45)} ${r2(anchor.y + dirPt.y * 0.9 - size * 0.12)} ${r2(px)} ${r2(py)}" stroke="${pal.stemShade}" stroke-width="${r2(2.1 * scale)}" fill="none" stroke-linecap="round"/>`;
+    // Occlusion where the blade meets its stalk: a small soft shadow under the
+    // leaf joint keeps each leaf reading as *attached* rather than floating by
+    // the stem. Cheap stand-in for ambient occlusion.
+    petioles += `<ellipse cx="${r2(px)}" cy="${r2(py + size * 0.16)}" rx="${r2(size * 0.3)}" ry="${r2(size * 0.12)}" fill="url(#${gradId}occl)"/>`;
 
     // The underside: the same silhouette shrunk and offset toward the lower
     // margin. This is what gives the blade a fold instead of a flat cut-out.
     const under = leafFamilyPath({ length: size * 0.94, width: width * 0.82, family, curl, serration: 0, jitter: 0 });
     const lift = size * 0.1;
+    // Rim light: a thinner copy of the blade slid toward the lit edge. It only
+    // shows where it lands on the dark under-margin, which is what makes the
+    // edge catch light instead of the whole leaf glowing flat.
+    const rim = leafFamilyPath({ length: size * 0.9, width: width * 0.66, family, curl: curl * 0.8, serration: 0, jitter: 0 });
 
     let detail = "";
     if (showVeins) {
@@ -1000,8 +1017,9 @@ const taper = rosette ? 1 : 1 - t * 0.3;
     const lit = i % 2 === 0;
     leaves += `<g transform="translate(${r2(px)} ${r2(py)}) rotate(${r2(leafAngle)})">
       <g class="leaf ${lit ? "leaf-lit" : "leaf-shade"}" style="--d:${(i * 0.07).toFixed(2)}s">
+        <path d="${under}" fill="${pal.leafDark}" opacity="0.5" transform="translate(0 ${r2(lift)})"/>
         <path d="${d}" fill="url(#${gradId}leaf-${lit ? "lit" : "shade"})"/>
-        <path d="${under}" fill="${pal.leafDark}" opacity="0.28" transform="translate(0 ${r2(lift)})"/>
+        <path d="${rim}" fill="${pal.leafLight}" opacity="${lit ? 0.3 : 0.12}" transform="translate(${r2(size * 0.03)} ${r2(-size * 0.07)})"/>
         ${detail}
       </g>
     </g>`;
@@ -1082,16 +1100,19 @@ function bloomLayer(top: Pt, scale: number, flower: string, pal: PlantPalette, g
     out += `<path d="${petalPath(r * 0.85, 0.6, 0)}" fill="${pal.leafDark}" transform="translate(${r2(top.x)} ${r2(cy + r * 0.35)}) rotate(${side > 0 ? 74 : -74}) scale(0.9)"/>`;
   }
 
-  // Centre: a dished disc with a ring of stamens reads as depth, not a flat dot.
-  out += `<circle cx="${r2(top.x)}" cy="${r2(cy)}" r="${r2(r * 0.38)}" fill="${pal.bloomShade}"/>`;
-  out += `<circle cx="${r2(top.x)}" cy="${r2(cy - r * 0.05)}" r="${r2(r * 0.28)}" fill="${pal.accent}"/>`;
+  // Centre: a dished sphere (radial core) sitting inside the petal ring, with a
+  // drop shadow under it so the petals read as wrapping a volume.
+  out += `<ellipse cx="${r2(top.x)}" cy="${r2(cy + r * 0.22)}" rx="${r2(r * 0.4)}" ry="${r2(r * 0.16)}" fill="${pal.bloomShade}" opacity="0.5"/>`;
+  out += `<circle cx="${r2(top.x)}" cy="${r2(cy)}" r="${r2(r * 0.38)}" fill="url(#${gid}bloomCore)"/>`;
   const stamens = flower === "ember_core" ? 9 : 6;
   for (let i = 0; i < stamens; i++) {
     const a = (i / stamens) * Math.PI * 2;
     const d = r * 0.24;
     out += `<circle cx="${r2(top.x + Math.cos(a) * d)}" cy="${r2(cy + Math.sin(a) * d)}" r="${r2(0.85 * scale)}" fill="${pal.bloom}"/>`;
   }
-  out += `<circle cx="${r2(top.x)}" cy="${r2(cy)}" r="${r2(r * 0.15)}" fill="${pal.leafLight}" opacity="0.9"/>`;
+  // Catchlight on the core sphere — the single brightest dot, top-left.
+  out += `<circle cx="${r2(top.x - r * 0.13)}" cy="${r2(cy - r * 0.15)}" r="${r2(r * 0.12)}" fill="#fff" opacity="0.75"/>`;
+  out += `<circle cx="${r2(top.x)}" cy="${r2(cy)}" r="${r2(r * 0.15)}" fill="${pal.leafLight}" opacity="0.55"/>`;
   return out;
 }
 
