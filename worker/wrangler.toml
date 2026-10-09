@@ -6,6 +6,12 @@ name = "nong-trai-account"
 main = "src/index.ts"
 compatibility_date = "2026-01-15"
 
+# Smart Placement (free): the worker runs in whichever location makes its
+# bindings fastest — for this worker that is beside the D1 database in APAC,
+# so /api/friend and /api/save stop paying a cross-region round trip per query.
+[placement]
+mode = "smart"
+
 # KV holds what it is good at: account records, session-adjacent keys and the
 # garden save blobs — one value per key, read and written whole.
 [[kv_namespaces]]

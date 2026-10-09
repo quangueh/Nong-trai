@@ -729,6 +729,25 @@ export default {
         } else {
           res = await routeRoom(req, env);
         }
+      } else if (path === "/api/error" && req.method === "POST") {
+        // Client crash reports. Unauthenticated — a broken client is exactly the
+        // one that may have no valid token — but bounded hard: fixed-size fields,
+        // one row per call, and the client's own reporter caps itself per load.
+        const b = (await req.json().catch(() => null)) as
+          | { kind?: string; detail?: string; url?: string; ua?: string; at?: number }
+          | null;
+        const kind = String(b?.kind ?? "").slice(0, 24);
+        const detail = String(b?.detail ?? "").slice(0, 2000);
+        if (!kind || !detail) {
+          res = RKO("bad_report");
+        } else {
+          await env.D1.prepare(
+            "INSERT INTO client_errors (kind, detail, url, ua, at) VALUES (?, ?, ?, ?, ?)",
+          )
+            .bind(kind, detail, String(b?.url ?? "").slice(0, 300), String(b?.ua ?? "").slice(0, 200), Number(b?.at) || Date.now())
+            .run();
+          res = ROK({ ok: true });
+        }
       } else if (path === "/api/leaderboard" && req.method === "GET") {
         const auth = await readAuth(req, env);
         if (!auth) res = RKO("unauthorised", 401);
@@ -761,6 +780,11 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
     await env.D1.prepare("DELETE FROM duels WHERE created_at < ?")
       .bind(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .run();
+    // Crash reports age out faster: a month-old stack trace describes a build
+    // nobody runs any more.
+    await env.D1.prepare("DELETE FROM client_errors WHERE at < ?")
+      .bind(Date.now() - 30 * 24 * 60 * 60 * 1000)
       .run();
   },
 };

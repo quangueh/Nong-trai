@@ -14,8 +14,36 @@ import "./styles/liquid.css";
 import { boot } from "./ui/app";
 import { sfx } from "./audio/audio";
 import { music } from "./audio/music";
+import { initErrorReporting } from "./core/errors";
 
 boot(document.getElementById("app")!);
+initErrorReporting();
+
+/*
+ * The service worker is the offline story and the instant-second-load story:
+ * public/sw.js stale-while-revalidates same-origin GETs and serves the cached
+ * shell when the network is gone. Production only — a dev worker that cached
+ * vite's module graph would be a bug farm. Registration is fire-and-forget:
+ * a browser without SW support just plays online, which is today's behaviour.
+ */
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  void navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
+/*
+ * Cloudflare Web Analytics — free real-user monitoring, gated on a build var.
+ * Unset means no beacon is fetched and nothing leaves the page; set means the
+ * lightweight beacon.js reports page loads and Core Web Vitals to the dashboard.
+ * It is appended, not bundled, so a missing token costs zero bytes.
+ */
+const cwaToken = import.meta.env?.VITE_CF_WEB_ANALYTICS_TOKEN as string | undefined;
+if (cwaToken) {
+  const beacon = document.createElement("script");
+  beacon.defer = true;
+  beacon.src = "https://static.cloudflareinsights.com/beacon.min.js";
+  beacon.dataset.cfBeacon = JSON.stringify({ token: cwaToken });
+  document.head.appendChild(beacon);
+}
 
 /**
  * Unlock audio on the first gesture.

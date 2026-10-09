@@ -25,7 +25,12 @@
   replay khi connect, mỗi `send` fan-out frame `{k,m}` cho mọi socket. Client
   (`src/core/room.ts`) dùng WS khi mở được, fallback poll 650ms khi không.
 - **Cron `17 */6 * * *`** — `scheduled()` xoá duel rows > 7 ngày (inbox live chỉ
-  hiển thị 12h gần nhất).
+  hiển thị 12h gần nhất) + `client_errors` rows > 30 ngày.
+- **Smart Placement** (`[placement] mode = "smart"`) — worker tự colocate gần D1,
+  bỏ round-trip xuyên vùng mỗi query.
+- **`/api/error`** — POST unauth nhận crash report client (cap 2000 chars) →
+  D1 `client_errors`. Reporter phía client: `src/core/errors.ts` (≤4 report/load,
+  dedupe, chỉ chạy khi có VITE_ACCOUNT_API).
 
 ## Optional bindings (code sẵn, chờ kích hoạt trong Dashboard)
 
@@ -37,6 +42,19 @@
   → Enable, uncomment binding, deploy lại.
 - **Turnstile** — `TURNSTILE_SECRET` qua `wrangler secret put` + `VITE_TURNSTILE_SITE`
   cho frontend. Unset = check tắt hoàn toàn (dev/test không bị ảnh hưởng).
+- **Cloudflare Web Analytics** — `VITE_CF_WEB_ANALYTICS_TOKEN` lúc build; unset =
+  không inject beacon (xem `src/main.ts`).
+
+## Frontend (Pages `nong-trai`)
+
+- **PWA**: `public/manifest.webmanifest` + icon SVG/PNG (render từ
+  `public/icon.svg`); cài được "Add to Home Screen", display standalone.
+- **Service worker** `public/sw.js` — stale-while-revalidate cho same-origin GET,
+  navigation fallback về `index.html` khi offline. Chỉ register khi
+  `import.meta.env.PROD` (`src/main.ts`) — dev/test không chạy SW.
+- **manualChunks** (`vite.config.ts`) — tách `battle`/`render`/`data` khỏi entry
+  để `/assets/*` immutable cache chỉ revalidate chunk thay đổi mỗi deploy.
+- `index.html` preconnect tới worker origin — tiết kiệm handshake của call đầu.
 
 ## Free-tier notes
 

@@ -83,3 +83,16 @@ CREATE TABLE IF NOT EXISTS meta (
   k TEXT PRIMARY KEY,
   v TEXT NOT NULL
 );
+
+-- Client-side error reports (window.onerror / unhandledrejection). Self-hosted
+-- telemetry: enough to know a release broke somebody's garden before they
+-- report it, without shipping a third-party SDK in the bundle.
+CREATE TABLE IF NOT EXISTS client_errors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  detail TEXT NOT NULL,
+  url TEXT,
+  ua TEXT,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_client_errors_at ON client_errors (at);
