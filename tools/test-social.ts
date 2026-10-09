@@ -170,7 +170,11 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   const before = db.writes;
   await indexAccount(env, alice);
   check("a repeat sign-in does not raise the count", (await db.get(nameCountKey("Alice"))) === "1");
-  check("and costs no extra write for it", db.writes - before === 2, `${db.writes - before} writes`);
+  /* Steady-state indexing is read-only: both indexes already point at this
+     account, so there is nothing to write. This matters because readIdentity
+     re-indexes on every friend/duel request — an unchanged identity that still
+     wrote twice per call is what emptied the daily KV write budget on a poll. */
+  check("and costs no extra write for it", db.writes - before === 0, `${db.writes - before} writes`);
 }
 
 // --- 2. adding a friend ------------------------------------------------------

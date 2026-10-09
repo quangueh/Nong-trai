@@ -203,6 +203,10 @@ export function friendsPanel(onWatch: (result: DuelResult, iAm: "a" | "b") => vo
       window.clearInterval(timer);
       return;
     }
+    // A background tab does not need a fresh inbox — each poll is three Worker
+    // calls, and an unfocused evening's worth of them is the bill that made KV
+    // send a warning mail.
+    if (document.hidden) return;
     void refresh();
   }, INBOX_FRESH_MS);
 

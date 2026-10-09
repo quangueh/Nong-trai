@@ -342,23 +342,29 @@ export async function unindexName(env: KvEnv, accountKey: string, name: string):
 
 /** Keep the two indexes current. Called on every sign-in. */
 export async function indexAccount(env: KvEnv, summary: Identity): Promise<void> {
-  // Read the name's current occupant *before* overwriting it. The comparison has to be
-  // against what was there a moment ago, and doing it after the write compares the key
-  // against itself - so the count never moves and the ambiguity check never fires.
+  /*
+   * Read both occupants before writing anything. The comparison has to be against
+   * what was there a moment ago — writing first compares the key against itself —
+   * and a steady-state identity must cost reads, not writes: `readIdentity` runs
+   * this on every /api/friend and /api/duel call, and two unconditional puts per
+   * call meant the friends panel's 20-second poll (three calls a tick) burned
+   * through the day's entire write budget in under an hour of one idle tab.
+   */
   const ni = nameIndexKey(summary.name);
-  const previous = await env.DB.get(ni);
+  const hi = handleIndexKey(summary.handle);
+  const [previous, prevHandle] = await Promise.all([env.DB.get(ni), env.DB.get(hi)]);
   const isNewOccupant = previous !== summary.key;
 
-  await env.DB.put(handleIndexKey(summary.handle), summary.key);
-  await env.DB.put(ni, summary.key);
-
-  // Counted only when this account is not already the name's occupant, so the counter
-  // tracks distinct accounts rather than sign-ins, and an ordinary return visit costs one
-  // write instead of three.
+  const writes: Promise<unknown>[] = [];
+  if (prevHandle !== summary.key) writes.push(env.DB.put(hi, summary.key));
   if (isNewOccupant) {
+    writes.push(env.DB.put(ni, summary.key));
+    // Counted only when this account is not already the name's occupant, so the
+    // counter tracks distinct accounts rather than sign-ins.
     const seen = Number(await env.DB.get(nameCountKey(summary.name))) || 0;
-    await env.DB.put(nameCountKey(summary.name), String(seen + 1));
+    writes.push(env.DB.put(nameCountKey(summary.name), String(seen + 1)));
   }
+  await Promise.all(writes);
 }
 
 // --- friends ----------------------------------------------------------------

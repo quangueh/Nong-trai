@@ -97,6 +97,16 @@ let status: AccountStatus = {
 let token: string | null = null;
 let bridge: SaveBridge | null = null;
 let autoTimer: number | null = null;
+/*
+ * The newest `savedAt` the server has acknowledged this session — set by a push
+ * it kept, by a pull whose copy it stamped, and by takeServer/keepLocal once
+ * they settle. The auto tick compares the local stamp against it and skips the
+ * request entirely when nothing moved: an always-on tab used to send a save
+ * every five minutes whether or not anything had changed, and each save is
+ * several KV writes on the Worker — one idle client could eat the day's write
+ * budget alone.
+ */
+let lastPushedSavedAt = -1;
 
 /**
  * A guest garden waiting on a player's decision.
@@ -212,7 +222,7 @@ function startAuto(): void {
        Retrying the pull is the recovery; once the account is read, the next
        tick pushes as normal. */
     if (token && !cloudRead) void pull();
-    else void push();
+    else if (token && bridge && (Number(bridge.read().savedAt) || 0) > lastPushedSavedAt) void push();
   }, AUTO_SYNC_MS);
 }
 
@@ -401,6 +411,9 @@ function adoptSession(newToken: string, email: string, playerId: string, kind: S
   // A different account means a different cloud copy, so whatever this device had learned
   // about the previous one no longer authorises a write. The pull below re-establishes it.
   cloudRead = false;
+  // Different account, different acknowledgement history: the dirty-gate is
+  // per-session, so the old session's stamp must not excuse this one's saves.
+  lastPushedSavedAt = -1;
   localStorage.setItem(TOKEN_KEY, newToken);
   localStorage.setItem(EMAIL_KEY, email);
   rememberSessionKind(kind);
@@ -527,6 +540,7 @@ export function signOut(): Promise<void> {
     token = null;
     cloudRead = false;
     pendingGuest = null;
+    lastPushedSavedAt = -1;
     stopAuto();
     try {
       localStorage.removeItem(TOKEN_KEY);
@@ -686,6 +700,8 @@ export async function pull(
        */
       adoptState?.(remote.state);
       bridge.write(remote.state, remote.savedAt);
+      // The server stamped this copy itself — it does not need sending back.
+      lastPushedSavedAt = Math.max(lastPushedSavedAt, remote.savedAt);
       emit({
         state: "synced",
         message: "Đã nạp vườn từ tài khoản.",
@@ -742,12 +758,16 @@ export async function push(): Promise<void> {
 
   try {
     const { state, savedAt } = bridge.read();
-    const res = await pushSave(reqToken, Number(savedAt) || Date.now(), state);
+    const stamp = Number(savedAt) || Date.now();
+    const res = await pushSave(reqToken, stamp, state);
     /* The write went out under this session's token — but if the session moved
        on while it was in flight, the result (and its status text) belongs to a
        garden nobody is looking at any more. Drop it. */
     if (!sessionIsCurrent(rev, reqToken)) return;
     noteWrite();
+    /* Acknowledged either way: "theirs" means the server held something newer,
+       so this stamp is settled — retrying it would loop the same refusal. */
+    lastPushedSavedAt = Math.max(lastPushedSavedAt, stamp);
 
     if (res.kept === "theirs") {
       // The server had something newer and kept it. Saying so is the point: a
@@ -776,6 +796,7 @@ export async function takeServer(): Promise<void> {
     const remote = await fetchSave(reqToken);
     if (!remote || !sessionIsCurrent(rev, reqToken)) return;
     bridge.write(remote.state, remote.savedAt);
+    lastPushedSavedAt = Math.max(lastPushedSavedAt, remote.savedAt);
     emit({ state: "synced", message: "Đã dùng bản trên máy chủ.", lastSyncedAt: Date.now(), serverWasNewer: false });
   } catch (err) {
     if (sessionIsCurrent(rev, reqToken)) report(err, "Không tải được bản trên máy chủ.");
@@ -801,6 +822,7 @@ export async function keepLocal(): Promise<void> {
     const res = await pushSave(reqToken, stamp, state);
     if (!sessionIsCurrent(rev, reqToken)) return;
     noteWrite();
+    lastPushedSavedAt = Math.max(lastPushedSavedAt, stamp);
     if (res.kept === "theirs") {
       /* The server still refused to yield — its copy was newer than even the
          stamp we just sent. Report the conflict honestly instead of claiming a
