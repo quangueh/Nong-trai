@@ -77,6 +77,17 @@ export interface Env {
    * never joins" behaviour this object exists to remove.
    */
   ROOMS?: DurableObjectNamespace;
+  /**
+   * The social database: friends, duel correspondence, search indexes and the
+   * leaderboard. Relational rows, not blobs — the KV build stored whole lists and
+   * paid a rewrite per mutation on a ~1k-writes-a-day budget.
+   */
+  D1: D1Database;
+  /**
+   * Duel replays (two full plant snapshots plus the event log) — large write-once
+   * blobs. Optional: without it they land in the D1 `duel_results` table instead.
+   */
+  REPLAYS?: R2Bucket;
 }
 
 interface Account {

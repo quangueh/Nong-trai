@@ -6,11 +6,19 @@
  * The saves are already in KV: every `PUT /api/save` writes one garden blob. Rather
  * than scanning all of those on every read — saves are tens of KB each and the list
  * would only grow — the save handler extracts the two ranked numbers at write time
- * and stores them under `lb:{accountKey}`: a few dozen bytes per player. Reading a
- * board is then a `list` of small records, which a worker can afford every poll.
+ * and stores one row in the D1 `lb` table: a few dozen bytes per player. Reading a
+ * board is then `SELECT` + an in-memory sort, which costs one query a poll.
  *
  * It does mean a player only appears once they have pushed a save. That is the honest
  * answer: an account that registered and never played has no strongest plant to rank.
+ *
+ * ## Why D1 and not the KV snapshot this replaced
+ *
+ * The KV version kept a `lb:` key per player *plus* a cached snapshot blob, so every
+ * save wrote two keys and every board read either hit the cache or paid a list +
+ * per-entry gets — and a `list` costs 100x a `get` on the free tier. A table of one
+ * row per player is the same index without the cache to keep warm or the blob to
+ * rewrite: `writeEntry` is one upsert, `handleLeaderboard` is one SELECT.
  *
  * ## Two boards, one source
  *
@@ -22,10 +30,11 @@
  * "you are #47 of 132" is the piece of information a top-15 board cannot show.
  */
 
-/** The slice of KV this module uses — structural, like `Kv` in social.ts. */
+import type { D1Like } from "./social";
+
+/** The slice of KV still needed — only for the one-time import of `lb:*` rows. */
 export interface LbKv {
   get(key: string): Promise<string | null>;
-  put(key: string, value: string): Promise<void>;
   list(options: { prefix: string; cursor?: string }): Promise<{
     keys: { name: string }[];
     list_complete?: boolean;
@@ -35,8 +44,10 @@ export interface LbKv {
 
 export interface LbEnv {
   DB: LbKv;
+  D1: D1Like;
 }
 
+/** The legacy KV key an account's ranked entry lived under — import-time only now. */
 export const lbKey = (accountKey: string): string => `lb:${accountKey}`;
 
 /** One ranked player. `power` is the best plant's power rating, `level` the breeder's. */
@@ -63,19 +74,6 @@ export const BOARD_SIZE = 15;
 
 /** Pages of `list` to walk before giving up — a bound, not an expectation. */
 const MAX_PAGES = 10;
-
-/**
- * Snapshot of every row, served to board reads.
- *
- * A `list` call costs 100× a `get` on the free tier (1k vs 100k ops a day),
- * and the board used to list + re-get every entry on every fetch — a client
- * polling each 45s spent a List per poll forever. The snapshot turns a board
- * read into one `get`; a rebuild only happens once per TTL across *all*
- * players, and `writeEntry` folds each save's row in so a fresh cache is also
- * accurate.
- */
-const CACHE_KEY = "lb:__cache__";
-const CACHE_TTL_MS = 45_000;
 
 function safeParse<T>(raw: string, fallback: T): T {
   try {
@@ -104,9 +102,9 @@ export function entryFromState(state: unknown, name: string, at = Date.now()): L
   }
   const level = Number((state as { breederLevel?: number })?.breederLevel);
   /* Both numbers are client-claimed — the save IS the client's garden blob, so
-     this board is a shared diary, not ranked truth (docs/20 gates real ranked
-     on server-verified progression). Bounding them to plausible ceilings keeps
-     a doctored save from printing "Lv 9999999" on a public list. */
+    this board is a shared diary, not ranked truth (docs/20 gates real ranked
+    on server-verified progression). Bounding them to plausible ceilings keeps
+    a doctored save from printing "Lv 9999999" on a public list. */
   return {
     name,
     power: Math.round(Math.min(Math.max(0, power), 100_000)),
@@ -117,21 +115,39 @@ export function entryFromState(state: unknown, name: string, at = Date.now()): L
 
 /** Store the ranked summary for one account. Called from the save handler. */
 export async function writeEntry(env: LbEnv, accountKey: string, entry: LbEntry): Promise<void> {
-  const key = lbKey(accountKey);
-  await env.DB.put(key, JSON.stringify(entry));
-  /* Fold the row into the snapshot when one exists — +1 get +1 put on a save,
-     but the board keeps answering from the cache instead of re-listing, and
-     the saver's own row is right on their very next poll. */
-  const cachedRaw = await env.DB.get(CACHE_KEY);
-  if (!cachedRaw) return;
-  const cached = safeParse<{ at?: number; rows?: LbRow[] }>(cachedRaw, {});
-  if (!Array.isArray(cached.rows) || typeof cached.at !== "number") return;
-  const rows = cached.rows.filter((r) => r.key !== key);
-  rows.push({ key, name: entry.name, email: entry.email, power: entry.power, level: entry.level, at: entry.at });
-  await env.DB.put(CACHE_KEY, JSON.stringify({ at: cached.at, rows }));
+  await env.D1.prepare(
+    `INSERT INTO lb (account_key, name, email, power, level, at) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(account_key) DO UPDATE SET
+       name = excluded.name, email = excluded.email,
+       power = excluded.power, level = excluded.level, at = excluded.at`,
+  ).bind(accountKey, entry.name, entry.email ?? null, entry.power, entry.level, entry.at).run();
 }
 
-/** Every entry in the index, newest write winning per key by construction. */
+/**
+ * One-time import of the KV `lb:*` index into the table.
+ *
+ * Runs only while the table is empty and the flag is unset — the first board read
+ * after the cutover pays the list + gets the KV design paid every cache miss,
+ * then marks `lb_backfilled` so it never happens again. An honestly empty board
+ * is marked too: nothing to import is still imported.
+ */
+async function backfillIfEmpty(env: LbEnv, rows: LbRow[]): Promise<LbRow[]> {
+  if (rows.length > 0) return rows;
+  const flag = await env.D1.prepare("SELECT v FROM meta WHERE k = 'lb_backfilled'").first<string>("v");
+  if (flag) return rows;
+
+  const legacy = await readAll(env);
+  for (const r of legacy) {
+    await env.D1.prepare(
+      "INSERT OR IGNORE INTO lb (account_key, name, email, power, level, at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).bind(r.key.replace(/^lb:/, ""), r.name, r.email ?? null, r.power, r.level, r.at).run();
+  }
+  await env.D1.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('lb_backfilled', ?)")
+    .bind(String(Date.now())).run();
+  return legacy;
+}
+
+/** Every row of the legacy KV index, newest write winning per key by construction. */
 async function readAll(env: LbEnv): Promise<LbRow[]> {
   const rows: LbRow[] = [];
   let cursor: string | undefined;
@@ -172,8 +188,8 @@ const rowFor = (row: LbRow, rank: number, myKey: string) => ({
   rank,
   name: row.name,
   /* Emails stay in the index (the account identity), but only the caller's own
-     row is told it — a public board carrying 15 strangers' email addresses is
-     a leak, not a label. */
+    row is told it — a public board carrying 15 strangers' email addresses is
+    a leak, not a label. */
   email: row.key === myKey ? row.email : undefined,
   power: row.power,
   level: row.level,
@@ -205,27 +221,28 @@ function isTestEntry(row: LbRow): boolean {
  * better)`, so being absent from the index reads as unranked rather than as last.
  */
 export async function handleLeaderboard(env: LbEnv, myKey: string): Promise<Response> {
-  /* Snapshot first: a fresh cache serves the whole board for the price of one
-     `get`. Only a missing or stale snapshot pays the list + per-entry gets. */
-  const cachedRaw = await env.DB.get(CACHE_KEY);
-  let rows: LbRow[];
-  const cached = cachedRaw ? safeParse<{ at?: number; rows?: LbRow[] }>(cachedRaw, {}) : null;
-  if (cached && typeof cached.at === "number" && Array.isArray(cached.rows) && Date.now() - cached.at < CACHE_TTL_MS) {
-    rows = cached.rows;
-  } else {
-    rows = await readAll(env);
-    await env.DB.put(CACHE_KEY, JSON.stringify({ at: Date.now(), rows }));
-  }
+  const { results } = await env.D1.prepare(
+    "SELECT account_key, name, email, power, level, at FROM lb",
+  ).all<{ account_key: string; name: string; email: string | null; power: number; level: number; at: number }>();
+
+  let rows: LbRow[] = results.map((r) => ({
+    key: r.account_key,
+    name: r.name,
+    email: r.email ?? undefined,
+    power: r.power,
+    level: r.level,
+    at: r.at,
+  }));
+  rows = await backfillIfEmpty(env, rows);
   rows = rows.filter((r) => !isTestEntry(r));
+
   const power = [...rows].sort(byPower);
   const level = [...rows].sort(byLevel);
-  // Rows carry their full KV name (`lb:acct:…`); the caller arrives as a bare key.
-  const mine = rows.find((r) => r.key === lbKey(myKey)) ?? null;
-  const mineKey = lbKey(myKey);
+  const mine = rows.find((r) => r.key === myKey) ?? null;
 
   return Response.json({
-    power: power.slice(0, BOARD_SIZE).map((r, i) => rowFor(r, i + 1, mineKey)),
-    level: level.slice(0, BOARD_SIZE).map((r, i) => rowFor(r, i + 1, mineKey)),
+    power: power.slice(0, BOARD_SIZE).map((r, i) => rowFor(r, i + 1, myKey)),
+    level: level.slice(0, BOARD_SIZE).map((r, i) => rowFor(r, i + 1, myKey)),
     me: mine
       ? {
           name: mine.name,

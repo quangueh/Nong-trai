@@ -1,11 +1,12 @@
 /**
  * The friend list and the duel, tested against the real Worker code.
  *
- * The Worker is not stubbed. `social.ts` is imported as written and handed an in-memory KV,
- * so what is under test is the code that will run in production rather than a description
- * of it. This matters more than usual here, because the interesting properties are all
- * about *authority*: who a friend is, whose plants get fought, and whether anything a
- * client says can influence any of it.
+ * The Worker is not stubbed. `social.ts` is imported as written and handed an in-memory
+ * KV plus a `node:sqlite` database running the real `worker/schema.sql` through the
+ * `D1Like` interface — so what is under test is the code that will run in production
+ * rather than a description of it. This matters more than usual here, because the
+ * interesting properties are all about *authority*: who a friend is, whose plants get
+ * fought, and whether anything a client says can influence any of it.
  *
  * The four properties worth pinning down:
  *
@@ -20,9 +21,9 @@
  *   3. **A shared display name is refused.** Two accounts called Minh must not resolve to
  *      whichever one signed in last.
  *
- *   4. **Signing in publishes nothing sensitive and costs one write for a name already
- *      seen.** The indexes are what make a friend findable, and they are written on every
- *      sign-in, so their cost is part of the design.
+ *   4. **Steady-state costs reads, not writes.** The indexes are what make a friend
+ *      findable; they are re-checked on every social request, so an unchanged identity
+ *      must not cost a write on any store.
  */
 
 import {
@@ -35,17 +36,19 @@ import {
   handleFriend,
   indexAccount,
   unindexName,
-  nameCountKey,
-  nameIndexKey,
-  handleIndexKey,
   friendBookKey,
   inboxKey,
   plantFromSave,
   resolveTarget,
   MAX_FRIENDS,
   INVITE_TTL_MS,
+  type D1Prepared,
   type Identity,
 } from "../worker/src/social";
+import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { simulateBattle } from "../src/battle/engine";
 import { createSeedPlant } from "../src/genetics/genomeGenerator";
 import type { Plant } from "../src/core/types";
@@ -61,7 +64,7 @@ function check(name: string, ok: boolean, detail = ""): void {
   }
 }
 
-/* --- an in-memory KV ------------------------------------------------------- */
+/* --- in-memory stores ------------------------------------------------------- */
 
 /** Minimal KVNamespace. Counts writes, because write cost is a real constraint here. */
 function fakeKv() {
@@ -86,9 +89,71 @@ function fakeKv() {
   return db as typeof db & { DB: never };
 }
 
-/** Wraps the store so a handler receives the `{ DB }` shape it expects. */
-function envFor(db: ReturnType<typeof fakeKv>) {
-  return { DB: db as unknown as Parameters<typeof handleFriend>[1]["DB"] };
+/**
+ * Minimal D1Database over `node:sqlite`, running the real schema file — a test that
+ * drifted from `worker/schema.sql` fails here rather than on deploy. `run()` counts
+ * as a write (it is only ever used for mutations), for the same reason KV does.
+ */
+function fakeD1() {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../worker/schema.sql"), "utf8"));
+  let writes = 0;
+  const d1 = {
+    sqlite,
+    get writes() {
+      return writes;
+    },
+    prepare(sql: string) {
+      const stmt = sqlite.prepare(sql);
+      const make = (values: unknown[]): D1Prepared => ({
+        bind: (...v: unknown[]) => make(v),
+        async run() {
+          writes++;
+          const r = stmt.run(...(values as never[]));
+          return { meta: { changes: Number(r.changes) } };
+        },
+        async first<T>(column?: string): Promise<T | null> {
+          const row = stmt.get(...(values as never[])) as Record<string, unknown> | undefined;
+          if (row === undefined) return null;
+          return (column !== undefined ? row[column] : row) as T;
+        },
+        async all<T>() {
+          return { results: stmt.all(...(values as never[])) as T[] };
+        },
+      });
+      // D1 allows running a statement without binding it — same methods, no args.
+      return make([]);
+    },
+    async batch(stmts: D1Prepared[]) {
+      const out = [];
+      for (const s of stmts) out.push(await s.run());
+      return out;
+    },
+  };
+  return d1;
+}
+
+/** Minimal R2Bucket — a map of key to object body. */
+function fakeR2() {
+  const map = new Map<string, string>();
+  return {
+    put: async (k: string, v: string) => (map.set(k, v), {}),
+    get: async (k: string) => (map.has(k) ? { text: async () => map.get(k)! } : null),
+    raw: map,
+  };
+}
+
+/** Wraps the stores so a handler receives the `{ DB, D1, REPLAYS }` shape it expects. */
+function envFor(db: ReturnType<typeof fakeKv>, opts: { r2?: boolean } = {}) {
+  const env = {
+    DB: db,
+    D1: fakeD1(),
+    ...(opts.r2 === false ? {} : { REPLAYS: fakeR2() }),
+  };
+  return env as unknown as Parameters<typeof handleFriend>[1] & {
+    D1: ReturnType<typeof fakeD1>;
+    REPLAYS?: ReturnType<typeof fakeR2>;
+  };
 }
 
 /** A password account, as the router would find it. */
@@ -160,21 +225,27 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   const alice = identity("alice@example.com", "Alice");
   await publish(env, db, alice, saveWith("alice@example.com", 3));
 
-  check("the handle index points at the account", (await db.get(handleIndexKey("alice@example.com"))) === alice.key);
-  check("the name index points at the account", (await db.get(nameIndexKey("Alice"))) === alice.key);
-  check("names are indexed lowercased", (await db.get(nameIndexKey("alice"))) === alice.key);
-  check("the name is counted once", (await db.get(nameCountKey("Alice"))) === "1");
+  const d1one = async <T>(sql: string, ...v: unknown[]) => env.D1.prepare(sql).bind(...v).first<T>();
+  const occupants = async (name: string) =>
+    ((await d1one<{ occupants: number }>("SELECT occupants FROM names WHERE name = ?", name.toLowerCase()))?.occupants ?? 0);
+
+  check("the handle index points at the account",
+    (await d1one<{ account_key: string }>("SELECT account_key FROM handles WHERE handle = ?", "alice@example.com"))?.account_key === alice.key);
+  check("the name index points at the account",
+    (await d1one<{ account_key: string }>("SELECT account_key FROM names WHERE name = ?", "alice"))?.account_key === alice.key);
+  check("the name is counted once", (await occupants("Alice")) === 1);
 
   // Signing in again must not inflate the count, or the count stops meaning "distinct
   // accounts" and starts meaning "times somebody typed this".
-  const before = db.writes;
+  const before = db.writes + env.D1.writes;
   await indexAccount(env, alice);
-  check("a repeat sign-in does not raise the count", (await db.get(nameCountKey("Alice"))) === "1");
+  check("a repeat sign-in does not raise the count", (await occupants("Alice")) === 1);
   /* Steady-state indexing is read-only: both indexes already point at this
-     account, so there is nothing to write. This matters because readIdentity
-     re-indexes on every friend/duel request — an unchanged identity that still
-     wrote twice per call is what emptied the daily KV write budget on a poll. */
-  check("and costs no extra write for it", db.writes - before === 0, `${db.writes - before} writes`);
+     account, so there is nothing to write on either store. This matters because
+     readIdentity re-indexes on every friend/duel request — an unchanged identity
+     that still wrote per call is what emptied the daily KV write budget on a poll. */
+  check("and costs no extra write on KV or D1", db.writes + env.D1.writes - before === 0,
+    `kv=${db.writes} d1=${env.D1.writes} before=${before}`);
 }
 
 // --- 2. adding a friend ------------------------------------------------------
@@ -189,11 +260,11 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
 
   const byEmail = await handleFriend(post({ action: "add", query: "bob@example.com" }), env, alice);
   check("adding by email works", byEmail.status === 200, await code(byEmail));
-  const book = await body<{ list: { handle: string; saveKey: string }[] }>(
-    (await db.get(friendBookKey(alice.key))) ?? "null",
+  const stored = await body<{ friends: { handle: string; saveKey: string }[] }>(
+    await handleFriend(post({ action: "list" }), env, alice),
   );
-  check("and it is stored", book.list.length === 1 && book.list[0].handle === "bob@example.com", JSON.stringify(book));
-  check("the stored row carries the save key", Boolean(book.list[0]?.saveKey), String(book.list[0]?.saveKey));
+  check("and it is stored", stored.friends.length === 1 && stored.friends[0].handle === "bob@example.com", JSON.stringify(stored));
+  check("the stored row carries the save key", Boolean(stored.friends[0]?.saveKey), String(stored.friends[0]?.saveKey));
 
   // A second account, so a by-name add has something to find.
   const bob2 = identity("bob2@example.com", "Robert");
@@ -229,10 +300,13 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   await publish(env, db, first);
   await publish(env, db, second);
 
-  check("the shared name is counted twice", (await db.get(nameCountKey("Minh"))) === "2");
+  const occupants = await env.D1.prepare("SELECT occupants FROM names WHERE name = ?")
+    .bind("minh").first<{ occupants: number }>();
+  check("the shared name is counted twice", occupants?.occupants === 2, JSON.stringify(occupants));
   const res = await handleFriend(post({ action: "add", query: "Minh" }), env, alice);
   check("so adding by it is refused", (await code(res)) === "ambiguous_name", await code(res));
-  check("and nothing is stored", !((await db.get(friendBookKey(alice.key))) ?? "").includes("Minh"));
+  const aliceFriends = await body<{ friends: unknown[] }>(await handleFriend(post({ action: "list" }), env, alice));
+  check("and nothing is stored", aliceFriends.friends.length === 0);
 
   // The address still works, which is the point of refusing by name.
   check("but the address resolves", (await handleFriend(post({ action: "add", query: "minh1@example.com" }), env, alice)).status === 200);
@@ -422,11 +496,10 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   check("a declined invite cannot be accepted", (await code(await handleDuelAccept(env, bob, id, "bob@example.com-plant-0", b.state))) === "no_such_invite");
   check("and cannot be declined twice", (await code(await handleDuelDecline(env, bob, id))) === "no_such_invite");
 
-  // An invitation older than the TTL is not an invitation any more. Rewritten rather than
+  // An invitation older than the TTL is not an invitation any more. Backdated rather than
   // waited for, because the alternative is a test that sleeps for twelve hours.
-  const raw = JSON.parse(((await db.get(inboxKey(bob.key))) ?? "null")) as { list: { at: number }[] };
-  raw.list[0].at = Date.now() - INVITE_TTL_MS - 1000;
-  await db.put(inboxKey(bob.key), JSON.stringify(raw));
+  await env.D1.prepare("UPDATE duels SET created_at = ? WHERE to_key = ?")
+    .bind(Date.now() - INVITE_TTL_MS - 1000, bob.key).run();
   check("an expired invitation disappears from the inbox", (await body<{ invites: unknown[] }>(await handleDuelInbox(env, bob))).invites.length === 0);
 
   // Two live challenges from one person is a queue; three is refused.
@@ -444,8 +517,7 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
 {
   const { entryFromState, handleLeaderboard, writeEntry, lbKey, BOARD_SIZE } = await import("../worker/src/leaderboard");
 
-  // A KV whose list honours the prefix — the fake above returns nothing, which is
-  // correct for the friend tests and wrong for an index that lives under `lb:`.
+  // A KV whose list honours the prefix — kept only for the one-time backfill path.
   const lbMap = new Map<string, string>();
   const lbDb = {
     get: async (k: string) => lbMap.get(k) ?? null,
@@ -456,7 +528,8 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
       list_complete: true,
     }),
   };
-  const lbEnv = { DB: lbDb };
+  const lbD1 = fakeD1();
+  const lbEnv = { DB: lbDb, D1: lbD1 };
 
   check("entryFromState reads the strongest plant and the level",
     entryFromState({ plants: [{ powerRating: 120 }, { powerRating: 480.6 }], breederLevel: 7 }, "A").power === 481 &&
@@ -495,12 +568,11 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   check("a rank outside the visible list is still computed", (deep.me?.powerRank ?? 0) === BOARD_SIZE + 5, `rank=${deep.me?.powerRank} list=${deep.power.length}`);
   check("the visible list stays capped", deep.power.length === BOARD_SIZE, `${deep.power.length}`);
 
-  // The index key is the account key — the same namespacing the rest of KV uses.
-  check("entries live under lb:", lbKey("acct:x") === "lb:acct:x");
+  // The legacy KV key name is kept for the one-time backfill.
+  check("the legacy lb: key name is still known", lbKey("acct:x") === "lb:acct:x");
 
-  /* Board reads serve a snapshot: the first fetch pays the list + per-entry
-     gets, every fetch inside the TTL is one get. A re-list per poll is what
-     burned the free-tier List quota. */
+  /* Board reads are D1 SELECTs — they never touch KV at all now, so a poll costs
+     zero KV ops, not even the snapshot get the old design needed to stay cheap. */
   let listCalls = 0;
   const countingEnv = {
     DB: {
@@ -510,11 +582,12 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
         return lbDb.list(o);
       },
     },
+    D1: lbD1,
   };
   await handleLeaderboard(countingEnv, "acct:a");
   await handleLeaderboard(countingEnv, "acct:a");
   await handleLeaderboard(countingEnv, "acct:a");
-  check("repeated board reads reuse the snapshot — zero re-list inside the TTL", listCalls === 0, `${listCalls} lists`);
+  check("repeated board reads cost zero KV list calls", listCalls === 0, `${listCalls} lists`);
 
   const second = await handleLeaderboard(lbEnv, "acct:never-saved");
   const nobody = (await second.json()) as { me: unknown };
@@ -536,7 +609,7 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
       list_complete: true,
     }),
   };
-  const cleanEnv = { DB: cleanDb };
+  const cleanEnv = { DB: cleanDb, D1: fakeD1() };
   await writeEntry(cleanEnv, "acct:real", { name: "quanghao6c", email: "quanghao6c@gmail.com", power: 930, level: 4, at: 1 });
   await writeEntry(cleanEnv, "acct:smoke-1@example.com", { name: "smoke-1791395758872", email: "smoke-1791395758872@example.com", power: 700, level: 1, at: 2 });
   await writeEntry(cleanEnv, "acct:lb-probe@example.com", { name: "lb-probe-1791396883605", email: "lb-probe-1791396883605@example.com", power: 777, level: 1, at: 3 });
@@ -559,14 +632,17 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   const minh2 = identity("minh2@example.com", "Minh");
   await publish(env, db, minh1);
   await publish(env, db, minh2);
-  check("two Minhs make the name ambiguous", (await db.get(nameCountKey("Minh"))) === "2", (await db.get(nameCountKey("Minh"))) ?? "none");
+  const occupants = async (name: string) =>
+    ((await env.D1.prepare("SELECT occupants FROM names WHERE name = ?")
+      .bind(name.toLowerCase()).first<{ occupants: number }>())?.occupants ?? 0);
+  check("two Minhs make the name ambiguous", (await occupants("Minh")) === 2, `${await occupants("Minh")}`);
 
   // Only the recorded occupant may release the name: an index pointing at minh2
   // must not be decremented by minh1's rename.
   await unindexName(env, minh1.key, "Minh");
-  check("a non-occupant cannot release the name", (await db.get(nameCountKey("Minh"))) === "2");
+  check("a non-occupant cannot release the name", (await occupants("Minh")) === 2);
   await unindexName(env, minh2.key, "Minh");
-  check("the occupant's rename frees one share", (await db.get(nameCountKey("Minh"))) === "1");
+  check("the occupant's rename frees one share", (await occupants("Minh")) === 1);
 
   // And the freed name resolves to the survivor again — no longer ambiguous.
   const target = await resolveTarget(env, "Minh");
@@ -585,6 +661,74 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   check("null is null", plantFromSave(null, "a") === null);
   check("undefined is null", plantFromSave(undefined, "a") === null);
   check("a string is null", plantFromSave("nonsense", "a") === null);
+}
+
+/* --- 11. the lazy KV → D1 migration ------------------------------------------ */
+
+{
+  const db = fakeKv();
+  const env = envFor(db);
+  const alice = identity("alice@example.com", "Alice");
+  const bob = identity("bob@example.com", "Bob");
+  await publish(env, db, alice);
+  await publish(env, db, bob);
+  await publish(env, db, identity("carol@example.com", "Carol"));
+
+  // The blobs a KV build would have left behind: a friend book, an inbox invite
+  // (with the modern fromKey), and an outbox row on the challenger.
+  await db.put(friendBookKey(alice.key), JSON.stringify({
+    list: [{ handle: "carol@example.com", name: "Carol", key: "acct:carol@example.com", saveKey: "save:carol@example.com", since: 1 }],
+  }));
+  const legacyInvite = {
+    id: "legacy-invite-1",
+    from: "bob@example.com",
+    fromName: "Bob",
+    plantName: "B1",
+    plantPower: 201,
+    at: Date.now() - 1000,
+    state: "pending",
+    fromKey: bob.key,
+    fromSaveKey: bob.saveKey,
+    fromPlantId: "bob@example.com-plant-0",
+  };
+  await db.put(inboxKey(alice.key), JSON.stringify({ list: [legacyInvite] }));
+
+  // First touch imports and answers from D1.
+  const list = await body<{ friends: { handle: string }[] }>(await handleFriend(post({ action: "list" }), env, alice));
+  check("a legacy friend book is imported", list.friends.length === 1 && list.friends[0].handle === "carol@example.com", JSON.stringify(list));
+  check("and the KV blob is deleted after import", (await db.get(friendBookKey(alice.key))) === null);
+  const invites = await body<{ invites: { id: string; state: string }[] }>(await handleDuelInbox(env, alice));
+  check("a legacy inbox invite is imported", invites.invites.length === 1 && invites.invites[0].id === "legacy-invite-1");
+  check("and that blob is gone too", (await db.get(inboxKey(alice.key))) === null);
+
+  // The migration is one-time: the marker stops the second call re-reading KV.
+  const kvGetsBefore = 0; void kvGetsBefore;
+  await handleFriend(post({ action: "list" }), env, alice);
+  const migrated = await env.D1.prepare("SELECT owner_key FROM social_migrated WHERE owner_key = ?")
+    .bind(alice.key).first<string>("owner_key");
+  check("the user is marked migrated", migrated === alice.key);
+}
+
+/* --- 12. duel results without R2 fall back to the D1 table -------------------- */
+
+{
+  const db = fakeKv();
+  const env = envFor(db, { r2: false });
+  const alice = identity("alice@example.com", "Alice");
+  const bob = identity("bob@example.com", "Bob");
+  const a = saveWith("alice@example.com", 2, "A");
+  const b = saveWith("bob@example.com", 2, "B");
+  await publish(env, db, alice, a);
+  await publish(env, db, bob, b);
+  await handleFriend(post({ action: "add", query: bob.handle }), env, alice);
+  await handleDuelSend(env, alice, bob.handle, "alice@example.com-plant-0", a.state);
+  const id = (await body<{ invites: { id: string }[] }>(await handleDuelInbox(env, bob))).invites[0].id;
+  const accepted = await handleDuelAccept(env, bob, id, "bob@example.com-plant-0", b.state);
+  check("accept works without the replay bucket", accepted.status === 200, await code(accepted));
+  const read = await handleDuelResult(env, id);
+  check("and the result is still readable — from the D1 table", read.status === 200);
+  check("with the same seed", (await body<{ result: { seed: string } }>(read)).result.seed ===
+    (await body<{ result: { seed: string } }>(accepted)).result.seed);
 }
 
 console.log(`Result: ${passed} passed, ${failed} failed`);

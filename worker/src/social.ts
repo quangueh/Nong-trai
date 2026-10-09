@@ -29,6 +29,24 @@
  * of both gardens cannot be tampered with, and it costs one KV read that was going to
  * happen anyway.
  *
+ * ## Where this data lives
+ *
+ * Friends, duel correspondence and the search indexes are relational data — one row per
+ * friendship, one row per duel — and they live in D1. They used to be whole-list JSON
+ * blobs in KV, which cost a full rewrite per mutation; on the free tier's ~1k daily KV
+ * writes, one idle friends panel (three calls a tick, each call re-indexing) burned the
+ * day's budget in under an hour. D1 writes are rows, not blobs, and the free allowance
+ * is ~100x larger.
+ *
+ * The duel's two halves used to be two blobs that had to be written together — the
+ * defender's inbox row and the challenger's outbox row — so they could disagree. Now both
+ * views are two queries over the *same* row: the outbox is `WHERE from_key`, the inbox is
+ * `WHERE to_key`, and accept/decline is one UPDATE that both sides see at once.
+ *
+ * The finished fight — two full plant snapshots and the whole event log — is a large
+ * write-once blob, and it lives in R2 under `duel:{id}` (falling back to a D1 table if
+ * the bucket is not bound, and to the legacy KV key for results written before the move).
+ *
  * ## Identity, and why it is the email
  *
  * A Google display name is not unique - two people are called Minh - so a name cannot be an
@@ -37,8 +55,18 @@
  * carried alongside purely so the list can be read without another lookup.
  *
  * Searching accepts either. An email resolves exactly; a name resolves only if it is
- * unambiguous, and an ambiguous name is refused with the candidates rather than silently
- * picking one - which would be a way to challenge a stranger by accident.
+ * unambiguous, and an ambiguous name is refused rather than silently picking one -
+ * which would be a way to challenge a stranger by accident.
+ *
+ * ## The lazy migration
+ *
+ * Rows written by the KV build are not bulk-imported — there is no maintenance window to
+ * spend it on, and most blobs belong to accounts that may never return. Instead each
+ * user's three legacy blobs (friend book, inbox, outbox) are copied into D1 the first
+ * time they touch a social endpoint after the cutover, marked in `social_migrated`, and
+ * the KV keys deleted. Stale index entries are imported on the same lazy basis inside
+ * `resolveTarget`/`indexAccount`: a lookup that misses D1 checks the KV index once and
+ * copies what it finds.
  */
 
 import { simulateBattle, type ArenaKind, type Stance } from "../../src/battle/engine";
@@ -63,25 +91,46 @@ function saveKeyForRecord(rec: { email?: string; sub?: string }): string | null 
 }
 
 /**
- * The slice of KV this module uses.
- *
- * Structural rather than `KVNamespace` on purpose. The real `Env` satisfies it, and so
- * does a hand-written fake - which is what lets the friend list and the duel be tested
- * directly, in Node, with no Cloudflare type package dragged into the browser toolchain and
- * no HTTP server standing between a test and the code it is checking.
- *
- * Two methods, because two methods is all it uses. Widening this to `KVNamespace` later
- * would be a downgrade: it would make the test file need the Workers types to compile.
+ * The slice of KV this module still uses: account records and save blobs — single
+ * values keyed by one id, which is what a key-value store is for. Structural rather
+ * than `KVNamespace`, so the test fake needs nothing from the Workers type package.
  */
 export interface Kv {
   get(key: string): Promise<string | null>;
   put(key: string, value: string): Promise<void>;
+  delete?(key: string): Promise<void>;
 }
 
-/** The environment these handlers need: a store and nothing else. */
-export interface KvEnv {
-  DB: Kv;
+/**
+ * The slice of D1 this module uses. Structural for the same reason `Kv` is: the test
+ * suite satisfies it with `node:sqlite`, so the code under test is the code that ships
+ * rather than a description of it.
+ */
+export interface D1Prepared {
+  bind(...values: unknown[]): D1Prepared;
+  run(): Promise<{ meta: { changes: number } }>;
+  first<T = unknown>(column?: string): Promise<T | null>;
+  all<T = unknown>(): Promise<{ results: T[] }>;
 }
+
+export interface D1Like {
+  prepare(sql: string): D1Prepared;
+  batch(statements: D1Prepared[]): Promise<unknown[]>;
+}
+
+/** The slice of R2 the duel result uses — object storage for write-once blobs. */
+export interface R2Like {
+  put(key: string, value: string): Promise<unknown>;
+  get(key: string): Promise<{ text(): Promise<string> } | null>;
+}
+
+/** The environment these handlers need: saves in KV, social rows in D1, replays in R2. */
+export interface SocialEnv {
+  DB: Kv;
+  D1: D1Like;
+  REPLAYS?: R2Like;
+}
+
 // --- storage shapes ---------------------------------------------------------
 
 /**
@@ -157,7 +206,8 @@ interface Inbox {
  *
  * Without this the challenger was told "đã gửi" and then nothing — the invite lived in
  * the defender's inbox and the result under the duel id, but the sender had no key to
- * either. The outbox is the missing half of the correspondence.
+ * either. On D1 the outbox is not a stored object at all: it is the same duel row read
+ * from the sender's side, so it can never disagree with the inbox.
  */
 export interface SentDuel {
   id: string;
@@ -175,7 +225,7 @@ interface Outbox {
   list: SentDuel[];
 }
 
-/** The resolved fight. Small enough for KV, and read-only once written. */
+/** The resolved fight. Stored in R2 (or the duel_results table), read-only once written. */
 export interface DuelResult {
   id: string;
   winner: "a" | "b" | "draw";
@@ -202,31 +252,36 @@ export interface DuelResult {
   bPlant?: Plant;
 }
 
-// --- keys -------------------------------------------------------------------
+// --- keys and columns -------------------------------------------------------
 
+/**
+ * The legacy KV key shapes. New writes never go here; they exist so the lazy
+ * migration can find and remove what the old build stored, and so `handleDuelResult`
+ * can still read fights finished before the move.
+ */
 export const friendBookKey = (accountKey: string) => `friends:${accountKey}`;
 export const inboxKey = (accountKey: string) => `inbox:${accountKey}`;
 export const outboxKey = (accountKey: string) => `outbox:${accountKey}`;
-export const duelResultKey = (id: string) => `duel:${id}`;
+export const duelResultKey = (id: string) => `duel:${id}`; // also the R2 object name
 /**
- * Email to account key.
- *
- * Written on every sign-in rather than at registration, so it cannot be forgotten: an
- * account that has never signed in since this feature shipped is not findable, which is
- * the correct behaviour for a friend list rather than a bug.
+ * Email to account key, in the KV index this module migrated away from. Written on
+ * every sign-in by the old build; still consulted once when a D1 lookup misses.
  */
 export const handleIndexKey = (handle: string) => `handle:${handle.trim().toLowerCase()}`;
-/**
- * Display name to account key.
- *
- * Holds one account, because a name can be shared. Read only together with
- * `nameCountKey`, which is what turns "somebody called Minh" into "somebody, and possibly
- * more than one somebody".
- */
 export const nameIndexKey = (name: string) => "name:" + name.trim().toLowerCase();
-
-/** How many distinct accounts have signed in under this display name. */
 export const nameCountKey = (name: string) => "namecount:" + name.trim().toLowerCase();
+
+/** A `duels` row. The inbox payload is JSON; the outbox needs the to_* columns too. */
+interface DuelRow {
+  id: string;
+  from_key: string;
+  to_key: string;
+  to_handle: string;
+  to_name: string;
+  payload: string;
+  state: string;
+  created_at: number;
+}
 
 /** What a lookup found. A shared name is its own answer, not a failure to find. */
 export type Resolution = Identity | { ambiguous: true } | null;
@@ -234,9 +289,8 @@ export type Resolution = Identity | { ambiguous: true } | null;
 // --- limits -----------------------------------------------------------------
 
 /**
- * Caps, because every one of these is a KV write and the free tier allows about a
- * thousand a day. They are also just the right size: a friend list you cannot scan and
- * an inbox you cannot clear are both worse than a small one.
+ * Caps — a friend list you cannot scan and an inbox you cannot clear are both worse
+ * than a small one. They also bound the row count a lazy migration can copy.
  */
 export const MAX_FRIENDS = 60;
 export const MAX_INBOX = 20;
@@ -254,10 +308,8 @@ export function fail(code: string, status = 400): Response {
   return Response.json({ error: code }, { status });
 }
 
-/** Drop anything older than the TTL, so a stale invite cannot be accepted tomorrow. */
-function live<T extends { at: number }>(invites: T[], now: number): T[] {
-  return invites.filter((i) => now - i.at < INVITE_TTL_MS).slice(-MAX_INBOX);
-}
+/** The timestamp older than which a duel row stops being a live invitation. */
+const liveSince = () => Date.now() - INVITE_TTL_MS;
 
 /**
  * Pull one plant out of a save.
@@ -284,35 +336,63 @@ export function plantFromSave(state: unknown, plantId: string): Plant | null {
  * at an account whose stored name really is that name - because the index holds one entry
  * per name, a name shared by two accounts resolves to whichever signed in last, and
  * challenging the wrong stranger is worse than refusing.
+ *
+ * Both lookups fall back to the legacy KV index once: an account that last signed in
+ * before the D1 move is still findable, and what the fallback finds is imported so the
+ * next lookup is a D1 read.
  */
-export async function resolveTarget(env: KvEnv, query: string): Promise<Resolution> {
+export async function resolveTarget(env: SocialEnv, query: string): Promise<Resolution> {
   const q = query.trim();
   if (!q) return null;
 
-  const byHandle = await env.DB.get(handleIndexKey(q));
+  const handle = q.toLowerCase();
+  let byHandle = await env.D1.prepare("SELECT account_key FROM handles WHERE handle = ?")
+    .bind(handle)
+    .first<string>("account_key");
+  if (!byHandle) {
+    // Once, for accounts indexed by the KV build and never re-signed-in since.
+    const legacy = await env.DB.get(handleIndexKey(q));
+    if (legacy) {
+      await env.D1.prepare("INSERT OR REPLACE INTO handles (handle, account_key) VALUES (?, ?)")
+        .bind(handle, legacy)
+        .run();
+      byHandle = legacy;
+    }
+  }
   if (byHandle) {
     const record = await readAccountSummary(env, byHandle);
     // The index can outlive the account it names, so the handle is confirmed against the
     // record rather than trusted.
-    if (record && record.handle.toLowerCase() === q.toLowerCase()) return record;
+    if (record && record.handle.toLowerCase() === handle) return record;
   }
 
   // A display name, which does not identify anybody until it is shown to be unique.
-  const count = Number(await env.DB.get(nameCountKey(q))) || 0;
-  if (count > 1) return { ambiguous: true };
-  if (count === 1) {
-    const byName = await env.DB.get(nameIndexKey(q));
-    if (byName) {
-      const record = await readAccountSummary(env, byName);
-      if (record && record.name.toLowerCase() === q.toLowerCase()) return record;
+  const name = q.toLowerCase();
+  let row = await env.D1.prepare("SELECT account_key, occupants FROM names WHERE name = ?")
+    .bind(name)
+    .first<{ account_key: string; occupants: number }>();
+  if (!row) {
+    const legacyCount = Number(await env.DB.get(nameCountKey(q))) || 0;
+    const legacyKey = legacyCount > 0 ? await env.DB.get(nameIndexKey(q)) : null;
+    if (legacyKey) {
+      row = { account_key: legacyKey, occupants: legacyCount };
+      await env.D1.prepare(
+        "INSERT OR REPLACE INTO names (name, account_key, occupants) VALUES (?, ?, ?)",
+      )
+        .bind(name, legacyKey, Math.max(1, legacyCount))
+        .run();
     }
   }
+  if (!row || row.occupants < 1) return null;
+  if (row.occupants > 1) return { ambiguous: true };
 
+  const record = await readAccountSummary(env, row.account_key);
+  if (record && record.name.toLowerCase() === name) return record;
   return null;
 }
 
 /** The public facts about an account: enough to render a friend row. */
-export async function readAccountSummary(env: KvEnv, accountKey: string): Promise<Identity | null> {
+export async function readAccountSummary(env: SocialEnv, accountKey: string): Promise<Identity | null> {
   const raw = await env.DB.get(accountKey);
   if (!raw) return null;
   const rec = safeParse<{ email?: string; name?: string; sub?: string }>(raw, {});
@@ -331,43 +411,178 @@ export async function readAccountSummary(env: KvEnv, accountKey: string): Promis
  * the player who inflated it moved on. Only the recorded occupant may decrement:
  * a stale index pointing elsewhere means the count belongs to whoever is there.
  */
-export async function unindexName(env: KvEnv, accountKey: string, name: string): Promise<void> {
-  if (!name.trim()) return;
-  const ni = nameIndexKey(name);
-  const previous = await env.DB.get(ni);
-  if (previous !== accountKey) return;
-  const seen = Number(await env.DB.get(nameCountKey(name))) || 0;
-  if (seen > 0) await env.DB.put(nameCountKey(name), String(seen - 1));
+export async function unindexName(env: SocialEnv, accountKey: string, name: string): Promise<void> {
+  const n = name.trim().toLowerCase();
+  if (!n) return;
+  const row = await env.D1.prepare("SELECT account_key, occupants FROM names WHERE name = ?")
+    .bind(n)
+    .first<{ account_key: string; occupants: number }>();
+  if (!row || row.account_key !== accountKey) return;
+  if (row.occupants > 0) {
+    await env.D1.prepare("UPDATE names SET occupants = ? WHERE name = ?")
+      .bind(row.occupants - 1, n)
+      .run();
+  }
 }
 
-/** Keep the two indexes current. Called on every sign-in. */
-export async function indexAccount(env: KvEnv, summary: Identity): Promise<void> {
-  /*
-   * Read both occupants before writing anything. The comparison has to be against
-   * what was there a moment ago — writing first compares the key against itself —
-   * and a steady-state identity must cost reads, not writes: `readIdentity` runs
-   * this on every /api/friend and /api/duel call, and two unconditional puts per
-   * call meant the friends panel's 20-second poll (three calls a tick) burned
-   * through the day's entire write budget in under an hour of one idle tab.
-   */
-  const ni = nameIndexKey(summary.name);
-  const hi = handleIndexKey(summary.handle);
-  const [previous, prevHandle] = await Promise.all([env.DB.get(ni), env.DB.get(hi)]);
-  const isNewOccupant = previous !== summary.key;
+/**
+ * Keep the two indexes current. Called on every sign-in and by `readIdentity` on
+ * every social request — which is why it reads first and writes only on a real
+ * change: the friends panel polls three calls a tick, and an unconditional write
+ * per call is how the KV build burned the day's write budget inside an hour.
+ */
+export async function indexAccount(env: SocialEnv, summary: Identity): Promise<void> {
+  const handle = summary.handle.trim().toLowerCase();
+  const name = summary.name.trim().toLowerCase();
 
-  const writes: Promise<unknown>[] = [];
-  if (prevHandle !== summary.key) writes.push(env.DB.put(hi, summary.key));
-  if (isNewOccupant) {
-    writes.push(env.DB.put(ni, summary.key));
+  const prevHandle = await env.D1.prepare("SELECT account_key FROM handles WHERE handle = ?")
+    .bind(handle)
+    .first<string>("account_key");
+  if (prevHandle !== summary.key) {
+    await env.D1.prepare("INSERT OR REPLACE INTO handles (handle, account_key) VALUES (?, ?)")
+      .bind(handle, summary.key)
+      .run();
+  }
+
+  const row = await env.D1.prepare("SELECT account_key FROM names WHERE name = ?")
+    .bind(name)
+    .first<{ account_key: string }>();
+  if (!row) {
+    // First D1 occupant. The KV counter may already know about this name — honour it
+    // once rather than restart the count, or a name shared before the move would
+    // silently un-ambiguous itself.
+    const legacy = Number(await env.DB.get(nameCountKey(name))) || 0;
+    await env.D1.prepare("INSERT INTO names (name, account_key, occupants) VALUES (?, ?, ?)")
+      .bind(name, summary.key, Math.max(1, legacy))
+      .run();
+  } else if (row.account_key !== summary.key) {
     // Counted only when this account is not already the name's occupant, so the
     // counter tracks distinct accounts rather than sign-ins.
-    const seen = Number(await env.DB.get(nameCountKey(summary.name))) || 0;
-    writes.push(env.DB.put(nameCountKey(summary.name), String(seen + 1)));
+    await env.D1.prepare("UPDATE names SET occupants = occupants + 1, account_key = ? WHERE name = ?")
+      .bind(summary.key, name)
+      .run();
   }
-  await Promise.all(writes);
+}
+
+// --- the lazy migration -----------------------------------------------------
+
+/**
+ * Copy one user's three legacy KV blobs into D1 rows, once.
+ *
+ * Runs at the top of every social handler. The `social_migrated` marker makes the
+ * check itself one read on later calls; a user with no legacy data is marked the
+ * same way, so the absence of blobs is not re-checked forever. KV keys are deleted
+ * after a successful copy — deleting early would make a failed import lose data,
+ * keeping them would make a later read see two sources of truth.
+ */
+async function migrateLegacy(env: SocialEnv, me: Identity): Promise<void> {
+  const done = await env.D1.prepare("SELECT owner_key FROM social_migrated WHERE owner_key = ?")
+    .bind(me.key)
+    .first<string>("owner_key");
+  if (done) return;
+
+  const imported: D1Prepared[] = [];
+
+  const bookRaw = await env.DB.get(friendBookKey(me.key));
+  if (bookRaw) {
+    const book = safeParse<FriendBook>(bookRaw, { list: [] });
+    for (const f of Array.isArray(book.list) ? book.list : []) {
+      if (!f || typeof f.handle !== "string" || !f.handle) continue;
+      imported.push(
+        env.D1.prepare(
+          "INSERT OR IGNORE INTO friends (owner_key, friend_handle, friend_key, friend_name, friend_save_key, since) VALUES (?, ?, ?, ?, ?, ?)",
+        ).bind(me.key, f.handle, f.key ?? "", f.name ?? f.handle, f.saveKey ?? "", Number(f.since) || Date.now()),
+      );
+    }
+  }
+
+  const inboxRaw = await env.DB.get(inboxKey(me.key));
+  if (inboxRaw) {
+    const box = safeParse<Inbox>(inboxRaw, { list: [] });
+    for (const i of Array.isArray(box.list) ? box.list : []) {
+      if (!i || typeof i.id !== "string" || !i.id) continue;
+      // Older invites do not name the challenger's account key — resolve it now so
+      // the row carries it, and skip an invite whose sender can no longer be found.
+      let fromKey = i.fromKey ?? "";
+      if (!fromKey) {
+        const resolved = await resolveTarget(env, i.from ?? "");
+        if (!resolved || "ambiguous" in resolved) continue;
+        fromKey = resolved.key;
+      }
+      imported.push(
+        env.D1.prepare(
+          "INSERT OR REPLACE INTO duels (id, from_key, to_key, to_handle, to_name, payload, state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ).bind(
+          i.id, fromKey, me.key, me.handle, me.name,
+          JSON.stringify(i),
+          i.state === "pending" || i.state === "declined" || i.state === "done" ? i.state : "pending",
+          Number(i.at) || Date.now(),
+        ),
+      );
+    }
+  }
+
+  const outRaw = await env.DB.get(outboxKey(me.key));
+  if (outRaw) {
+    const box = safeParse<Outbox>(outRaw, { list: [] });
+    for (const s of Array.isArray(box.list) ? box.list : []) {
+      if (!s || typeof s.id !== "string" || !s.id) continue;
+      const resolved = await resolveTarget(env, s.to ?? "");
+      if (!resolved || "ambiguous" in resolved) continue;
+      // The sender's half of the letter, rebuilt as the same row the defender's
+      // copy already is — OR IGNORE, because if their inbox import landed first
+      // its payload is the richer one and should win.
+      const payload: DuelInvite = {
+        id: s.id,
+        from: me.handle,
+        fromName: me.name,
+        plantName: s.plantName,
+        plantPower: s.plantPower,
+        at: s.at,
+        state: s.state,
+        resultKey: s.resultKey,
+        fromKey: me.key,
+        fromSaveKey: me.saveKey,
+      };
+      imported.push(
+        env.D1.prepare(
+          "INSERT OR IGNORE INTO duels (id, from_key, to_key, to_handle, to_name, payload, state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ).bind(s.id, me.key, resolved.key, resolved.handle, resolved.name,
+          JSON.stringify(payload), s.state, Number(s.at) || Date.now()),
+      );
+    }
+  }
+
+  if (imported.length) await env.D1.batch(imported);
+  await env.D1.prepare("INSERT OR REPLACE INTO social_migrated (owner_key, at) VALUES (?, ?)")
+    .bind(me.key, Date.now())
+    .run();
+
+  // Imported rows are now read from D1; the blobs would only shadow them.
+  for (const key of [friendBookKey(me.key), inboxKey(me.key), outboxKey(me.key)]) {
+    await env.DB.delete?.(key);
+  }
 }
 
 // --- friends ----------------------------------------------------------------
+
+/** One friend's row, as the list endpoint returns it. */
+function friendFromRow(r: { friend_handle: string; friend_key: string; friend_name: string; friend_save_key: string; since: number }): Friend {
+  return {
+    handle: r.friend_handle,
+    name: r.friend_name,
+    key: r.friend_key,
+    saveKey: r.friend_save_key,
+    since: r.since,
+  };
+}
+
+async function listFriends(env: SocialEnv, me: Identity): Promise<Friend[]> {
+  const { results } = await env.D1.prepare(
+    "SELECT friend_handle, friend_key, friend_name, friend_save_key, since FROM friends WHERE owner_key = ? ORDER BY since",
+  ).bind(me.key).all<{ friend_handle: string; friend_key: string; friend_name: string; friend_save_key: string; since: number }>();
+  return results.map(friendFromRow);
+}
 
 /**
  * One endpoint for the whole friend list, because three endpoints for add, remove and
@@ -375,37 +590,34 @@ export async function indexAccount(env: KvEnv, summary: Identity): Promise<void>
  */
 export async function handleFriend(
   req: Request,
-  env: KvEnv,
+  env: SocialEnv,
   me: Identity,
 ): Promise<Response> {
   const body = (await req.json().catch(() => null)) as { action?: string; query?: string } | null;
   const action = String(body?.action ?? "list");
 
-  const raw = await env.DB.get(friendBookKey(me.key));
-  const book: FriendBook = raw
-    ? safeParse<FriendBook>(raw, { list: [] })
-    : { list: [] };
-  book.list = Array.isArray(book.list) ? book.list.filter((f) => f && typeof f.handle === "string") : [];
+  await migrateLegacy(env, me);
 
   if (action === "list") {
-    return ok({ friends: book.list });
+    return ok({ friends: await listFriends(env, me) });
   }
 
   const query = String(body?.query ?? "").trim();
   if (!query) return fail("empty_query");
 
   if (action === "remove") {
-    const before = book.list.length;
-    // Matched case-insensitively on the handle, so removing does not depend on how the
-    // address was typed when it was added.
-    book.list = book.list.filter((f) => f.handle.toLowerCase() !== query.toLowerCase());
-    if (book.list.length === before) return fail("not_a_friend", 404);
-    await env.DB.put(friendBookKey(me.key), JSON.stringify(book));
-    return ok({ removed: query, friends: book.list });
+    const gone = await env.D1.prepare(
+      "DELETE FROM friends WHERE owner_key = ? AND lower(friend_handle) = ?",
+    ).bind(me.key, query.toLowerCase()).run();
+    if (gone.meta.changes === 0) return fail("not_a_friend", 404);
+    return ok({ removed: query, friends: await listFriends(env, me) });
   }
 
   if (action === "add") {
-    if (book.list.length >= MAX_FRIENDS) return fail("friend_list_full", 409);
+    const count = await env.D1.prepare("SELECT COUNT(*) AS c FROM friends WHERE owner_key = ?")
+      .bind(me.key)
+      .first<number>("c");
+    if ((count ?? 0) >= MAX_FRIENDS) return fail("friend_list_full", 409);
 
     // Adding yourself is the mistake everybody makes once, and the error is worth naming.
     if (query.toLowerCase() === me.handle.toLowerCase()) return fail("that_is_you");
@@ -415,7 +627,10 @@ export async function handleFriend(
     if ("ambiguous" in target) return fail("ambiguous_name", 409);
     if (target.key === me.key) return fail("that_is_you");
 
-    if (book.list.some((f) => f.key === target.key)) return ok({ friends: book.list, already: true });
+    const dup = await env.D1.prepare(
+      "SELECT friend_key FROM friends WHERE owner_key = ? AND friend_key = ?",
+    ).bind(me.key, target.key).first<string>("friend_key");
+    if (dup) return ok({ friends: await listFriends(env, me), already: true });
 
     // Stored with the handle as the identity, and the key beside it so a duel can find the
     // save without a second lookup. One-directional on purpose: adding someone is a thing
@@ -428,9 +643,10 @@ export async function handleFriend(
       saveKey: target.saveKey,
       since: Date.now(),
     };
-    book.list.push(friend);
-    await env.DB.put(friendBookKey(me.key), JSON.stringify(book));
-    return ok({ friends: book.list, added: friend });
+    await env.D1.prepare(
+      "INSERT INTO friends (owner_key, friend_handle, friend_key, friend_name, friend_save_key, since) VALUES (?, ?, ?, ?, ?, ?)",
+    ).bind(me.key, friend.handle, friend.key, friend.name, friend.saveKey, friend.since).run();
+    return ok({ friends: await listFriends(env, me), added: friend });
   }
 
   return fail("unknown_action");
@@ -438,18 +654,48 @@ export async function handleFriend(
 
 // --- duels ------------------------------------------------------------------
 
+/** The inbox view of a duel row: the stored invite payload. */
+function inviteFromRow(row: DuelRow): DuelInvite {
+  return safeParse<DuelInvite>(row.payload, {
+    id: row.id,
+    from: "",
+    fromName: "",
+    plantName: "",
+    plantPower: 0,
+    at: row.created_at,
+    state: "pending",
+  });
+}
+
+/** The outbox view of the same row. */
+function sentFromRow(row: DuelRow): SentDuel {
+  const p = safeParse<Partial<DuelInvite>>(row.payload, {});
+  return {
+    id: row.id,
+    to: row.to_handle,
+    toName: row.to_name,
+    plantName: p.plantName ?? "",
+    plantPower: Number(p.plantPower) || 0,
+    at: row.created_at,
+    state: (row.state as SentDuel["state"]) || "pending",
+    resultKey: p.resultKey,
+  };
+}
+
 /**
  * Send a challenge.
  *
  * The challenger names one of their own plants by id; the Worker fetches it from their save.
  */
 export async function handleDuelSend(
-  env: KvEnv,
+  env: SocialEnv,
   me: Identity,
   toHandle: string,
   plantId: string,
   mySave: unknown,
 ): Promise<Response> {
+  await migrateLegacy(env, me);
+
   const target = await resolveTarget(env, toHandle);
   if (!target) return fail("no_such_player", 404);
   if ("ambiguous" in target) return fail("ambiguous_name", 409);
@@ -459,24 +705,20 @@ export async function handleDuelSend(
   // button on friend rows — but the endpoint is public, and `not_a_friend` was already
   // a named refusal that nothing could ever return. Enforcing it here is what makes
   // "đấu với bạn" mean that rather than "đấu với bất kỳ ai biết email".
-  const bookRaw = await env.DB.get(friendBookKey(me.key));
-  const book: FriendBook = bookRaw ? safeParse<FriendBook>(bookRaw, { list: [] }) : { list: [] };
-  const isFriend = Array.isArray(book.list) && book.list.some(
-    (f) => f && (f.key === target.key || f.handle.toLowerCase() === target.handle.toLowerCase()),
-  );
+  const isFriend = await env.D1.prepare(
+    "SELECT 1 AS x FROM friends WHERE owner_key = ? AND (friend_key = ? OR lower(friend_handle) = ?) LIMIT 1",
+  ).bind(me.key, target.key, target.handle.toLowerCase()).first<{ x: number }>();
   if (!isFriend) return fail("not_a_friend", 403);
 
   const plant = plantFromSave(mySave, plantId);
   if (!plant) return fail("plant_not_in_your_garden", 404);
 
-  const raw = await env.DB.get(inboxKey(target.key));
-  const inbox: Inbox = raw ? safeParse<Inbox>(raw, { list: [] }) : { list: [] };
-  inbox.list = live(Array.isArray(inbox.list) ? inbox.list : [], Date.now());
-
   // Two live challenges from the same person is a queue; five is a loophole for filling
   // somebody else's inbox so their real challenges cannot be seen.
-  const already = inbox.list.filter((i) => i.from === me.handle && i.state === "pending").length;
-  if (already >= 2) return fail("already_challenged", 429);
+  const already = await env.D1.prepare(
+    "SELECT COUNT(*) AS c FROM duels WHERE to_key = ? AND from_key = ? AND state = 'pending' AND created_at > ?",
+  ).bind(target.key, me.key, liveSince()).first<number>("c");
+  if ((already ?? 0) >= 2) return fail("already_challenged", 429);
 
   const invite: DuelInvite = {
     id: crypto.randomUUID(),
@@ -490,56 +732,35 @@ export async function handleDuelSend(
     fromSaveKey: me.saveKey,
     fromPlantId: plant.plantId,
   };
-  inbox.list.push(invite);
+  await env.D1.prepare(
+    "INSERT INTO duels (id, from_key, to_key, to_handle, to_name, payload, state, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)",
+  ).bind(invite.id, me.key, target.key, target.handle, target.name, JSON.stringify(invite), invite.at).run();
 
-  // The challenger's own record of the letter, so accepting it later can tell the sender
-  // what happened instead of the challenge vanishing into somebody else's inbox.
-  const outRaw = await env.DB.get(outboxKey(me.key));
-  const outbox: Outbox = outRaw ? safeParse<Outbox>(outRaw, { list: [] }) : { list: [] };
-  outbox.list = live(Array.isArray(outbox.list) ? outbox.list : [], Date.now());
-  const sentRow: SentDuel = {
-    id: invite.id,
-    to: target.handle,
-    toName: target.name,
-    plantName: plant.name,
-    plantPower: Math.round(plant.powerRating ?? 0),
-    at: invite.at,
-    state: "pending",
-  };
-  outbox.list.push(sentRow);
-
-  await Promise.all([
-    env.DB.put(inboxKey(target.key), JSON.stringify(inbox)),
-    env.DB.put(outboxKey(me.key), JSON.stringify(outbox)),
-  ]);
+  // The challenger's own record of the letter is the same row read from the other
+  // side — it exists the moment the insert lands, so a sent challenge can never
+  // vanish into somebody else's inbox.
   return ok({ sent: invite.id, to: target.handle });
 }
 
 /** Everything I have sent, oldest first — the challenger's half of the duel flow. */
-export async function handleDuelOutbox(env: KvEnv, me: Identity): Promise<Response> {
-  const raw = await env.DB.get(outboxKey(me.key));
-  const box: Outbox = raw ? safeParse<Outbox>(raw, { list: [] }) : { list: [] };
-  const kept = live(Array.isArray(box.list) ? box.list : [], Date.now());
-  if (kept.length !== (box.list?.length ?? 0)) {
-    await env.DB.put(outboxKey(me.key), JSON.stringify({ list: kept }));
-  }
-  return ok({ sent: kept });
+export async function handleDuelOutbox(env: SocialEnv, me: Identity): Promise<Response> {
+  await migrateLegacy(env, me);
+  const { results } = await env.D1.prepare(
+    "SELECT * FROM duels WHERE from_key = ? AND created_at > ? ORDER BY created_at",
+  ).bind(me.key, liveSince()).all<DuelRow>();
+  return ok({ sent: results.map(sentFromRow) });
 }
 
 /** Everything waiting for me, oldest first so the order a player sees is stable. */
 export async function handleDuelInbox(
-  env: KvEnv,
+  env: SocialEnv,
   me: Identity,
 ): Promise<Response> {
-  const raw = await env.DB.get(inboxKey(me.key));
-  const inbox: Inbox = raw ? safeParse<Inbox>(raw, { list: [] }) : { list: [] };
-  const kept = live(Array.isArray(inbox.list) ? inbox.list : [], Date.now());
-  // Only written back when something actually expired, so a poll does not spend a write
-  // on an unchanged inbox.
-  if (kept.length !== (inbox.list?.length ?? 0)) {
-    await env.DB.put(inboxKey(me.key), JSON.stringify({ list: kept }));
-  }
-  return ok({ invites: kept });
+  await migrateLegacy(env, me);
+  const { results } = await env.D1.prepare(
+    "SELECT * FROM duels WHERE to_key = ? AND created_at > ? ORDER BY created_at",
+  ).bind(me.key, liveSince()).all<DuelRow>();
+  return ok({ invites: results.map(inviteFromRow) });
 }
 
 /**
@@ -550,31 +771,30 @@ export async function handleDuelInbox(
  * the challenger polling for it can be told plainly that nothing has happened yet.
  */
 export async function handleDuelAccept(
-  env: KvEnv,
+  env: SocialEnv,
   me: Identity,
   id: string,
   plantId: string,
   mySave: unknown,
 ): Promise<Response> {
-  const raw = await env.DB.get(inboxKey(me.key));
-  const inbox: Inbox = raw ? safeParse<Inbox>(raw, { list: [] }) : { list: [] };
-  const invites = live(Array.isArray(inbox.list) ? inbox.list : [], Date.now());
-  const at = invites.findIndex((i) => i.id === id && i.state === "pending");
-  if (at < 0) return fail("no_such_invite", 404);
+  await migrateLegacy(env, me);
 
-  const invite = invites[at];
+  const row = await env.D1.prepare(
+    "SELECT * FROM duels WHERE id = ? AND to_key = ? AND state = 'pending' AND created_at > ?",
+  ).bind(id, me.key, liveSince()).first<DuelRow>();
+  if (!row) return fail("no_such_invite", 404);
+
+  const invite = inviteFromRow(row);
   const mine = plantFromSave(mySave, plantId);
   if (!mine) return fail("plant_not_in_your_garden", 404);
 
   // New invites carry the challenger's account and save keys, so accepting is one read
   // and no lookup. Old ones fall back to resolving the handle, which is also how a
   // challenger whose account vanished is still caught.
-  let challengerKey = invite.fromKey ?? "";
   let challengerSaveKey = invite.fromSaveKey ?? "";
-  if (!challengerKey || !challengerSaveKey) {
+  if (!invite.fromKey || !challengerSaveKey) {
     const resolved = await resolveTarget(env, invite.from);
     if (!resolved || "ambiguous" in resolved) return fail("challenger_gone", 404);
-    challengerKey = resolved.key;
     challengerSaveKey = resolved.saveKey;
   }
   const theirRaw = await env.DB.get(challengerSaveKey);
@@ -614,73 +834,66 @@ export async function handleDuelAccept(
     aPlant: theirs,
     bPlant: mine,
   };
-  await env.DB.put(duelResultKey(invite.id), JSON.stringify(payload));
+  const resultKey = duelResultKey(invite.id);
+  if (env.REPLAYS) {
+    await env.REPLAYS.put(resultKey, JSON.stringify(payload));
+  } else {
+    await env.D1.prepare("INSERT OR REPLACE INTO duel_results (id, payload) VALUES (?, ?)")
+      .bind(invite.id, JSON.stringify(payload))
+      .run();
+  }
 
   invite.state = "done";
   invite.toPlantName = mine.name;
   invite.toPlantPower = Math.round(mine.powerRating ?? 0);
-  invite.resultKey = duelResultKey(invite.id);
-  invites[at] = invite;
+  invite.resultKey = resultKey;
 
-  const writes: Promise<unknown>[] = [env.DB.put(inboxKey(me.key), JSON.stringify({ list: invites }))];
+  // One update closes the loop for both sides: the sender's next outbox read sees
+  // state=done and the result key, the defender's inbox shows the answer they gave.
+  await env.D1.prepare("UPDATE duels SET state = 'done', payload = ? WHERE id = ?")
+    .bind(JSON.stringify(invite), invite.id)
+    .run();
 
-  // Close the loop for the sender: their outbox row flips to done and points at the
-  // result, so a challenge they sent can be watched rather than wondered about.
-  writes.push(markSentDuel(env, challengerKey, invite.id, "done", duelResultKey(invite.id)));
-
-  await Promise.all(writes);
   return ok({ result: payload });
 }
 
 /** Turn down a challenge. The row stays, marked, rather than vanishing. */
 export async function handleDuelDecline(
-  env: KvEnv,
+  env: SocialEnv,
   me: Identity,
   id: string,
 ): Promise<Response> {
-  const raw = await env.DB.get(inboxKey(me.key));
-  const inbox: Inbox = raw ? safeParse<Inbox>(raw, { list: [] }) : { list: [] };
-  const invites = live(Array.isArray(inbox.list) ? inbox.list : [], Date.now());
-  const at = invites.findIndex((i) => i.id === id && i.state === "pending");
-  if (at < 0) return fail("no_such_invite", 404);
-  const invite = invites[at];
-  invites[at] = { ...invite, state: "declined" };
+  await migrateLegacy(env, me);
 
-  const writes: Promise<unknown>[] = [env.DB.put(inboxKey(me.key), JSON.stringify({ list: invites }))];
+  const row = await env.D1.prepare(
+    "SELECT * FROM duels WHERE id = ? AND to_key = ? AND state = 'pending' AND created_at > ?",
+  ).bind(id, me.key, liveSince()).first<DuelRow>();
+  if (!row) return fail("no_such_invite", 404);
 
-  // The sender's outbox needs a key rather than a handle, which old invites do not
-  // carry — resolve it in that case, and skip quietly if the account is gone.
-  let challengerKey = invite.fromKey ?? "";
-  if (!challengerKey) {
-    const resolved = await resolveTarget(env, invite.from);
-    if (resolved && !("ambiguous" in resolved)) challengerKey = resolved.key;
-  }
-  if (challengerKey) writes.push(markSentDuel(env, challengerKey, invite.id, "declined"));
+  const invite = { ...inviteFromRow(row), state: "declined" as const };
+  await env.D1.prepare("UPDATE duels SET state = 'declined', payload = ? WHERE id = ?")
+    .bind(JSON.stringify(invite), invite.id)
+    .run();
 
-  await Promise.all(writes);
-  return ok({ invites });
-}
-
-/**
- * Update the challenger's own record of a sent invite. A missing outbox — the invite
- * predates it — is skipped rather than created, because a declined or finished duel
- * nobody can match to a sent row is not worth a write.
- */
-async function markSentDuel(env: KvEnv, accountKey: string, id: string, state: "done" | "declined", resultKey?: string): Promise<void> {
-  const raw = await env.DB.get(outboxKey(accountKey));
-  if (!raw) return;
-  const box = safeParse<Outbox>(raw, { list: [] });
-  const row = Array.isArray(box.list) ? box.list.find((s) => s.id === id) : undefined;
-  if (!row || row.state !== "pending") return;
-  row.state = state;
-  if (resultKey) row.resultKey = resultKey;
-  await env.DB.put(outboxKey(accountKey), JSON.stringify(box));
+  const { results } = await env.D1.prepare(
+    "SELECT * FROM duels WHERE to_key = ? AND created_at > ? ORDER BY created_at",
+  ).bind(me.key, liveSince()).all<DuelRow>();
+  return ok({ invites: results.map(inviteFromRow) });
 }
 
 /** Read a finished fight. Open to both participants; the id is the capability. */
-export async function handleDuelResult(env: KvEnv, id: string): Promise<Response> {
+export async function handleDuelResult(env: SocialEnv, id: string): Promise<Response> {
   if (!/^[0-9a-f-]{8,64}$/i.test(id)) return fail("bad_id");
-  const raw = await env.DB.get(duelResultKey(id));
+  const key = duelResultKey(id);
+  if (env.REPLAYS) {
+    const obj = await env.REPLAYS.get(key);
+    if (obj) return ok({ result: safeParse<DuelResult>(await obj.text(), null as unknown as DuelResult) });
+  } else {
+    const row = await env.D1.prepare("SELECT payload FROM duel_results WHERE id = ?").bind(id).first<string>("payload");
+    if (row) return ok({ result: safeParse<DuelResult>(row, null as unknown as DuelResult) });
+  }
+  // Fights finished before the move live on under their KV key — read, never written.
+  const raw = await env.DB.get(key);
   if (!raw) return fail("no_such_duel", 404);
   return ok({ result: safeParse<DuelResult>(raw, null as unknown as DuelResult) });
 }
@@ -706,7 +919,7 @@ function findPlantIdFor(state: unknown, plantName: string): string {
   return "";
 }
 
-/** Parse without throwing. KV holds bytes a previous build wrote. */
+/** Parse without throwing. Stored payloads are bytes a previous build wrote. */
 function safeParse<T>(raw: string, fallback: T): T {
   try {
     const parsed = JSON.parse(raw) as T;
