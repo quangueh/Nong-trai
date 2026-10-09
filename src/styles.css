@@ -6404,6 +6404,14 @@ body.planting {
   min-height: 14px;
 }
 
+/* The Turnstile widget box — hidden entirely when the check is not configured. */
+.ts-box {
+  margin: 4px 0 2px;
+}
+.ts-box:empty {
+  display: none;
+}
+
 .account-id {
   padding: 10px 12px;
   border-radius: 12px;

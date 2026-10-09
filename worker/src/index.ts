@@ -88,6 +88,53 @@ export interface Env {
    * blobs. Optional: without it they land in the D1 `duel_results` table instead.
    */
   REPLAYS?: R2Bucket;
+  /**
+   * Event counters (register/login/save/duel). Optional and fire-and-forget:
+   * telemetry must never fail a real request, so every call is wrapped.
+   */
+  ANALYTICS?: AnalyticsEngineDataset;
+  /**
+   * Turnstile site secret. Set = register/login must carry a `tsToken` the widget
+   * minted; unset = the check is off, which keeps local dev and the tests running
+   * without a challenge. `wrangler secret put TURNSTILE_SECRET`, never the toml.
+   */
+  TURNSTILE_SECRET?: string;
+}
+
+/**
+ * One counted event, if the dataset is bound. Blobs are the event name and the
+ * account kind (never an email — the index is for traffic shape, not people).
+ */
+function track(env: Env, event: string, kind: "password" | "google" | "anon" = "password", n = 1): void {
+  try {
+    env.ANALYTICS?.writeDataPoint({ blobs: [event, kind], doubles: [n], indexes: [event] });
+  } catch {
+    /* telemetry is never worth a request */
+  }
+}
+
+/**
+ * The register/login bot check, gated on the secret.
+ *
+ * Unset means off — a deploy without keys behaves exactly as before, which is what
+ * keeps `wrangler dev` and the whole test suite challenge-free. Set means the
+ * `tsToken` in the body goes to siteverify with the caller's IP, and only a pass
+ * reaches the handlers.
+ */
+async function turnstileOk(req: Request, env: Env, token: unknown): Promise<boolean> {
+  if (!env.TURNSTILE_SECRET) return true;
+  if (typeof token !== "string" || !token) return false;
+  const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      secret: env.TURNSTILE_SECRET,
+      response: token,
+      remoteip: req.headers.get("cf-connecting-ip") ?? "",
+    }),
+  });
+  const out = (await res.json().catch(() => null)) as { success?: boolean } | null;
+  return out?.success === true;
 }
 
 interface Account {
@@ -326,9 +373,12 @@ async function throttled(env: Env, email: string): Promise<boolean> {
 }
 
 async function handleRegister(req: Request, env: Env): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { email?: string; password?: string; name?: string } | null;
+  const body = (await req.json().catch(() => null)) as
+    | { email?: string; password?: string; name?: string; tsToken?: string }
+    | null;
   const email = String(body?.email ?? "").trim().toLowerCase();
   const password = String(body?.password ?? "");
+  if (!(await turnstileOk(req, env, body?.tsToken))) return RKO("turnstile_failed", 403);
   /*
    * The in-game name is optional and clamped rather than validated: it is a label,
    * not a credential, and a fussy rule here is a registration that fails over a
@@ -360,14 +410,16 @@ async function handleRegister(req: Request, env: Env): Promise<Response> {
   };
   await env.DB.put(accountKey(email), JSON.stringify(account));
   await indexAccount(env, identityFor(accountKey(email), saveKey(email), email, name));
+  track(env, "register");
   return ROK({ playerId: account.playerId }, 201);
 }
 
 async function handleLogin(req: Request, env: Env): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { email?: string; password?: string } | null;
+  const body = (await req.json().catch(() => null)) as { email?: string; password?: string; tsToken?: string } | null;
   const email = String(body?.email ?? "").trim().toLowerCase();
   const password = String(body?.password ?? "");
   if (!email || !password) return RKO("missing");
+  if (!(await turnstileOk(req, env, body?.tsToken))) return RKO("turnstile_failed", 403);
 
   const raw = await env.DB.get(accountKey(email));
   // Run the stretch even when there is no account.
@@ -388,6 +440,7 @@ async function handleLogin(req: Request, env: Env): Promise<Response> {
 
   await indexAccount(env, identityFor(accountKey(email), saveKey(email), email, account.name));
   const token = await sign({ email, exp: Date.now() + 1000 * 60 * 60 * 24 * 90 }, env.TOKEN_SECRET);
+  track(env, "login");
   return ROK({ token, playerId: account.playerId });
 }
 
@@ -430,6 +483,7 @@ async function handleGoogleSignIn(req: Request, env: Env): Promise<Response> {
     const account = JSON.parse(existing) as GoogleAccount;
     await indexAccount(env, identityFor(key, googleSaveKey(account.sub), account.email, account.name));
     const token = await sign({ sub: account.sub, exp: Date.now() + SESSION_MS }, env.TOKEN_SECRET);
+    track(env, "login", "google");
     return ROK({
       token,
       playerId: account.playerId,
@@ -456,6 +510,7 @@ async function handleGoogleSignIn(req: Request, env: Env): Promise<Response> {
   await indexAccount(env, identityFor(key, googleSaveKey(account.sub), account.email, account.name));
 
   const token = await sign({ sub: claims.sub, exp: Date.now() + SESSION_MS }, env.TOKEN_SECRET);
+  track(env, "register", "google");
   return ROK({
     token,
     playerId,
@@ -557,6 +612,7 @@ async function handlePutSave(req: Request, auth: Session, env: Env): Promise<Res
   puts.push(writeEntry(env, accountKeyFor, entry));
 
   await Promise.all(puts);
+  track(env, "save", auth.sub ? "google" : "password");
   return ROK({ savedAt: body.savedAt, kept: "yours", writes });
 }
 
@@ -630,6 +686,26 @@ export default {
         else res = await handleFriend(req, env, me);
       } else if (path === "/api/duel" && req.method === "POST") {
         res = await routeDuel(req, env);
+      } else if (path === "/api/room/ws" && req.method === "GET") {
+        // The socket path into the room mailbox — same capability rule as POST:
+        // the code is the credential. The request is forwarded verbatim so the
+        // object sees the Upgrade header and answers 101 itself.
+        if (!env.ROOMS) {
+          res = RKO("unavailable", 503);
+        } else {
+          const roomCode = String(new URL(req.url).searchParams.get("code") ?? "").trim().toUpperCase();
+          if (!/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(roomCode)) {
+            res = RKO("bad_code");
+          } else {
+            const sub = await env.ROOMS.get(env.ROOMS.idFromName(roomCode)).fetch(req);
+            // A 101 passes through untouched; an error response is still a DO
+            // response with immutable headers that the CORS pass writes into.
+            res =
+              sub.status === 101
+                ? sub
+                : new Response(sub.body, { status: sub.status, headers: sub.headers });
+          }
+        }
       } else if (path === "/api/room" && req.method === "POST") {
         // Unauthenticated by design: the room code is the capability, matching the
         // BroadcastChannel transport it replaces for players on different machines.
@@ -663,7 +739,8 @@ export default {
         res = RKO("not_found", 404);
       }
 
-      for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+      // A 101 (WebSocket upgrade) has immutable headers — annotating it throws.
+      if (res.status !== 101) for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
       return res;
     } catch (err) {
       // The message is logged but not returned: an exception here can include a
@@ -671,6 +748,20 @@ export default {
       console.error("worker error", err);
       return RKO("server", 500);
     }
+  },
+
+  /**
+   * The six-hourly sweep, wired by `[triggers].crons`.
+   *
+   * Duel correspondence: a live inbox only ever shows invites inside
+   * `INVITE_TTL_MS` (twelve hours), so rows a week old are unreachable clutter —
+   * and on D1 they are clutter that costs reads, not writes, to keep. Finished
+   * replays are kept: they are the only record of a fight a player watched.
+   */
+  async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
+    await env.D1.prepare("DELETE FROM duels WHERE created_at < ?")
+      .bind(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .run();
   },
 };
 
@@ -724,16 +815,23 @@ async function routeDuel(req: Request, env: Env): Promise<Response> {
 
   const me = await readIdentity(req, env);
   if (!me) return RKO("unauthorised", 401);
+  const kind = me.key.startsWith("google:") ? "google" as const : "password" as const;
 
   switch (action) {
-    case "send":
-      return handleDuelSend(env, me, String(body?.to ?? ""), String(body?.plantId ?? ""), await loadSave(env, me.saveKey));
+    case "send": {
+      const r = await handleDuelSend(env, me, String(body?.to ?? ""), String(body?.plantId ?? ""), await loadSave(env, me.saveKey));
+      if (r.status === 200) track(env, "duel_send", kind);
+      return r;
+    }
     case "inbox":
       return handleDuelInbox(env, me);
     case "sent":
       return handleDuelOutbox(env, me);
-    case "accept":
-      return handleDuelAccept(env, me, String(body?.id ?? ""), String(body?.plantId ?? ""), await loadSave(env, me.saveKey));
+    case "accept": {
+      const r = await handleDuelAccept(env, me, String(body?.id ?? ""), String(body?.plantId ?? ""), await loadSave(env, me.saveKey));
+      if (r.status === 200) track(env, "duel_accept", kind);
+      return r;
+    }
     case "decline":
       return handleDuelDecline(env, me, String(body?.id ?? ""));
     default:

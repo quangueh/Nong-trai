@@ -21,6 +21,7 @@
 import { el } from "./components";
 import { sfx } from "../audio/audio";
 import { signIn, signUp } from "../account/sync";
+import { mountTurnstile, resetTurnstile, turnstileEnabled } from "../account/turnstile";
 
 export interface EmailSignIn {
   /** The `<form>`. Append this, not its children. */
@@ -80,8 +81,13 @@ export function buildEmailSignIn(): EmailSignIn {
   let registering = false;
 
   const form = el("form", { class: "account-fields", autocomplete: "on" }) as HTMLFormElement;
-  form.append(email, ign, pass, error, submit, swap);
+  // The Turnstile box renders only when the site key is configured — without one
+  // the mount is a no-op and the form looks and works exactly as before.
+  const tsBox = el("div", { class: "ts-box" });
+  if (!turnstileEnabled()) tsBox.hidden = true;
+  form.append(email, ign, pass, error, tsBox, submit, swap);
   form.noValidate = true;
+  void mountTurnstile(tsBox);
 
   const apply = (): void => {
     submit.textContent = registering ? "Đăng ký" : "Đăng nhập";
@@ -111,6 +117,8 @@ export function buildEmailSignIn(): EmailSignIn {
       } catch (err) {
         error.textContent = describe(err);
         sfx.play("error");
+        // A spent or rejected token cannot be retried — the widget must mint another.
+        resetTurnstile();
       } finally {
         submit.disabled = false;
         apply();

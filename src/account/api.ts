@@ -10,6 +10,8 @@
  * fresh clone, a preview deploy, or a build with no secrets all still run the game.
  */
 
+import { takeToken } from "./turnstile";
+
 const BASE = (import.meta.env?.VITE_ACCOUNT_API as string | undefined)?.replace(/\/$/, "") ?? "";
 
 /** Whether an account service was configured at build time. */
@@ -85,13 +87,16 @@ async function call<T>(path: string, init: RequestInit & { token?: string } = {}
 }
 
 export async function register(email: string, password: string, name?: string): Promise<void> {
-  await call("/api/register", { method: "POST", body: JSON.stringify({ email, password, name }) });
+  await call("/api/register", {
+    method: "POST",
+    body: JSON.stringify({ email, password, name, tsToken: takeToken() }),
+  });
 }
 
 export async function login(email: string, password: string): Promise<AccountSession> {
   const res = await call<{ token: string; playerId: string }>("/api/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, tsToken: takeToken() }),
   });
   return { token: res.token, playerId: res.playerId };
 }

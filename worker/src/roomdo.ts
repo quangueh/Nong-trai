@@ -12,6 +12,16 @@
  * Storage layout: `m:{ts}:{rand}` → packed message, mirroring the KV mailbox so a
  * client cannot tell which backend answered. Expiry is lazy — each request sweeps
  * keys older than MSG_TTL_MS, which for a minutes-long match is all a mailbox needs.
+ *
+ * ## The socket path
+ *
+ * A GET with `Upgrade: websocket` (and `?code=` matching the object's code) is
+ * answered 101 and the socket is accepted through `ctx.acceptWebSocket` — the
+ * Hibernation API, so an idle lobby costs no billed duration between messages.
+ * On connect the whole backlog is replayed, then every `send` is fanned out to
+ * all attached sockets as the same `{k, m}` frame a poll returns. Clients still
+ * send via POST — inbound socket traffic is nothing the room needs — and a client
+ * whose socket drops falls back to the unchanged 650 ms poll.
  */
 
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
@@ -59,7 +69,44 @@ export class RoomMailbox {
     if (dead.length) await this.ctx.storage.delete(dead);
   }
 
+  /** Push one freshly stored message to every open socket — the poll's `{k, m}` shape. */
+  private fanout(key: string, msg: unknown): void {
+    if (!key) return;
+    const frame = JSON.stringify({ k: key, m: msg });
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.send(frame);
+      } catch {
+        // A socket that cannot be written is closed rather than kept as a ghost.
+        try {
+          ws.close(1011, "send failed");
+        } catch {
+          /* already closing */
+        }
+      }
+    }
+  }
+
   async fetch(req: Request): Promise<Response> {
+    if (req.headers.get("Upgrade") === "websocket") {
+      const code = (new URL(req.url).searchParams.get("code") ?? "").trim().toUpperCase();
+      if (!CODE_RE.test(code)) return fail("bad_code");
+      const pair = new WebSocketPair();
+      const [client, server] = [pair[0], pair[1]];
+      this.ctx.acceptWebSocket(server);
+      // Replay the backlog: a guest who opens the socket after the host's create
+      // still sees the whole lobby so far, in the same frames live sends will be.
+      const map = await this.ctx.storage.list<string>({ prefix: M_PREFIX });
+      for (const [k, packed] of map) {
+        try {
+          server.send(JSON.stringify({ k, m: JSON.parse(packed) }));
+        } catch {
+          /* a corrupt row is skipped, not fatal to the socket */
+        }
+      }
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
     const body = (await req.json().catch(() => null)) as RoomBody | null;
     const action = String(body?.action ?? "");
     const code = String(body?.code ?? "").trim().toUpperCase();
@@ -76,6 +123,7 @@ export class RoomMailbox {
         if ((await this.ctx.storage.list({ prefix: M_PREFIX })).size >= MAX_ROOM_MSGS)
           return fail("room_full", 429);
         const key = await this.putMsg(msgVal);
+        if (key) this.fanout(key, msgVal);
         return ok({ k: key });
       }
 
@@ -120,6 +168,26 @@ export class RoomMailbox {
 
       default:
         return fail("bad_action", 404);
+    }
+  }
+
+  /* Inbound socket traffic is unused — clients send via POST. The handlers exist so
+     a close or error still cleans the attachment up under Hibernation. */
+  async webSocketMessage(): Promise<void> {}
+
+  async webSocketClose(ws: WebSocket): Promise<void> {
+    try {
+      ws.close(1000, "closed");
+    } catch {
+      /* already gone */
+    }
+  }
+
+  async webSocketError(ws: WebSocket): Promise<void> {
+    try {
+      ws.close(1011, "error");
+    } catch {
+      /* already gone */
     }
   }
 }

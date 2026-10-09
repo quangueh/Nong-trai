@@ -179,6 +179,15 @@ export class RoomClient {
   private relayTimer: ReturnType<typeof setInterval> | null = null;
   /** Highest message timestamp seen, for the `afterTs` cursor. */
   private relayTs = 0;
+  /**
+   * The socket path into the same mailbox. While `wsOpen` is true the tick does not
+   * poll — sends arrive as frames instead. A dropped socket flips it back and the
+   * poll cadence resumes unchanged, so the wire contract never forks.
+   */
+  private ws: WebSocket | null = null;
+  private wsOpen = false;
+  /** Poll ticks since the last socket attempt — reconnects are paced, not spammed. */
+  private wsCooldown = 0;
   private seq = 0;
   private readonly relay: string;
   private readonly pollMs: number;
@@ -302,9 +311,22 @@ export class RoomClient {
 
   private startRelay() {
     if (!this.relay || this.relayTimer !== null) return;
+    this.openSocket();
     const tick = async () => {
       const code = this.code;
       if (!code) return;
+      if (this.wsOpen) {
+        // The socket carries the room now; the tick survives only to pace the
+        // guest's reannounce loop.
+        this.maybeReannounce();
+        return;
+      }
+      if (this.ws === null && ++this.wsCooldown >= 8) {
+        // Roughly every five seconds of polling, retry the socket — a lobby that
+        // opened during an outage upgrades itself without a reload.
+        this.wsCooldown = 0;
+        this.openSocket();
+      }
       try {
         const res = await fetch(`${this.relay}/api/room`, {
           method: "POST",
@@ -315,13 +337,7 @@ export class RoomClient {
         });
         if (!res.ok) return;
         const body = (await res.json().catch(() => null)) as { msgs?: { k: string; m: RoomMessage }[] } | null;
-        for (const row of body?.msgs ?? []) {
-          if (this.seenKeys.has(row.k)) continue;
-          this.seenKeys.add(row.k);
-          const ts = Number(row.k.slice(`room:${code}:m:`.length, `room:${code}:m:`.length + 13));
-          if (Number.isFinite(ts) && ts > this.relayTs) this.relayTs = ts;
-          this.handle(row.m);
-        }
+        for (const row of body?.msgs ?? []) this.acceptRelayRow(row);
       } catch {
         // A dead relay costs the remote half of the room, not the local one.
       }
@@ -329,6 +345,52 @@ export class RoomClient {
     };
     void tick();
     this.relayTimer = setInterval(tick, this.pollMs);
+  }
+
+  /** One mailbox row, whichever wire it arrived on — the dedupe is shared. */
+  private acceptRelayRow(row: { k: string; m: RoomMessage }) {
+    if (this.seenKeys.has(row.k)) return;
+    this.seenKeys.add(row.k);
+    const ts = Number(row.k.slice(`room:${this.code}:m:`.length, `room:${this.code}:m:`.length + 13));
+    if (Number.isFinite(ts) && ts > this.relayTs) this.relayTs = ts;
+    this.handle(row.m);
+  }
+
+  /**
+   * Open the socket path into the room's mailbox.
+   *
+   * Frames are the same `{k, m}` rows a poll returns — the server's backlog replay
+   * means a socket opened late still catches the whole lobby, and mid-dedupe drops
+   * whatever the client already took by POST. If the endpoint does not exist on
+   * this deploy, the close event simply leaves `wsOpen` false and polling stands.
+   */
+  private openSocket() {
+    const code = this.code;
+    if (!this.relay || !code || typeof WebSocket === "undefined") return;
+    const url = `${this.relay.replace(/^http/, "ws")}/api/room/ws?code=${encodeURIComponent(code)}`;
+    const ws = new WebSocket(url);
+    this.ws = ws;
+    ws.onopen = () => {
+      if (this.ws === ws) this.wsOpen = true;
+    };
+    ws.onmessage = (ev: MessageEvent) => {
+      let row: { k?: string; m?: RoomMessage } | null = null;
+      try {
+        row = JSON.parse(String(ev.data)) as { k?: string; m?: RoomMessage };
+      } catch {
+        row = null;
+      }
+      if (row?.k && row.m) this.acceptRelayRow({ k: row.k, m: row.m });
+    };
+    const drop = () => {
+      if (this.ws === ws) {
+        this.ws = null;
+        this.wsOpen = false;
+        this.wsCooldown = 0;
+      }
+    };
+    ws.onclose = drop;
+    ws.onerror = drop;
   }
 
   /**
@@ -354,6 +416,16 @@ export class RoomClient {
     if (this.relayTimer !== null) {
       clearInterval(this.relayTimer);
       this.relayTimer = null;
+    }
+    if (this.ws !== null) {
+      const ws = this.ws;
+      this.ws = null;
+      this.wsOpen = false;
+      try {
+        ws.close(1000, "left the room");
+      } catch {
+        /* already closing */
+      }
     }
   }
 

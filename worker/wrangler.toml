@@ -37,6 +37,26 @@ database_id = "ec7677e8-fc26-4a51-9769-7e4f63124cb8"
 # binding = "REPLAYS"
 # bucket_name = "nong-trai-replays"
 
+# Event counters — register/login/save/duel_send/duel_accept. Free tier and
+# fire-and-forget: `track()` in index.ts wraps every call, so an absent or
+# failing dataset can never fail a real request.
+#
+# Commented out like R2: Analytics Engine needs a one-time activation in the
+# dashboard (Workers → Analytics Engine → Enable). Until then `ANALYTICS` is
+# unbound and track() is a no-op. To enable, activate in the dashboard, then:
+# [[analytics_engine_datasets]]
+# binding = "ANALYTICS"
+# dataset = "nongtrai_events"
+
+# The six-hourly sweep — `scheduled()` in index.ts deletes duel rows a week past
+# their creation, since a live inbox only ever shows the last twelve hours.
+[triggers]
+crons = ["17 */6 * * *"]
+
+# Turnstile (register/login bot check) is gated on TURNSTILE_SECRET — a secret,
+# so it is set with `wrangler secret put TURNSTILE_SECRET` rather than in this
+# file. Unset means the check is off.
+
 # The room mailbox: one Durable Object per room code. KV could relay messages but
 # its edge cache kept a written join invisible for up to a minute — measured ~30 s —
 # which looked like rooms never working. DO storage is strongly consistent, so a
