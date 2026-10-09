@@ -209,7 +209,10 @@ function paintPlots(body: HTMLElement, nav: Navigate, shell: Element, goTab: (t:
    * plots with pointer-events:none, so it costs the grid nothing and can
    * never steal a tap.
    */
-  const scene = el("div", { class: "garden-scene" });
+  // `data-bleed` marks the box as intentionally wider than its visible edge —
+  // the mist band slides past the rounded border on purpose, and the layout
+  // audit trusts the mark rather than flagging the art every run.
+  const scene = el("div", { class: "garden-scene", "data-bleed": "1" });
   scene.append(
     el("div", { class: "scene-sun", "aria-hidden": "true" }),
     el("div", { class: "scene-cloud c1", "aria-hidden": "true" }),

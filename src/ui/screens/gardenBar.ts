@@ -197,7 +197,10 @@ export interface GardenBarHandle {
 }
 
 export function gardenBar(deps: GardenBarDeps): GardenBarHandle {
-  const root = el("div", { class: "qabar" });
+  // position:fixed centred on the viewport, so its rect escapes the garden's
+  // content column on purpose — data-bleed tells the layout audit the overflow
+  // is the floating-bar pattern, not a layout error.
+  const root = el("div", { class: "qabar", "data-bleed": "1" });
   const chips = el("div", { class: "qachips", role: "status" });
   const dock = el("div", { class: "qadock", role: "toolbar", "aria-label": "Thao tác nhanh trong vườn" });
   root.append(chips, dock);

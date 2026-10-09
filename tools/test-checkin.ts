@@ -37,7 +37,7 @@ function check(name: string, ok: boolean, detail = ""): void {
 const DAY = 24 * 60 * 60 * 1000;
 const T0 = Date.UTC(2026, 5, 10, 9); // a fixed morning — far from any day edge
 
-import { GameStore } from "../src/core/store";
+import { GameStore, dayKey } from "../src/core/store";
 import { dayInCycle, isMilestone, nextMilestone, giftFor, AUTO_CARE_MS, AUTO_CARE_MINUTES } from "../src/core/checkin";
 import { SPECIES_BY_ID } from "../src/config/species";
 import { careCooldownLeft } from "../src/growth/care";
@@ -106,6 +106,24 @@ check("nothing comes after 30 inside the cycle", nextMilestone(30) === null);
   store2.claimCheckIn(T0 + 7 * DAY + DAY + DAY); // skip a day: two days later
   check("a missed day resets the streak", store2.state.checkIn.streak === 1, `streak=${store2.state.checkIn.streak}`);
   check("the total count survives the reset", store2.state.checkIn.total === 8);
+}
+
+/* ------------------------------------------------------------------ */
+/* The day boundary                                                     */
+/* ------------------------------------------------------------------ */
+{
+  // "Hôm nay" means the LOCAL calendar day. The regression this guards:
+  // dayKey used to read the UTC date, so a VN player (UTC+7) watched the day
+  // flip at 7am — two claims ten minutes apart counted as consecutive days,
+  // and a UI computing local midnight previewed a different gift than the
+  // claim paid. Both are impossible once the key is the local date.
+  const late = new Date(2026, 5, 10, 23, 58).getTime();
+  const early = new Date(2026, 5, 11, 0, 2).getTime();
+  check("local midnight flips the day", dayKey(late) !== dayKey(early), `${dayKey(late)} vs ${dayKey(early)}`);
+  // 06:58 and 07:02 the same morning: UTC would split these into two days.
+  const before7 = new Date(2026, 5, 11, 6, 58).getTime();
+  const after7 = new Date(2026, 5, 11, 7, 2).getTime();
+  check("7am is not a day boundary", dayKey(before7) === dayKey(after7));
 }
 
 /* --- 4. the gardener ------------------------------------------------------ */

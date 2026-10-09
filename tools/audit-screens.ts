@@ -99,12 +99,31 @@ for (const vp of VIEWPORTS) {
     const report = (await page.evaluate(`(() => {
       const doc = document.documentElement;
       const scope = ".screen *, .topbar *, .bottomnav *";
+      /* data-bleed marks a box that is *designed* to paint past its own edge —
+         * the garden mist band, the breeding conduit, the roster check badge.
+         * Without the mark the audit flags deliberate art as a layout bug, and
+         * a report that cries wolf stops being read. */
+      /* A parent's scroll area includes a child's deliberate bleed — the
+         * garden scene runs margin:0 -4px to reach the screen edge, and the
+         * mist band inside it slides past its own border. When every child
+         * that reaches past the box carries data-bleed, the overflow is the
+         * design, not a bug: report only boxes an unmarked child breaks. */
+      const bleedCaused = (n) => {
+        const r = n.getBoundingClientRect();
+        for (const c of n.children) {
+          if (c.hasAttribute("data-bleed")) continue;
+          const cr = c.getBoundingClientRect();
+          if (cr.right > r.right + 2 || cr.left < r.left - 2) return false;
+        }
+        return true;
+      };
       const overflowing = [...document.querySelectorAll(scope)]
-        .filter((n) => n.scrollWidth > n.clientWidth + 2 && getComputedStyle(n).overflowX !== "auto" && getComputedStyle(n).overflowX !== "scroll")
+        .filter((n) => !n.hasAttribute("data-bleed") && n.scrollWidth > n.clientWidth + 2 && !bleedCaused(n) && getComputedStyle(n).overflowX !== "auto" && getComputedStyle(n).overflowX !== "scroll")
         .slice(0, 4)
         .map((n) => (n.getAttribute("class") || n.tagName) + " " + n.scrollWidth + ">" + n.clientWidth);
       const clipped = [...document.querySelectorAll(scope)]
         .filter((n) => {
+          if (n.hasAttribute("data-bleed")) return false;
           const cs = getComputedStyle(n);
           return (cs.textOverflow === "ellipsis" || cs.overflow === "hidden") && n.scrollWidth > n.clientWidth + 2;
         })
@@ -145,7 +164,7 @@ for (const vp of VIEWPORTS) {
   // The garden's tabs.
   await page.evaluate(`(() => (window).__game.navigate("garden"))()`);
   await page.waitForTimeout(600);
-  for (const tab of ["Hôm nay", "Túi hạt"]) {
+  for (const tab of ["Nhiệm vụ", "Túi hạt"]) {
     const clicked = await page.evaluate(`(() => {
       const t = [...document.querySelectorAll(".tab")].find((b) => (b.textContent || "").includes(${JSON.stringify(tab)}));
       if (!t) return false;
@@ -153,7 +172,7 @@ for (const vp of VIEWPORTS) {
       return true;
     })()`);
     await page.waitForTimeout(600);
-    const chars = await page.evaluate(`(() => ((document.querySelector(".screen")||{}).textContent||"").length)`);
+    const chars = await page.evaluate(`(() => ((document.querySelector(".screen")||{}).textContent||"").length)()`);
     console.log(`${vp.name.padEnd(8)} tab:${tab.padEnd(8)} clicked=${clicked} ${chars} chars`);
     await page.screenshot({ path: `shots/audit-${vp.name}-tab-${tab.replace(/\s/g, "")}.png` });
   }

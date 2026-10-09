@@ -11,7 +11,8 @@
 
 import { el, toast, sheet } from "./components";
 import { sfx } from "../audio/audio";
-import { store } from "./app";
+import { store, currentScreen } from "./app";
+import { dayKey } from "../core/store";
 import { giftFor, dayInCycle, MILESTONE_DAYS, type GiftLine } from "../core/checkin";
 import { currencyInfo } from "../core/currency";
 import { SPECIES_BY_ID } from "../config/species";
@@ -149,6 +150,15 @@ export function maybeAutoOpenCheckIn(): void {
       window.setTimeout(attempt, 2500);
       return;
     }
+    // And only on the garden: a fight mounts inside the screen host rather
+    // than an overlay, so the overlay check alone let the sheet land on top
+    // of a live battle — modal over combat, intercepting taps and blurring
+    // the whole scene behind it. Off-garden means retry until a garden paint
+    // or the attempt budget runs out.
+    if (currentScreen() !== "garden") {
+      window.setTimeout(attempt, 2500);
+      return;
+    }
     try {
       sessionStorage.setItem(flag, "1");
     } catch {
@@ -159,9 +169,15 @@ export function maybeAutoOpenCheckIn(): void {
   window.setTimeout(attempt, 900);
 }
 
+/**
+ * "Today" must be the store's day, not a second definition of it — when this
+ * file computed its own local day while the store used the UTC date, the
+ * sheet previewed one gift and the claim paid a different one for the whole
+ * 0:00–7:00 window. `dayKey` is local now, so preview, claim and the
+ * shown-once flag can never disagree again.
+ */
 function todayKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return dayKey(Date.now());
 }
 
 /**
@@ -193,7 +209,7 @@ export function gardenerRow(nav: (screen: "garden") => void): HTMLElement {
     const adBtn = el("button", { class: "gardener-btn ad" });
     adBtn.append(
       el("span", { class: "gico" }, ["🤖"]),
-      el("span", { class: "glbl" }, [`Thuê vườn ${BUFF_MINUTES}p`]),
+      el("span", { class: "glbl" }, [`Thuê ${BUFF_MINUTES}p`]),
       el("span", { class: "qa-ad" }, ["📺 QC"]),
     );
     adBtn.addEventListener("click", async () => {

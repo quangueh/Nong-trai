@@ -36,12 +36,14 @@ export function renderBreeding(nav: Navigate): HTMLElement {
 
   const slots = el("div", { class: "breed-pair" });
   const slotElA = el("div", { class: "slot" });
-  const link = el("div", { class: "breed-link" }, [
+  // data-bleed: the conduit pseudo-element reaches ±14px into the pods on
+  // purpose — the link box is narrower than the channel it must draw.
+  const link = el("div", { class: "breed-link", "data-bleed": "1" }, [
     /* docs/23 §7 — the gene flow: two motes ride the channel from each parent
        into the medallion while the pair stands ready. The channel itself is
        drawn by CSS (.breed-link::before); these are the moving pieces. */
-    el("i", { class: "flow-dot a", "aria-hidden": "true" }),
-    el("i", { class: "flow-dot b", "aria-hidden": "true" }),
+    el("i", { class: "flow-dot a", "aria-hidden": "true", "data-bleed": "1" }),
+    el("i", { class: "flow-dot b", "aria-hidden": "true", "data-bleed": "1" }),
     el("span", { class: "breed-link-ico" }, ["+"]),
     el("span", { class: "breed-link-lbl" }, ["lai"]),
   ]);

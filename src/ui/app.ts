@@ -170,6 +170,11 @@ const SCREEN_MOOD: Record<string, MusicMood> = {
   settings: "silent",
 };
 
+/** The screen the player is looking at — for callers that must not act off-screen. */
+export function currentScreen(): Screen {
+  return current;
+}
+
 export function navigate(screen: Screen, params?: unknown) {
   closeOverlays();
   current = screen;

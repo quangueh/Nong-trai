@@ -253,7 +253,16 @@ section("6. Growth stages read as different sizes");
     heights.map((h) => h.toFixed(1)).join(" → "),
   );
   check("mature fills most of the frame", heights[3] > 40, `${heights[3].toFixed(1)} of 100`);
-  check("seed stays a sprout", heights[0] < heights[3] * 0.5, `${heights[0].toFixed(1)} vs ${heights[3].toFixed(1)}`);
+  /*
+   * "Stays a sprout" means clearly the smallest stage — thin blades, no bloom,
+   * no branches (the structural checks above already assert those). The 0.5
+   * ratio was calibrated on the old art, which drew the seed as the mature
+   * silhouette in miniature; docs/23 pass 2 draws a real seedling whose curled
+   * growing tip and cotyledon stem run a little taller relative to the frame.
+   * Measured across the registry the stem lands near half of mature's — 0.6 is
+   * the honest line between "sprout" and "small adult".
+   */
+  check("seed stays a sprout", heights[0] < heights[3] * 0.6, `${heights[0].toFixed(1)} vs ${heights[3].toFixed(1)}`);
 }
 
 /**

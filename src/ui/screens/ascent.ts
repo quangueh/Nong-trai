@@ -264,8 +264,11 @@ export function renderAscent(_nav: Navigate): HTMLElement {
     for (const p of sorted) {
       const why = battleBlock(p);
       const picked = chosen === p.plantId;
+      // data-bleed: the picked badge straddles the corner by design (-6px) —
+      // a badge half-off the tile is the pattern, not a layout error.
       const tile = el("button", {
         class: "rostertile" + (picked ? " is-picked" : "") + (why ? " is-blocked" : ""),
+        "data-bleed": "1",
         ...(why ? { title: why } : {}),
         "aria-pressed": picked ? "true" : "false",
       });

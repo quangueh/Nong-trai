@@ -7614,8 +7614,12 @@ body.planting {
   line-height: 1.15;
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Two lines beat one clipped line: "Búp Sương mầm" fit on a single line was
+     pure luck, and a 26-char generated name never stood a chance. Line-clamp
+     keeps the tile's floor while names up to two lines read in full. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .rostertile-meta {

@@ -1004,6 +1004,11 @@ export class GameStore {
         if (res.ok) {
           plant.powerRating = Math.round(estimatePower(plant));
           plant.validation = validateGenome(plant);
+          // Care the gardener performs is still care — it lands in the same
+          // plant memory `ctx.cares` reads, so it must also land in the event
+          // stream "chăm cây N lần" quests count. Otherwise the buff visibly
+          // waters the garden while the daily swears nothing happened.
+          this.questEvent({ name: "care", amount: 1 });
           did++;
           break;
         }
@@ -2371,8 +2376,19 @@ function addUnique(list: string[], value: string) {
   if (!list.includes(value)) list.push(value);
 }
 
-function dayKey(at: number): string {
-  return new Date(at).toISOString().slice(0, 10);
+/**
+ * The calendar day a timestamp belongs to — LOCAL time, not UTC.
+ *
+ * Every daily mechanic (check-in, ember cap, exchange rate, quest roll,
+ * garden day, ascent) reads "hôm nay" through this, and a Vietnamese player
+ * means their midnight when they say it. `toISOString()` would hand back the
+ * UTC date, so the game's day would flip at 7am local — letting a 6:58 claim
+ * and a 7:02 claim count as two consecutive days, and showing one gift while
+ * paying another when a caller used local time instead.
+ */
+export function dayKey(at: number): string {
+  const d = new Date(at);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /** Whole days between two YYYY-MM-DD keys, ignoring clock time. */
