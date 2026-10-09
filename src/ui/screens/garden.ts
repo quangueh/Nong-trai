@@ -428,6 +428,13 @@ function questCard(v: QuestView, nav: Navigate): HTMLElement {
       el("small", {}, [
         v.status === "locked" ? v.lockedReason : v.status === "claimed" ? "Đã nhận thưởng" : v.def.objective,
       ]),
+      // The how-to lives on the card itself for anything still to be done — a
+      // player stuck on a quest is stuck *on the card*, so the route through
+      // the screens sits right under the objective rather than behind a help
+      // button that would have to be discovered first.
+      v.status !== "claimed" && v.def.how
+        ? el("small", { class: "quest-how" }, [`💡 ${v.def.how}`])
+        : null,
       el("span", { class: "quest-rewards" }, questRewardChips(v)),
       v.status !== "claimed" && v.status !== "locked"
         ? el("span", { class: "quest-bar" }, [bar(v.fraction)])

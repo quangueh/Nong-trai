@@ -103,6 +103,7 @@ function chainDef(cycle: number, slot: Slot, sp: SpeciesId, unlock: QuestUnlock 
         title: `Mở giống ${name}`,
         description: `Cửa hàng còn nhiều loài chưa thuộc về vườn. Mở hoặc sở hữu hạt ${name} — thẻ cửa hàng ghi rõ loài đó cần gì.`,
         objective: `Sở hữu hạt ${name}`,
+        how: `Tab Chợ → tìm loài ${name} → mua hạt. Nếu thẻ còn khoá, nó ghi rõ điều kiện — thường là đạt thêm cấp nhà lai.`,
         target: 1,
         icon: "🌰",
         priority: base,
@@ -122,6 +123,7 @@ function chainDef(cycle: number, slot: Slot, sp: SpeciesId, unlock: QuestUnlock 
         title: `Ươm ${name}`,
         description: `Hạt chỉ là tiềm năng. Trồng ${n} cây ${name} để dòng máu này thật sự có mặt trong vườn.`,
         objective: `Trồng ${n} cây ${name}`,
+        how: `Tab Vườn → chạm ô đất trống → chọn hạt ${name} → gieo. Cần đủ ${n} cây — mua thêm hạt ở Chợ nếu thiếu.`,
         target: n,
         icon: "🌱",
         priority: base + 1,
@@ -145,6 +147,7 @@ function chainDef(cycle: number, slot: Slot, sp: SpeciesId, unlock: QuestUnlock 
         title: `${name} ra trận`,
         description: `Cây trồng xong thì phải ra trận. Thắng ${n} trận bằng cây dòng ${name} — con lai mang dòng máu này cũng tính.`,
         objective: `Thắng ${n} trận bằng dòng ${name}`,
+        how: `Đưa cây dòng ${name} ra trận: Vượt ải hay đấu AI đều tính. Con lai mang dòng máu ${name} cũng được — không nhất thiết là cây gốc.`,
         target: n,
         icon: "⚔️",
         priority: base + 2,
@@ -168,6 +171,9 @@ function chainDef(cycle: number, slot: Slot, sp: SpeciesId, unlock: QuestUnlock 
           ? `Bài kiểm tra cuối của dòng ${name}: hạ một boss ải bằng cây mang dòng máu này.`
           : `Đưa dòng ${name} lên thang ải — vượt ${n} ải bằng cây mang dòng máu này. Ải đã vượt cũng tính.`,
         objective: boss ? `Hạ 1 boss bằng dòng ${name}` : `Vượt ${n} ải bằng dòng ${name}`,
+        how: boss
+          ? `Leo tới ải boss (ải 10, 20, 30…) bằng đội hình có cây dòng ${name} rồi hạ boss đó.`
+          : `Đưa cây dòng ${name} vào đội hình rồi vượt ${n} ải — ải đã qua trước đây cũng tính, cứ chọn ải dễ thắng.`,
         target: n,
         icon: boss ? "👑" : "🏔️",
         priority: base + 3,

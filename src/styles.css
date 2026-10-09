@@ -8829,6 +8829,19 @@ button.qachip:active {
   line-height: 1.35;
 }
 
+/* The how-to line: slightly more visible than the objective (it is the answer
+   the player is looking for), tinted so it reads as guidance, not a second task. */
+.quest-how {
+  color: var(--ink) !important;
+  opacity: 0.85;
+  display: block;
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: rgba(140, 190, 255, 0.07);
+  border-left: 2px solid rgba(140, 190, 255, 0.4);
+  margin: 1px 0 2px;
+}
+
 .quest-rewards {
   display: flex;
   flex-wrap: wrap;

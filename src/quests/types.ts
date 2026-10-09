@@ -135,6 +135,16 @@ export interface QuestDef {
   description: string;
   /** The imperative: "Hoàn thành ải 1". Shown on the card and in the tracker. */
   objective: string;
+  /**
+   * The how-to, spelled out in taps: "Vườn → chạm ô đất trống → chọn hạt".
+   *
+   * Distinct from `description` (why the quest exists) and `objective` (what
+   * it asks) — this is the *route* through the game's screens, written for a
+   * player who read the other two and still does not know where to go. Shown
+   * under the objective on every active and locked card, so the answer is on
+   * the quest rather than behind a help button nobody finds.
+   */
+  how?: string;
   target: number;
   icon: string;
   /** Lower sorts first. The main chain uses tens; side and daily use hundreds. */
