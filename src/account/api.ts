@@ -134,6 +134,22 @@ export async function googleSignIn(idToken: string): Promise<AccountSession & {
 }
 
 /** Which save the server holds, or null when there is not one yet. */
+/**
+ * The plant's whisper — one LLM flavour line per species, generated once on the
+ * Worker and cached in D1 forever after. Fails soft: a game without the service
+ * just shows no line, which reads as the plant keeping quiet.
+ */
+export async function fetchWhisper(speciesId: string, name: string): Promise<string | null> {
+  try {
+    const res = await call<{ whisper?: string }>(
+      `/api/whisper?species=${encodeURIComponent(speciesId)}&name=${encodeURIComponent(name)}`,
+    );
+    return res.whisper ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchSave(token: string): Promise<CloudSave | null> {
   try {
     return await call<CloudSave>("/api/save", { token });

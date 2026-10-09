@@ -30,29 +30,30 @@ database_id = "ec7677e8-fc26-4a51-9769-7e4f63124cb8"
 
 # R2 holds the large write-once payloads: duel replays (the two full plant
 # snapshots plus the whole event log). Read-once blobs, exactly what object
-# storage is for — and out of the KV budget entirely.
-#
-# Bound but currently commented out: R2 needs a one-time activation in the
-# Cloudflare Dashboard (R2 → Enable) before `wrangler r2 bucket create` works.
-# Until then `REPLAYS` is unbound and duel results land in the D1
-# `duel_results` table — same wire contract, just stored as a row.
-# To enable: activate R2 in the dashboard, run
-#   npx wrangler r2 bucket create nong-trai-replays
-# then uncomment:
-# [[r2_buckets]]
-# binding = "REPLAYS"
-# bucket_name = "nong-trai-replays"
+# storage is for — and out of the KV budget entirely. Free tier: 10GB +
+# 1M class-A + 10M class-B ops a month. When the binding is absent the same
+# payload lands in the D1 `duel_results` table instead — same wire contract.
+[[r2_buckets]]
+binding = "REPLAYS"
+bucket_name = "nong-trai-replays"
 
 # Event counters — register/login/save/duel_send/duel_accept. Free tier and
 # fire-and-forget: `track()` in index.ts wraps every call, so an absent or
 # failing dataset can never fail a real request.
 #
-# Commented out like R2: Analytics Engine needs a one-time activation in the
-# dashboard (Workers → Analytics Engine → Enable). Until then `ANALYTICS` is
-# unbound and track() is a no-op. To enable, activate in the dashboard, then:
+# Still commented: Analytics Engine needs a one-time activation in the dashboard
+# (one click, still free): Dashboard → Workers → Analytics Engine → Enable, or
+# https://dash.cloudflare.com/?to=/:account/workers/analytics-engine — then
+# uncomment the binding and deploy. Until then `ANALYTICS` is unbound and
+# track() is a no-op.
 # [[analytics_engine_datasets]]
 # binding = "ANALYTICS"
 # dataset = "nongtrai_events"
+
+# Workers AI — free 10k neurons/day, no dashboard activation needed. Powers
+# /api/whisper: one LLM flavour line per species, D1-cached forever.
+[ai]
+binding = "AI"
 
 # The six-hourly sweep — `scheduled()` in index.ts deletes duel rows a week past
 # their creation, since a live inbox only ever shows the last twelve hours.

@@ -888,10 +888,11 @@ export async function handleDuelResult(env: SocialEnv, id: string): Promise<Resp
   if (env.REPLAYS) {
     const obj = await env.REPLAYS.get(key);
     if (obj) return ok({ result: safeParse<DuelResult>(await obj.text(), null as unknown as DuelResult) });
-  } else {
-    const row = await env.D1.prepare("SELECT payload FROM duel_results WHERE id = ?").bind(id).first<string>("payload");
-    if (row) return ok({ result: safeParse<DuelResult>(row, null as unknown as DuelResult) });
   }
+  // Results written while R2 was unbound still live in D1 — a miss above falls
+  // through here rather than 404ing a replay that exists.
+  const row = await env.D1.prepare("SELECT payload FROM duel_results WHERE id = ?").bind(id).first<string>("payload");
+  if (row) return ok({ result: safeParse<DuelResult>(row, null as unknown as DuelResult) });
   // Fights finished before the move live on under their KV key — read, never written.
   const raw = await env.DB.get(key);
   if (!raw) return fail("no_such_duel", 404);

@@ -34,9 +34,12 @@
 
 ## Optional bindings (code sẵn, chờ kích hoạt trong Dashboard)
 
-- **R2 `REPLAYS`** — duel replay blobs. Enable: Dashboard → R2 → Enable, rồi
-  `npx wrangler r2 bucket create nong-trai-replays`, uncomment binding trong
-  `wrangler.toml`, deploy lại. Chưa bind thì replay nằm trong `duel_results` (D1).
+- **R2 `REPLAYS`** — duel replay blobs, ĐÃ BOUND (`nong-trai-replays`).
+  Read path thử R2 → D1 `duel_results` → KV cũ, nên replay ghi trước khi
+  R2 bật vẫn đọc được.
+- **Workers AI `AI`** — ĐÃ BOUND (không cần dashboard). `/api/whisper?species=spNNNN`
+  sinh 1 câu flavor/lần đầu mỗi loài bằng llama-3.2-3b, cache vĩnh viễn trong
+  D1 `species_whispers` (~10k neurons/ngày free; mỗi loài chỉ tốn neurons 1 lần).
 - **Analytics Engine `ANALYTICS`** — đếm register/login/save/duel_send/duel_accept
   qua `track()` (fire-and-forget). Enable: Dashboard → Workers → Analytics Engine
   → Enable, uncomment binding, deploy lại.
@@ -63,5 +66,7 @@
   khác. Không bao giờ viết KV trên đường read.
 - D1 free: ~5tr read, ~100k write mỗi ngày — đây là nơi mọi dữ liệu quan hệ nên
   nằm, KHÔNG phải KV blob.
-- Smoke test: `npx tsx tools/smoke-worker.ts` — check leaderboard "me" sẽ FAIL
-  với account `*@example.com` (bị `isTestEntry` lọt, có sẵn từ trước D1).
+- Smoke test: `npx tsx tools/smoke-worker.ts` — 31/31 xanh (probe account thấy
+  rank riêng của mình; board public vẫn lọc `@example.com`/`smoke-*`). GitHub
+  Actions `smoke.yml` chạy lại test này mỗi đêm 02:00 UTC + curl Pages — free
+  monitoring, đỏ = prod hỏng theo cách test local không thấy.

@@ -96,3 +96,11 @@ CREATE TABLE IF NOT EXISTS client_errors (
   at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_client_errors_at ON client_errors (at);
+
+-- One LLM flavour line per species (Workers AI ~10k free neurons/day).
+-- Cached forever: the first request pays the neurons, later ones are a SELECT.
+CREATE TABLE IF NOT EXISTS species_whispers (
+  id TEXT PRIMARY KEY,            -- species id, e.g. sp0001
+  text TEXT NOT NULL,
+  at INTEGER NOT NULL
+);

@@ -234,11 +234,22 @@ export async function handleLeaderboard(env: LbEnv, myKey: string): Promise<Resp
     at: r.at,
   }));
   rows = await backfillIfEmpty(env, rows);
-  rows = rows.filter((r) => !isTestEntry(r));
+  /*
+   * `me` is resolved before the probe filter: the public boards hide smoke and
+   * example.com accounts, but the caller still exists — pretending otherwise
+   * read as "my save never reached the board" to every health check that logs
+   * in with a probe address.
+   */
+  const all = rows;
+  const mine = all.find((r) => r.key === myKey) ?? null;
+  rows = all.filter((r) => !isTestEntry(r));
 
   const power = [...rows].sort(byPower);
   const level = [...rows].sort(byLevel);
-  const mine = rows.find((r) => r.key === myKey) ?? null;
+  // A probe's rank is computed against the unfiltered pool — "0" would read as
+  // broken to the caller even though the public board rightly hides it.
+  const allPower = [...all].sort(byPower);
+  const allLevel = [...all].sort(byLevel);
 
   return Response.json({
     power: power.slice(0, BOARD_SIZE).map((r, i) => rowFor(r, i + 1, myKey)),
@@ -249,8 +260,8 @@ export async function handleLeaderboard(env: LbEnv, myKey: string): Promise<Resp
           email: mine.email,
           power: mine.power,
           level: mine.level,
-          powerRank: power.indexOf(mine) + 1,
-          levelRank: level.indexOf(mine) + 1,
+          powerRank: allPower.indexOf(mine) + 1,
+          levelRank: allLevel.indexOf(mine) + 1,
         }
       : null,
     total: rows.length,

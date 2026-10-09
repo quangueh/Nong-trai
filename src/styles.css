@@ -9680,6 +9680,20 @@ button.qachip:active {
   border: 1px solid rgba(71, 123, 55, 0.2);
 }
 
+/* The species' whisper line — empty until the fetch lands, so it holds no
+   space when the plant keeps quiet. */
+.whisper {
+  margin-top: 8px;
+  text-align: center;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--muted);
+  min-height: 0;
+}
+.whisper:empty {
+  display: none;
+}
+
 .detail-growth .growline {
   display: flex;
   align-items: center;

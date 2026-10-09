@@ -89,6 +89,12 @@ export interface Env {
    */
   REPLAYS?: R2Bucket;
   /**
+   * Workers AI — the whisper generator in /api/whisper. Optional: the route
+   * answers 503 rather than crashing when the binding is absent, and the
+   * client treats a missing line as "this plant keeps quiet", not an error.
+   */
+  AI?: Ai;
+  /**
    * Event counters (register/login/save/duel). Optional and fire-and-forget:
    * telemetry must never fail a real request, so every call is wrapped.
    */
@@ -747,6 +753,57 @@ export default {
             .bind(kind, detail, String(b?.url ?? "").slice(0, 300), String(b?.ua ?? "").slice(0, 200), Number(b?.at) || Date.now())
             .run();
           res = ROK({ ok: true });
+        }
+      } else if (path === "/api/whisper" && req.method === "GET") {
+        /*
+         * One generated flavour line per species, cached in D1 forever. Workers
+         * AI gives ~10k free neurons a day, so the first-ever request per
+         * species pays a few dozen neurons and every later one is a SELECT.
+         * The id is pattern-checked before it ever touches a prompt or a query,
+         * which makes the endpoint unforgeable as a free LLM proxy.
+         */
+        const sp = url.searchParams.get("species") ?? "";
+        const name = (url.searchParams.get("name") ?? "").slice(0, 60);
+        if (!/^sp[0-9]{4}$/.test(sp)) {
+          res = RKO("bad_species");
+        } else {
+          const hit = await env.D1.prepare("SELECT text FROM species_whispers WHERE id = ?")
+            .bind(sp)
+            .first<string>("text");
+          if (hit) {
+            res = ROK({ whisper: hit });
+          } else if (!env.AI) {
+            res = RKO("no_ai", 503);
+          } else {
+            const out = (await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "You write one short mystical flavour line for a mutant-plant battling game, in Vietnamese. " +
+                    "One sentence, under 90 characters, poetic not jokey, no emoji, no quotes, no preamble. " +
+                    "The line is the plant whispering about itself.",
+                },
+                { role: "user", content: `Species: ${name || sp}` },
+              ],
+              max_tokens: 60,
+            })) as { response?: string };
+            const text = String(out?.response ?? "")
+              .split("\n")[0]
+              .replace(/["“”]/g, "")
+              .trim()
+              .slice(0, 140);
+            if (!text) {
+              res = RKO("no_ai", 503);
+            } else {
+              await env.D1.prepare(
+                "INSERT OR IGNORE INTO species_whispers (id, text, at) VALUES (?, ?, ?)",
+              )
+                .bind(sp, text, Date.now())
+                .run();
+              res = ROK({ whisper: text });
+            }
+          }
         }
       } else if (path === "/api/leaderboard" && req.method === "GET") {
         const auth = await readAuth(req, env);

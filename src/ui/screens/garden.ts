@@ -15,7 +15,7 @@ import type { QuestType, QuestView } from "../../quests/types";
 import { CARE_ACTIONS, CARE_LIST, MOOD_LABEL, MOOD_EFFECTS, type CareActionId } from "../../config/careActions";
 import { ARCHETYPE_STRENGTH, ARCHETYPE_WEAKNESS, ARCHETYPE_ROLE } from "../../config/balance";
 import { dominantArchetype } from "../../core/types";
-import { SPECIES, type SpeciesId, type SpeciesDef } from "../../config/species";
+import { SPECIES, SPECIES_BY_ID, type SpeciesId, type SpeciesDef } from "../../config/species";
 import { featuredSpecies } from "../../economy/shop";
 import { playPlanting, playPlantingBatch, setRevealArt } from "./planting";
 import { sfx } from "../../audio/audio";
@@ -29,6 +29,7 @@ import { currencyInfo } from "../../core/currency";
 import { createSeedPlant } from "../../genetics/genomeGenerator";
 import type { Navigate, Screen } from "./types";
 import { gardenBar } from "./gardenBar";
+import { fetchWhisper } from "../../account/api";
 
 // The ceremony renders real plant art, so it needs the renderer. Wiring it here
 // keeps planting.ts free of a render import.
@@ -946,6 +947,21 @@ export function openDetail(plant: Plant, nav: Navigate, shell: Element) {
   content.appendChild(head);
 
   content.appendChild(el("div", { class: "row wrap", style: "gap:5px;margin-top:8px" }, elementTags(plant)));
+
+  /*
+   * The whisper — one generated line the species keeps. Loaded lazily because
+   * the Worker writes it once and caches it forever after; a failed fetch just
+   * leaves an empty div, and a plant that keeps quiet is not an error state.
+   */
+  {
+    const spId = plant.baseLineage[plant.baseLineage.length - 1] ?? plant.baseLineage[0];
+    const spName = SPECIES_BY_ID[spId]?.name ?? "";
+    const whisperBox = el("div", { class: "whisper" });
+    content.appendChild(whisperBox);
+    void fetchWhisper(spId, spName).then((line) => {
+      if (line) whisperBox.textContent = `“${line}”`;
+    });
+  }
 
   // Visual. Animated here because this is the one place the player looks at a
   // single plant up close — the garden grid stays static so it is not a wall of

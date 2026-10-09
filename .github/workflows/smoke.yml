@@ -1,0 +1,34 @@
+# Nightly production smoke — free monitoring on GitHub's hosted minutes.
+#
+# Runs the same probe a human would after a deploy: register, login, save push,
+# leaderboard self-rank, room relay, friend endpoints — all over real HTTPS to
+# the live Worker and the live Pages site. A red run here means the game is
+# down in a way local tests cannot see (DNS, TLS, binding drift, D1 outage),
+# and it arrives without anyone opening the dashboard.
+name: prod-smoke
+
+on:
+  schedule:
+    # 02:00 UTC ≈ 09:00 ICT — after the KV/D1 daily reset, before the day's play.
+    - cron: "0 2 * * *"
+  workflow_dispatch: # a manual button for "is it actually up right now?"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Worker smoke (register → save → leaderboard → room → friends)
+        run: npx tsx tools/smoke-worker.ts
+
+      - name: Pages is serving the shell
+        run: |
+          curl -fsS -o /dev/null -w "%{http_code}\n" https://nong-trai-9u0.pages.dev/
