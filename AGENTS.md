@@ -58,6 +58,12 @@
 - **manualChunks** (`vite.config.ts`) — tách `battle`/`render`/`data` khỏi entry
   để `/assets/*` immutable cache chỉ revalidate chunk thay đổi mỗi deploy.
 - `index.html` preconnect tới worker origin — tiết kiệm handshake của call đầu.
+- **Điểm danh + người làm vườn**: `src/core/checkin.ts` (reward tables,
+  deterministic per player-day), `store.claimCheckIn`/`autoCareTick`/
+  `autoCareCatchUp` (buff 15p, offline replay từ `lastSeen`), UI `src/ui/checkin.ts`.
+- **Ads**: `src/ads/ads.ts` — Google AdSense H5 rewarded (`adBreak`), gated
+  `VITE_ADSENSE_CLIENT`; unset = nút QC ẩn ở prod, DEV hiện mô phỏng. Kích
+  hoạt: tạo AdSense account → verify domain Pages → set env → rebuild+deploy.
 
 ## Free-tier notes
 

@@ -29,6 +29,7 @@ import { currencyInfo } from "../../core/currency";
 import { createSeedPlant } from "../../genetics/genomeGenerator";
 import type { Navigate, Screen } from "./types";
 import { gardenBar } from "./gardenBar";
+import { gardenerRow } from "../checkin";
 import { fetchWhisper } from "../../account/api";
 
 // The ceremony renders real plant art, so it needs the renderer. Wiring it here
@@ -127,6 +128,13 @@ function paintPlots(body: HTMLElement, nav: Navigate, shell: Element, goTab: (t:
     gardenTab = "quests";
     nav("garden");
   }));
+
+  /*
+   * The attendance + gardener strip, directly under the tracker. "Điểm danh"
+   * and "thuê người làm vườn" are both daily-habit mechanics — they sit above
+   * the soil because the soil is what they act on.
+   */
+  body.appendChild(gardenerRow(() => nav("garden")));
 
   // --- plots ---
   const section = el("div");

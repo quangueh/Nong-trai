@@ -61,6 +61,7 @@ export function showGate(): void {
   });
 }
 import { gateState } from "../account/gate";
+import { maybeAutoOpenCheckIn } from "./checkin";
 import { accountServiceAvailable } from "../account/api";
 import { openAccount } from "./accountSheet";
 import { SPECIES_BY_ID } from "../config/species";
@@ -1244,8 +1245,26 @@ export function boot(root: HTMLElement) {
     },
   });
 
+  /*
+   * The hired gardener. Two parts:
+   *
+   * 1. Catch-up: `lastSeen` is the moment the save was last written — before
+   *    close, by definition — so replaying buff ticks from then until now pays
+   *    exactly the rounds that ran while the app was shut.
+   * 2. The live tick: one round per AUTO interval while the buff is up, riding
+   *    the existing growth poll rather than adding a timer of its own.
+   */
+  store.autoCareCatchUp(store.state.lastSeen);
+  maybeAutoOpenCheckIn();
+
   // Growth polling.
+  let lastAutoTick = 0;
   setInterval(() => {
+    const now = Date.now();
+    if (now - lastAutoTick >= 12_000) {
+      lastAutoTick = now;
+      store.autoCareTick(now);
+    }
     const res = store.tickAll();
     for (const up of res.stageUps) {
       // Mark first, so the garden repaint the toast triggers below arrives

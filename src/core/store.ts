@@ -40,6 +40,7 @@ import {
 import { getActiveAccountId, saveSlotKey } from "./saveSlot";
 import { computeEcr } from "../genetics/ecrCalculator";
 import { applyCare, gainXp, xpRequired } from "../growth/care";
+import { giftFor, dayInCycle, isMilestone, AUTO_CARE_MS, type CheckInGift } from "./checkin";
 import { MOOD_EFFECTS, type CareActionId } from "../config/careActions";
 import { tickGrowth } from "../growth/stages";
 import { addSkillXp } from "../genetics/skillGenerator";
@@ -316,6 +317,30 @@ export interface PlayerState {
    * at a different day, and the daily escalation would then apply to the wrong stage.
    */
   ascent: AscentState;
+  /** Daily check-in (điểm danh). Repaired to a never-claimed default on old saves. */
+  checkIn: CheckInState;
+  /**
+   * Hired-gardener buff expiry (ms epoch). While `Date.now() < autoCareUntil`
+   * the store's `autoCareTick` tends the garden for free. Written by the daily
+   * check-in and by the rewarded-ad button.
+   */
+  autoCareUntil: number;
+}
+
+/** The attendance book: one row, updated once a day. */
+export interface CheckInState {
+  /** dayKey of the most recent claim, "" when never claimed. */
+  lastDay: string;
+  /** Consecutive claimed days ending today or yesterday. */
+  streak: number;
+  /** Longest streak ever — the number a broken streak still gets to brag about. */
+  best: number;
+  /** Total days ever claimed, for the lifetime counter on the card. */
+  total: number;
+}
+
+export function emptyCheckIn(): CheckInState {
+  return { lastDay: "", streak: 0, best: 0, total: 0 };
 }
 
 /** Everything the ladder needs to remember about a player. */
@@ -368,6 +393,11 @@ const UNIQUE_BREED_ATTEMPTS = 8;
  * plants sharing one genome — which the signature check above already excludes.
  */
 const NAME_SALT_LIMIT = 64;
+
+/** How often the hired gardener walks the rows — one care action per plant per round. */
+const AUTO_CARE_TICK_MS = 12_000;
+/** The furthest back an offline catch-up replays — a shade over the buff itself. */
+const AUTO_CARE_CATCHUP_MS = 16 * 60 * 1000;
 
 export class GameStore {
   state: PlayerState;
@@ -925,6 +955,138 @@ export class GameStore {
     this.tryCareCombo(plant);
     this.commit("care");
     return { ok: true, result: res, plant };
+  }
+
+  // --- the hired gardener (auto-care) ---------------------------------
+
+  /** Actions the gardener may perform — cheap and safe: no gene serum or
+   *  moonlight, because an unattended helper must never gamble with mutation
+   *  debt. Ordered so watering, the thing players ask for most, is tried first. */
+  private static readonly AUTO_ROTATION: readonly CareActionId[] = ["water", "sunlight", "fertilizer", "music", "pruning"];
+
+  /** Milliseconds of gardener time left. */
+  autoCareLeft(now = Date.now()): number {
+    return Math.max(0, (this.state.autoCareUntil ?? 0) - now);
+  }
+
+  /**
+   * Hire the gardener for `ms` more — stacking on top of whatever is left, so
+   * a check-in claimed while an ad-bought buff still runs is never wasted.
+   * Capped at one day so a bug in a caller cannot hand out infinite buff.
+   */
+  grantAutoCare(ms: number, now = Date.now()) {
+    const base = Math.max(now, this.state.autoCareUntil ?? 0);
+    this.state.autoCareUntil = Math.min(base + ms, now + 24 * 60 * 60 * 1000);
+    this.commit("autocare");
+  }
+
+  /**
+   * One round of automated tending at time `now`.
+   *
+   * Each plant gets at most one action per call: the rotation is tried in
+   * order and the first action the engine accepts lands. Cooldowns, the shared
+   * rest, stress and the 24h anti-spam memory all apply exactly as they do to
+   * a human tap — the gardener is free of *resources*, not of horticulture.
+   * Returns how many actions actually ran, so the caller can skip a repaint
+   * and a save on an idle round.
+   */
+  autoCareTick(now = Date.now()): number {
+    if (now >= (this.state.autoCareUntil ?? 0)) return 0;
+    let did = 0;
+    for (const plant of this.state.plants) {
+      if (plant.locks.battle) continue; // mid-fight: no touching the fighter
+      const start = plant.economy.careCycles % GameStore.AUTO_ROTATION.length;
+      for (let i = 0; i < GameStore.AUTO_ROTATION.length; i++) {
+        const action = GameStore.AUTO_ROTATION[(start + i) % GameStore.AUTO_ROTATION.length];
+        // Abundant virtual resources: the gardener brings their own watering
+        // can. applyCare still enforces cooldowns, rest, stress and memory.
+        const res = applyCare(plant, action, now, { items: 1e9, geneCrystal: 1e9, leafCoin: 1e9 });
+        if (res.ok) {
+          plant.powerRating = Math.round(estimatePower(plant));
+          plant.validation = validateGenome(plant);
+          did++;
+          break;
+        }
+      }
+    }
+    if (did) this.commit("autocare");
+    return did;
+  }
+
+  /**
+   * Simulate the rounds that ran while the app was closed.
+   *
+   * The buff does not stop when the tab does — that is the whole point of a
+   * hired gardener. Replay one tick per interval from `from` until now (or
+   * the buff's end), so a player who watched an ad and closed the laptop still
+   * finds their fifteen minutes worth of watering done.
+   */
+  autoCareCatchUp(from: number, now = Date.now()): number {
+    const until = Math.min(now, this.state.autoCareUntil ?? 0);
+    let did = 0;
+    // ~150 rounds covers a 15-minute buff with headroom; the loop also stops
+    // the moment the simulated clock passes the expiry.
+    for (let t = Math.max(from, until - AUTO_CARE_CATCHUP_MS); t <= until; t += AUTO_CARE_TICK_MS) {
+      did += this.autoCareTick(t);
+    }
+    return did;
+  }
+
+  // --- daily check-in (điểm danh) -------------------------------------
+
+  /**
+   * Where the attendance book stands this morning — and what claiming today
+   * would continue. `claimStreak` is the streak *after* today's claim, which
+   * is the number the gift table reads.
+   */
+  checkInStatus(now = Date.now()): { claimed: boolean; streak: number; claimStreak: number; dayInCycle: number; milestone: boolean } {
+    const today = dayKey(now);
+    const ci = this.state.checkIn;
+    const claimed = ci.lastDay === today;
+    const yesterday = dayKey(now - 24 * 60 * 60 * 1000);
+    const claimStreak = claimed ? ci.streak : ci.lastDay === yesterday ? ci.streak + 1 : 1;
+    const cyc = dayInCycle(claimStreak);
+    return { claimed, streak: ci.streak, claimStreak, dayInCycle: cyc, milestone: isMilestone(cyc) };
+  }
+
+  /**
+   * Claim today's gift.
+   *
+   * Pays every line through the same creditCurrency/items/seeds paths a quest
+   * or a purchase uses, so the ledger reads truthfully. The gardener minutes
+   * stack onto any buff still running.
+   */
+  claimCheckIn(now = Date.now()): { ok: boolean; reason?: string; gift?: CheckInGift } {
+    const today = dayKey(now);
+    const status = this.checkInStatus(now);
+    if (status.claimed) return { ok: false, reason: "Hôm nay đã điểm danh rồi" };
+
+    const gift = giftFor(this.state.playerId, today, status.claimStreak);
+    const ci = this.state.checkIn;
+    ci.lastDay = today;
+    ci.streak = status.claimStreak;
+    ci.best = Math.max(ci.best, ci.streak);
+    ci.total += 1;
+
+    for (const line of gift.lines) {
+      if (line.kind === "autocare") {
+        this.grantAutoCare(AUTO_CARE_MS, now);
+      } else if (line.kind === "currency" && line.currency) {
+        this.creditCurrency(line.currency, line.amount, `Điểm danh ngày ${ci.streak}`);
+      } else if (line.kind === "items") {
+        this.state.items += line.amount;
+        this.state.ledger.push({ at: now, delta: line.amount, reason: `Điểm danh: vật tư` });
+      } else if (line.kind === "crystal") {
+        this.state.geneCrystal += line.amount;
+        this.state.ledger.push({ at: now, delta: line.amount, reason: `Điểm danh: GeneCrystal` });
+      } else if (line.kind === "seed" && line.species) {
+        this.state.seeds[line.species] = (this.state.seeds[line.species] ?? 0) + line.amount;
+        addUnique(this.state.discovery.species, line.species);
+        this.state.ledger.push({ at: now, delta: line.amount, reason: `Điểm danh: hạt ${line.species}` });
+      }
+    }
+    this.commit("checkin");
+    return { ok: true, gift };
   }
 
   // --- breeding --------------------------------------------------------
@@ -2048,6 +2210,13 @@ function loadOrCreate(rawOverride?: string): PlayerState {
          */
         parsed.quests = repairQuestSave(parsed.quests, dayKey(Date.now()));
         /*
+         * Check-in + the gardener buff. A save written before điểm danh has no
+         * book at all — a fresh one starts at never-claimed, which is also what
+         * a broken streak looks like, so the repair is a plain default.
+         */
+        parsed.checkIn = { ...emptyCheckIn(), ...(parsed.checkIn as Partial<CheckInState> | undefined) };
+        parsed.autoCareUntil = Number.isFinite(parsed.autoCareUntil) ? parsed.autoCareUntil! : 0;
+        /*
          * Lifetime experience.
          *
          * A save written before this field existed has none, and the score achievements would
@@ -2137,6 +2306,8 @@ function loadOrCreate(rawOverride?: string): PlayerState {
     quests: emptyQuestSave(dayKey(now)),
     lifetimeExp: 0,
     ascent: emptyAscent(dayKey(now)),
+    checkIn: emptyCheckIn(),
+    autoCareUntil: 0,
   };
   // Seed the first plant.
   const first = createSeedPlant("thornroot", playerId, seedToken(now, "first"), now);
