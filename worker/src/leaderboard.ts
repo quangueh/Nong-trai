@@ -126,15 +126,17 @@ export async function writeEntry(env: LbEnv, accountKey: string, entry: LbEntry)
 /**
  * One-time import of the KV `lb:*` index into the table.
  *
- * Runs only while the table is empty and the flag is unset — the first board read
- * after the cutover pays the list + gets the KV design paid every cache miss,
- * then marks `lb_backfilled` so it never happens again. An honestly empty board
- * is marked too: nothing to import is still imported.
+ * Gated on the `lb_backfilled` flag alone — never on the table being empty.
+ * The earlier version also required `lb` to be empty, which broke the moment a
+ * save landed before the first board read: every later read saw a non-empty
+ * table and the legacy players stayed invisible in KV forever. Returns the
+ * imported rows so the caller can merge them (D1 wins any key conflict — it is
+ * the live store). INSERT OR IGNORE means re-runs and overlapping saves are
+ * both harmless.
  */
-async function backfillIfEmpty(env: LbEnv, rows: LbRow[]): Promise<LbRow[]> {
-  if (rows.length > 0) return rows;
+async function backfillOnce(env: LbEnv): Promise<LbRow[]> {
   const flag = await env.D1.prepare("SELECT v FROM meta WHERE k = 'lb_backfilled'").first<string>("v");
-  if (flag) return rows;
+  if (flag) return [];
 
   const legacy = await readAll(env);
   for (const r of legacy) {
@@ -157,7 +159,9 @@ async function readAll(env: LbEnv): Promise<LbRow[]> {
       list.keys.map(async (k) => {
         const raw = await env.DB.get(k.name);
         const e = raw ? safeParse<Partial<LbEntry>>(raw, {}) : {};
-        if (typeof e.name !== "string" || !e.name) return null;
+        // `lb:__cache__` is the old snapshot blob, not a player — importing it
+        // would put a row named "__cache__" on the board.
+        if (k.name === "lb:__cache__" || typeof e.name !== "string" || !e.name) return null;
         return {
           key: k.name,
           name: e.name,
@@ -233,7 +237,17 @@ export async function handleLeaderboard(env: LbEnv, myKey: string): Promise<Resp
     level: r.level,
     at: r.at,
   }));
-  rows = await backfillIfEmpty(env, rows);
+  const legacy = await backfillOnce(env);
+  if (legacy.length) {
+    // KV rows that lost the INSERT race to a fresher D1 entry keep the D1 row —
+    // it was written by a live save, the KV copy is by definition staler. Keys
+    // are un-prefixed here so `me` matches the caller's account key.
+    const seen = new Set(rows.map((r) => r.key));
+    for (const r of legacy) {
+      const key = r.key.replace(/^lb:/, "");
+      if (!seen.has(key)) rows.push({ ...r, key });
+    }
+  }
   /*
    * `me` is resolved before the probe filter: the public boards hide smoke and
    * example.com accounts, but the caller still exists — pretending otherwise

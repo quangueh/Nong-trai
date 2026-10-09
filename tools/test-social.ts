@@ -571,8 +571,9 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   // The legacy KV key name is kept for the one-time backfill.
   check("the legacy lb: key name is still known", lbKey("acct:x") === "lb:acct:x");
 
-  /* Board reads are D1 SELECTs — they never touch KV at all now, so a poll costs
-     zero KV ops, not even the snapshot get the old design needed to stay cheap. */
+  /* Board reads are D1 SELECTs — after the one-time flag-gated backfill they
+     never touch KV at all, so a poll costs zero KV ops, not even the snapshot
+     get the old design needed to stay cheap. */
   let listCalls = 0;
   const countingEnv = {
     DB: {
@@ -587,7 +588,7 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   await handleLeaderboard(countingEnv, "acct:a");
   await handleLeaderboard(countingEnv, "acct:a");
   await handleLeaderboard(countingEnv, "acct:a");
-  check("repeated board reads cost zero KV list calls", listCalls === 0, `${listCalls} lists`);
+  check("repeated board reads cost at most the one-time backfill list", listCalls <= 1, `${listCalls} lists`);
 
   const second = await handleLeaderboard(lbEnv, "acct:never-saved");
   const nobody = (await second.json()) as { me: unknown };
@@ -621,6 +622,46 @@ const code = async (res: Response): Promise<string> => String(((await readOnce(r
   check("test accounts are filtered off the board", pub.power.length === 1 && pub.power[0].name === "quanghao6c", JSON.stringify(pub.power));
   check("and out of the roster count", pub.total === 1, `${pub.total}`);
   check("the real caller still gets a rank", pub.me?.powerRank === 1);
+
+  /*
+   * Regression for the production loss: a save landed before the first board
+   * read, so `lb` was never empty and the row-count-gated backfill never ran —
+   * every legacy KV player stayed invisible. The import is gated on the
+   * `lb_backfilled` flag only, and must run no matter how full `lb` already is.
+   */
+  const migDb = {
+    get: async (k: string) => migMap.get(k) ?? null,
+    put: async (k: string, v: string) => void migMap.set(k, v),
+    delete: async (k: string) => void migMap.delete(k),
+    list: async (o: { prefix: string }) => ({
+      keys: [...migMap.keys()].filter((k) => k.startsWith(o.prefix)).sort().map((name) => ({ name })),
+      list_complete: true,
+    }),
+  };
+  const migMap = new Map<string, string>([
+    ["lb:acct:old@user.com", JSON.stringify({ name: "OldUser", email: "old@user.com", power: 555, level: 6, at: 50 })],
+    ["lb:google:999", JSON.stringify({ name: "GoogleUser", power: 444, level: 3, at: 60 })],
+    ["lb:__cache__", JSON.stringify({ snapshot: "not-a-player" })],
+  ]);
+  const migD1 = fakeD1();
+  const migEnv = { DB: migDb, D1: migD1 };
+  // The post-migration save lands BEFORE the first board read — the scenario
+  // that stranded the legacy players on production.
+  await writeEntry(migEnv, "acct:new@user.com", { name: "NewUser", email: "new@user.com", power: 900, level: 2, at: 70 });
+  const mig = (await (await handleLeaderboard(migEnv, "acct:new@user.com")).json()) as {
+    power: { name: string }[];
+    total: number;
+    me: { powerRank: number } | null;
+  };
+  check("legacy KV players appear even when lb was already populated",
+    mig.power.some((r) => r.name === "OldUser") && mig.power.some((r) => r.name === "GoogleUser"),
+    JSON.stringify(mig.power.map((r) => r.name)));
+  check("the snapshot blob is not imported as a player",
+    !mig.power.some((r) => r.name === "__cache__") && mig.total === 3, `total=${mig.total}`);
+  check("a newer D1 row still outranks an imported one", mig.me?.powerRank === 1);
+  // Imported rows persist — the next read is pure D1, flag set.
+  const mig2 = (await (await handleLeaderboard(migEnv, "acct:old@user.com")).json()) as { me: { powerRank: number; email?: string } | null };
+  check("an imported player sees their own rank", mig2.me?.powerRank === 2, JSON.stringify(mig2.me));
 }
 
 /* --- 10. renaming frees the old name -------------------------------------- */
