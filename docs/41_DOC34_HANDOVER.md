@@ -47,7 +47,7 @@ kèm hàng phát hiện thêm ngoài ma trận. Registry motion/FX: `docs/38`.
 | `npm test` (legacy) | **EXIT 0, 0 FAIL** — 16 result lines đều "0 failed" (≥1200 checks) |
 | `npm run balance:deep` | PASS — ECR 0.410; win-rate/σ OPEN (tuning, cần telemetry) |
 | `test-breeding-wp06b` | 29/29 · `test-room-faults` 19/19 · `test-faults-f08-f10` 14/14 · `test-motion-contracts` 20/20 · `test-audio-duck` 9/9 · `test-input-latency` 6/6 · `test-contrast` 3/3 · `test-battle-sim-matrix` 17/17 · `shot-viewport-sweep` 25/25 · `test-protocols` 40/40 |
-| `test:technical:browser` | đang chạy ở HEAD cuối — số liệu cập nhật khi xong |
+| `test:technical:browser` | **21/23** trong profile; 2 fail đã re-run standalone xanh: `test-audio-stems` 15/15 (beat-grid drift dưới CPU contention — standalone pass), `test-input-latency` 6/6 sau khi tối ưu `checkRule` lazy label + `unlockedSpeciesIds` short-circuit + lazySvg cache key (p95 105.9→83.2ms) |
 | Failed/skipped | `typecheck-tools` fail 1 lần (unused var) → sửa → 44/44; `test-protocols` fail 4 lần do band-map → sửa semantics + test → 40/40 |
 
 ## 5. Evidence
@@ -78,8 +78,8 @@ kèm hàng phát hiện thêm ngoài ma trận. Registry motion/FX: `docs/38`.
 
 - `docs/40_ROLLBACK_RECORD.md` — known-good `33736c7` + Pages `fab06d07`,
   Worker `3f0d6f8a`, SW policy, lệnh rollback.
-- Live: `https://nong-trai-9u0.pages.dev` → deployment `d12d2933`,
-  bundle `index-CC06PkrN.js` (curl-verified), sw/manifest 200.
+- Live: `https://nong-trai-9u0.pages.dev` → deployment `562cc9bd`,
+  bundle `index-BxYIDbsN.js` (curl-verified), sw/manifest 200.
 - Repro: `npm run test:technical`, `npm run test:technical:browser`,
   `npx tsx tools/test-<suite>.ts` (BASE mặc định 5173 dev / 4175 preview).
 

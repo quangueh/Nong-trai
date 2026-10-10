@@ -65,13 +65,15 @@ export function lazySvgArt(bed: HTMLElement, makeSvg: () => string): void {
 }
 
 /* Plant art is deterministic on (dna, growth, size): every garden repaint and
- * every bed that scrolls in asks for the same string. The stage/level/dna key
- * means a plant that grew in place can never return its old portrait, and the
- * `WeakMap` never outlives the plant object itself. */
+ * every bed that scrolls in asks for the same string. dna/visual never mutate
+ * in place — a new plant is a new object — so the identity-bearing key parts
+ * are the ones that can change under a living object: stage, level, and the
+ * `updatedAt` stamp care/stage writes. Stringifying the genome for a key cost
+ * ~2ms per plant per repaint — more than the cache saved. */
 const svgCache = new WeakMap<Plant, { key: string; svg: string }>();
 
 function cachedPlantSvg(plant: Plant, size: number, anim: boolean): string {
-  const key = `${size}|${anim}|${plant.growth.stage}|${plant.growth.level}|${JSON.stringify(plant.dna)}|${JSON.stringify(plant.visual)}`;
+  const key = `${size}|${anim}|${plant.growth.stage}|${plant.growth.level}|${plant.updatedAt}`;
   const hit = svgCache.get(plant);
   if (hit && hit.key === key) return hit.svg;
   const svg = renderPlantSvg(plant, size, { anim });

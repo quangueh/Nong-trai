@@ -221,7 +221,10 @@ export function checkRule(ctx: UnlockContext, rule: UnlockRule): RuleStatus {
     have,
     need,
     met: have >= need,
-    label: `${RULE_LABEL[rule.k](need)} · ${progress(have)}/${progress(need)}`,
+    /* Labels exist for gate UI, but checkRule also runs inside 20k-row
+       catalog sweeps where nobody reads them — build the string lazily so a
+       met-check costs a field read, not a format. */
+    get label() { return `${RULE_LABEL[rule.k](need)} · ${progress(have)}/${progress(need)}`; },
   };
 }
 

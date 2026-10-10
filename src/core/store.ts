@@ -505,7 +505,9 @@ export class GameStore {
   private unlockedSpeciesIds(): Set<SpeciesId> {
     const ctx = this.unlockContext();
     const out = new Set<SpeciesId>();
-    for (const sp of SPECIES) if (checkUnlock(ctx, sp.unlock).met) out.add(sp.id);
+    // 20k species × checkUnlock allocations on every level-up diff; most have
+    // no gate at all, so only spend on the ones that do.
+    for (const sp of SPECIES) if (!sp.unlock || checkUnlock(ctx, sp.unlock).met) out.add(sp.id);
     return out;
   }
 

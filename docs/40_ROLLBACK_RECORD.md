@@ -9,9 +9,9 @@ thuần code.
 
 | Thành phần | Giá trị |
 |---|---|
-| HEAD | `9acdb9b` (fix(breeding): free-run organic + protocol honesty check) |
-| Pages production | `https://nong-trai-9u0.pages.dev` → deployment `d12d2933` |
-| Bundle live | `index-CC06PkrN.js` (đã curl verify trên cả deployment URL lẫn domain) |
+| HEAD | `9acdb9b` + perf follow-up (unlocks/lazySvg) — commit cuối trong git log |
+| Pages production | `https://nong-trai-9u0.pages.dev` → deployment `562cc9bd` |
+| Bundle live | `index-BxYIDbsN.js` (đã curl verify trên cả deployment URL lẫn domain) |
 | Worker version | `3f0d6f8a-2217-4ef2-bce2-61d9ae0b0f45` (100%) — `worker/src/` không đổi trong pass này |
 | sw.js / manifest | 200 / 200 |
 
