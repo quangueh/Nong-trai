@@ -7,7 +7,7 @@
  * fight that still resolves under reduced motion and no audio.
  */
 import { chromium, type Browser, type Page } from "playwright-core";
-import { applyFixture } from "./fixtures";
+import { applyFixture, type FixtureId } from "./fixtures";
 
 let passed = 0;
 let failed = 0;
@@ -16,7 +16,7 @@ function check(name: string, cond: boolean, detail = ""): void {
   else { failed++; console.log(`FAIL ${name}${detail ? ` — ${detail}` : ""}`); }
 }
 
-async function boot(browser: Browser, fixture = "F03", width = 390, height = 844): Promise<Page> {
+async function boot(browser: Browser, fixture: FixtureId = "F03", width = 390, height = 844): Promise<Page> {
   const page = await (await browser.newContext({ viewport: { width, height } })).newPage();
   await page.goto("http://localhost:5173");
   await applyFixture(page, fixture);
@@ -51,24 +51,22 @@ async function boot(browser: Browser, fixture = "F03", width = 390, height = 844
 
 /** Arena AI fight through the real UI — the same flow test-audio drives. */
 async function startArenaFight(page: Page): Promise<void> {
-  await page.evaluate(`(() => (window).__game.navigate("arena"))()`);
+  await page.evaluate<any>(`(() => (window).__game.navigate("arena"))()`);
   await page.waitForTimeout(900);
-  await page.evaluate(`(() => {
+  await page.evaluate<any>(`(() => {
     const b = [...document.querySelectorAll("button")].find(x => /Đấu với AI/.test(x.textContent || ""));
     if (b) b.click();
   })()`);
   await page.waitForTimeout(900);
-  await page.evaluate(`(() => { const c = document.querySelector(".sheet .pickrow"); if (c) c.click(); })()`);
+  await page.evaluate<any>(`(() => { const c = document.querySelector(".sheet .pickrow"); if (c) c.click(); })()`);
   await page.waitForTimeout(900);
-  await page.evaluate(`(() => {
+  await page.evaluate<any>(`(() => {
     const b = [...document.querySelectorAll("button")].find(x => /Bắt đầu/.test(x.textContent || ""));
     if (b) b.click();
   })()`);
   await page.waitForSelector(".battlefield", { timeout: 20000 }).catch(() => {});
 }
 
-const rectsOverlap = (a: { x: number; y: number; width: number; height: number }, b: typeof a): boolean =>
-  a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 
 let browser: Browser | undefined;
 try {
@@ -79,7 +77,7 @@ try {
     const page = await boot(browser);
     await startArenaFight(page);
     await page.waitForTimeout(2500);
-    const overlaps = await page.evaluate(`(() => {
+    const overlaps = await page.evaluate<any>(`(() => {
       const ov = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
       const r = (q) => [...document.querySelectorAll(q)].map(e => e.getBoundingClientRect().toJSON());
       const batts = r(".battler");
@@ -106,7 +104,7 @@ try {
     const page = await boot(browser);
     await startArenaFight(page);
     await page.waitForTimeout(600);
-    const identity = await page.evaluate(`(async () => {
+    const identity = await page.evaluate<any>(`(async () => {
       const btns = [...document.querySelectorAll(".skillbtn")];
       const before = btns.map(b => ({ node: b, name: b.querySelector(".nm")?.textContent }));
       /* ~80 ticks at the 100ms engine cadence — longer than the skill bar's
@@ -147,7 +145,7 @@ try {
     await startArenaFight(page);
     // Let it run to its natural end (maxSeconds 90 → wait for result overlay).
     await page.waitForSelector(".result-banner", { timeout: 100000 }).catch(() => {});
-    const after = await page.evaluate(`(() => {
+    const after = await page.evaluate<any>(`(() => {
       const ledger = (window).__game.store.state.ledger.filter(l => /Thắng trận|Hòa|Tham gia trận/.test(l.reason));
       return { battlefields: document.querySelectorAll(".battlefield").length,
                resultish: !!document.querySelector(".result-banner"),
@@ -158,7 +156,7 @@ try {
     check("fight resolved into a result surface", after.resultish === true, JSON.stringify(after));
     check("reward written to the ledger, not duplicated", after.rewardLines === 1, `lines=${after.rewardLines}`);
     /* Close/next through the real controls must not settle a second time. */
-    const again = await page.evaluate(`(() => {
+    const again = await page.evaluate<any>(`(() => {
       const before = (window).__game.store.state.ledger.length;
       const btns = [...document.querySelectorAll(".result-banner ~ * button, .result-card button, button")];
       const replay = btns.find(b => /Đấu tiếp|Lại|Tiếp|Quay|Đóng/.test(b.textContent || ""));
@@ -190,7 +188,7 @@ try {
     });
     await startArenaFight(page);
     await page.waitForSelector(".result-banner", { timeout: 100000 }).catch(() => {});
-    const rm = await page.evaluate(`(() => ({
+    const rm = await page.evaluate<any>(`(() => ({
       text: (document.querySelector(".result-banner")?.textContent ?? "").slice(0, 120),
       field: !!document.querySelector(".battlefield"),
       won: (window).__game.store.state.plants.some(p => p.battleRecord.wins > 0 || p.battleRecord.losses > 0),

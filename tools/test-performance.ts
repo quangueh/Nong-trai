@@ -12,6 +12,11 @@
 import { chromium, type Browser, type Page } from "playwright-core";
 import { applyFixture } from "./fixtures";
 
+/* BASE_URL: spec §17.1 — default 5173 stays backward-compatible, but the
+   performance numbers must come from the production build (vite preview),
+   not the Vite dev transform. TEST_BASE_URL=http://localhost:4173 overrides. */
+const BASE = process.env.TEST_BASE_URL ?? "http://localhost:5173";
+
 let passed = 0;
 let failed = 0;
 function check(name: string, cond: boolean, detail = ""): void {
@@ -27,7 +32,7 @@ const pct = (a: number[], q: number): number => {
 
 async function boot(browser: Browser): Promise<Page> {
   const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
-  await page.goto("http://localhost:5173");
+  await page.goto("" + BASE + "");
   await applyFixture(page, "F03");
   await page.reload();
   await page.waitForFunction(() => Boolean((window as any).__game));
@@ -44,7 +49,7 @@ async function boot(browser: Browser): Promise<Page> {
 
 /** Collect rAF deltas for `ms` inside the page. */
 function sampleFrames(page: Page, ms: number): Promise<number[]> {
-  return page.evaluate(`(async () => {
+  return page.evaluate<any>(`(async () => {
     const out = [];
     let last = performance.now();
     const t0 = last;
@@ -69,11 +74,11 @@ try {
   {
     const page = await boot(browser);
     // Helper buff + music gesture (a click is what starts AudioContext for real).
-    await page.evaluate(`(() => {
+    await page.evaluate<any>(`(() => {
       (window).__game.store.state.autoCareUntil = Date.now() + 15 * 60000;
       document.body.click();
     })()`);
-    await page.evaluate(`(() => (window).__game.navigate("garden"))()`);
+    await page.evaluate<any>(`(() => (window).__game.navigate("garden"))()`);
     await page.waitForTimeout(1500);
 
     const runs: number[][] = [];
@@ -93,7 +98,7 @@ try {
     check("garden p95 frame delta ≤ 20ms", p95 <= 20, `p95=${p95.toFixed(1)}ms`);
     check("garden p50 frame delta ≤ 16.7ms", p50 <= 16.7, `p50=${p50.toFixed(1)}ms`);
 
-    const dom = await page.evaluate(`(() => document.querySelectorAll("*").length)()`);
+    const dom = await page.evaluate<any>(`(() => document.querySelectorAll("*").length)()`);
     check("garden DOM ≤ 5000 nodes (F03 ceiling)", (dom as number) <= 5000, `nodes=${dom}`);
     await page.close();
   }
@@ -101,20 +106,20 @@ try {
   console.log("\nREL-03b — battle scene frame sample (report, spec deferred the cap):");
   {
     const page = await boot(browser);
-    await page.evaluate(`(() => {
+    await page.evaluate<any>(`(() => {
       for (const p of (window).__game.store.state.plants) {
         p.growth.stage = "mature"; p.growth.stageReadyAt = Date.now();
         p.stats.attack = 30; p.stats.defense = 8000; p.stats.hp = 8000; p.stats.maxHp = 8000;
         p.stats.speed = 60; p.powerRating = 400;
       }
     })()`);
-    await page.evaluate(`(() => (window).__game.navigate("arena"))()`);
+    await page.evaluate<any>(`(() => (window).__game.navigate("arena"))()`);
     await page.waitForTimeout(900);
-    await page.evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Đấu với AI/.test(x.textContent||"")); if(b)b.click(); })()`);
+    await page.evaluate<any>(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Đấu với AI/.test(x.textContent||"")); if(b)b.click(); })()`);
     await page.waitForTimeout(900);
-    await page.evaluate(`(() => { const c=document.querySelector(".sheet .pickrow"); if(c)c.click(); })()`);
+    await page.evaluate<any>(`(() => { const c=document.querySelector(".sheet .pickrow"); if(c)c.click(); })()`);
     await page.waitForTimeout(900);
-    await page.evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Bắt đầu/.test(x.textContent||"")); if(b)b.click(); })()`);
+    await page.evaluate<any>(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Bắt đầu/.test(x.textContent||"")); if(b)b.click(); })()`);
     await page.waitForSelector(".battlefield", { timeout: 20000 }).catch(() => {});
     const frames = await sampleFrames(page, 20_000);
     console.log(`  battle: n=${frames.length} p50=${pct(frames, 0.5).toFixed(1)}ms p95=${pct(frames, 0.95).toFixed(1)}ms p99=${pct(frames, 0.99).toFixed(1)}ms worst=${Math.max(...frames).toFixed(1)}ms`);
@@ -125,13 +130,13 @@ try {
   console.log("\nREL-03c — heap and listener surface after 20 sheet cycles + 10 fights:");
   {
     const page = await boot(browser);
-    const heap = () => page.evaluate(`(() => performance.memory ? performance.memory.usedJSHeapSize : -1)()`);
+    const heap = () => page.evaluate<any>(`(() => performance.memory ? performance.memory.usedJSHeapSize : -1)()`);
     const baseline = (await heap()) as number;
     // 20 settings-sheet open/close cycles through the real topbar button.
     for (let i = 0; i < 20; i++) {
-      await page.evaluate(`(() => { const b = document.querySelector('.iconbtn[aria-label="Cài đặt"]'); if (b) b.click(); })()`);
+      await page.evaluate<any>(`(() => { const b = document.querySelector('.iconbtn[aria-label="Cài đặt"]'); if (b) b.click(); })()`);
       await page.waitForTimeout(60);
-      await page.evaluate(`(() => { const b = [...document.querySelectorAll(".sheet button")].find(x => /✕/.test(x.textContent || "")); if (b) b.click(); })()`);
+      await page.evaluate<any>(`(() => { const b = [...document.querySelectorAll(".sheet button")].find(x => /✕/.test(x.textContent || "")); if (b) b.click(); })()`);
       await page.waitForTimeout(60);
     }
     const afterSheets = (await heap()) as number;
@@ -140,7 +145,7 @@ try {
        onFinish). A one-hit win resolves each in seconds, so every view's full
        mount→fight→finish→result lifecycle runs ten times; whatever leaks per
        fight leaks ten times over. Stats are shaped for the kill, not drama. */
-    await page.evaluate(`(() => {
+    await page.evaluate<any>(`(() => {
       for (const p of (window).__game.store.state.plants) {
         p.growth.stage = "mature"; p.growth.stageReadyAt = Date.now();
         p.stats.attack = 30000; p.stats.defense = 30000; p.stats.hp = 6000; p.stats.maxHp = 6000;
@@ -148,22 +153,22 @@ try {
       }
     })()`);
     for (let i = 0; i < 10; i++) {
-      await page.evaluate(`(() => (window).__game.navigate("arena"))()`);
+      await page.evaluate<any>(`(() => (window).__game.navigate("arena"))()`);
       await page.waitForTimeout(350);
-      await page.evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Đấu với AI/.test(x.textContent||"")); if(b)b.click(); })()`);
+      await page.evaluate<any>(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Đấu với AI/.test(x.textContent||"")); if(b)b.click(); })()`);
       await page.waitForTimeout(350);
-      await page.evaluate(`(() => { const c=document.querySelector(".sheet .pickrow"); if(c)c.click(); })()`);
+      await page.evaluate<any>(`(() => { const c=document.querySelector(".sheet .pickrow"); if(c)c.click(); })()`);
       await page.waitForTimeout(350);
-      await page.evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Bắt đầu/.test(x.textContent||"")); if(b)b.click(); })()`);
+      await page.evaluate<any>(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Bắt đầu/.test(x.textContent||"")); if(b)b.click(); })()`);
       // The fight must actually finish — a mounted-but-lost view is the leak case.
       await page.waitForSelector(".result-banner", { timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(150);
     }
     // Back to the garden: any battlefield still mounted now is a real leftover.
-    await page.evaluate(`(() => (window).__game.navigate("garden"))()`);
+    await page.evaluate<any>(`(() => (window).__game.navigate("garden"))()`);
     await page.waitForTimeout(400);
     // GC pressure: allocate ~128MB of short-lived junk to invite a collection.
-    await page.evaluate(`(() => { let a=[]; for(let i=0;i<8;i++){a.push(new Array(2*1024*1024).fill(i));} a=null; })()`);
+    await page.evaluate<any>(`(() => { let a=[]; for(let i=0;i<8;i++){a.push(new Array(2*1024*1024).fill(i));} a=null; })()`);
     await page.waitForTimeout(2500);
     const afterFights = (await heap()) as number;
     const growth = baseline > 0 && afterFights > 0 ? (afterFights - baseline) / baseline : 0;
@@ -172,7 +177,7 @@ try {
        contract is that it is bounded and not proportional to cycle count.
        20 cycles + 10 fights must not double the heap. */
     check("heap after 20 cycles + 10 fights stays under 2× baseline", growth < 1.0, `growth=${(growth * 100).toFixed(0)}%`);
-    const leftovers = await page.evaluate(`(() => ({
+    const leftovers = await page.evaluate<any>(`(() => ({
       battlefields: document.querySelectorAll(".battlefield").length,
       detail: [...document.querySelectorAll(".battlefield")].map(e => e.isConnected),
     }))()`);

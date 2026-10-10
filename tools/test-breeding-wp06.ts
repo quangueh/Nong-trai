@@ -126,7 +126,7 @@ console.log("\nBRD-01 — a second breed on the same pair cannot double-spend:")
 console.log("\nBRD-01/04 — every reject path fails clean, nothing half-spent:");
 {
   const s = fresh();
-  const { aId, bId } = twoParents(s);
+  const { aId } = twoParents(s);
   const cases: [string, () => { ok: boolean; reason?: string }][] = [
     ["invalid ids", () => s.breed("ghost-a", "ghost-b")],
     ["same parent", () => s.breed(aId, aId)],

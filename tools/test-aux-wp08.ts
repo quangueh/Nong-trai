@@ -70,8 +70,10 @@ function maturePlant(store: GameStore, species = "thornroot", seed = "aux-1"): R
 }
 
 /** The query as the screen issues it — progress and purses from the save. */
-function shelf(s: GameStore, q: CatalogueQuery = {}) {
+function shelf(s: GameStore, q: Partial<CatalogueQuery> = {}) {
   return queryCatalogue({
+    playerId: s.state.playerId,
+    breederLevel: s.state.breederLevel,
     progress: s.unlockContext(),
     balances: { leafCoin: s.state.leafCoin, nectar: s.state.nectar, pollen: s.state.pollen, ember: s.state.ember },
     ...q,
@@ -95,11 +97,11 @@ console.log("\nAUX-01 — owned and discovered are separate questions:");
 test("selling the last owned plant keeps the species discovered", () => {
   const s = fresh();
   const p = maturePlant(s);
-  s.commit("setup");
+  s.save();
   const sp = p.baseLineage[0];
   assert.ok(s.state.discovery.species.includes(sp), "species must be discovered while owned");
   const r = s.sell(p.plantId);
-  assert.ok(r.ok, r.reason);
+  assert.ok(r.ok, r.reason ?? "sell failed");
   assert.equal(s.state.plants.length, 0);
   assert.ok(
     s.state.discovery.species.includes(sp),

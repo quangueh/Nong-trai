@@ -9,7 +9,7 @@
  * prefs persistence in test-prefs.ts.
  */
 import { chromium, type Browser, type Page } from "playwright-core";
-import { applyFixture } from "./fixtures";
+import { applyFixture, type FixtureId } from "./fixtures";
 
 let passed = 0;
 let failed = 0;
@@ -18,7 +18,7 @@ function check(name: string, cond: boolean, detail = ""): void {
   else { failed++; console.log(`FAIL ${name}${detail ? ` — ${detail}` : ""}`); }
 }
 
-async function boot(browser: Browser, fixture = "F03"): Promise<Page> {
+async function boot(browser: Browser, fixture: FixtureId = "F03"): Promise<Page> {
   const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
   await page.goto("http://localhost:5173");
   await applyFixture(page, fixture);
@@ -44,7 +44,7 @@ try {
     const page = await boot(browser);
     // Mark a species discovered that no plant carries — the "Đã mở · hiện không
     // còn" dex-gone card is the UI half of the domain assertion.
-    await page.evaluate(`(() => {
+    await page.evaluate<any>(`(() => {
       const s = (window).__game.store;
       const owned = new Set(s.state.plants.flatMap(p => p.baseLineage));
       const gone = s.state.discovery.species.find(sp => !owned.has(sp))
@@ -55,16 +55,16 @@ try {
       for (const p of s.state.plants) p.baseLineage = p.baseLineage.filter(x => x !== species);
       s.commit("aux-setup");
     })()`);
-    await page.evaluate(`(() => (window).__game.navigate("collection"))()`);
+    await page.evaluate<any>(`(() => (window).__game.navigate("collection"))()`);
     await page.waitForTimeout(1000);
     /* The species index sits behind its own tab — "Cây của tôi" shows first,
        which is itself the AUX-01 separation the criterion asks for. */
-    await page.evaluate(`(() => {
+    await page.evaluate<any>(`(() => {
       const tab = [...document.querySelectorAll(".seg button")].find(b => /Bộ sưu tập/.test(b.textContent || ""));
       if (tab) tab.click();
     })()`);
     await page.waitForTimeout(1200);
-    const dex = await page.evaluate(`(() => {
+    const dex = await page.evaluate<any>(`(() => {
       const gone = document.querySelector(".dex-gone");
       return {
         gone: !!gone,
@@ -79,9 +79,9 @@ try {
   console.log("\nAUX-02 — the shelf paginates; the registry is never DOM'd whole:");
   {
     const page = await boot(browser);
-    await page.evaluate(`(() => (window).__game.navigate("lab"))()`);
+    await page.evaluate<any>(`(() => (window).__game.navigate("lab"))()`);
     await page.waitForTimeout(1200);
-    const shelf = await page.evaluate(`(() => {
+    const shelf = await page.evaluate<any>(`(() => {
       const grid = document.querySelector(".seed-grid");
       const cards = grid ? grid.querySelectorAll(":scope > .card").length : -1;
       const pager = [...document.querySelectorAll("button")].some(b => /›|»/.test(b.textContent || ""))
@@ -96,7 +96,7 @@ try {
     // Search narrows the shelf through the real input event.
     await page.fill('input[placeholder*="Tìm"]', "tùng");
     await page.waitForTimeout(900);
-    const after = await page.evaluate(`(() => {
+    const after = await page.evaluate<any>(`(() => {
       const cards = [...document.querySelectorAll(".seed-grid > .card")];
       return { count: cards.length, names: cards.slice(0, 5).map(c => c.textContent?.slice(0, 60)) };
     })()`);
@@ -109,9 +109,9 @@ try {
     const page = await boot(browser);
     /* The quest card lands here as `navigate("lab", { seed })` — drive the
        same route param the card does. */
-    await page.evaluate(`(() => (window).__game.navigate("lab", { seed: "thornroot" }))()`);
+    await page.evaluate<any>(`(() => (window).__game.navigate("lab", { seed: "thornroot" }))()`);
     await page.waitForTimeout(1200);
-    const pinned = await page.evaluate(`(() => {
+    const pinned = await page.evaluate<any>(`(() => {
       const chip = [...document.querySelectorAll("button")].find(b => /🎯/.test(b.textContent || ""));
       const cards = document.querySelectorAll(".seed-grid > .card").length;
       return { chip: chip?.textContent ?? null, cards };
@@ -119,12 +119,12 @@ try {
     check("the pin chip names the species", pinned.chip !== null && /🎯/.test(pinned.chip), JSON.stringify(pinned));
     check("the shelf is narrowed to the pinned card", pinned.cards === 1, `cards=${pinned.cards}`);
     // Dismiss through the chip's own ✕ → full shelf returns.
-    await page.evaluate(`(() => {
+    await page.evaluate<any>(`(() => {
       const chip = [...document.querySelectorAll("button")].find(b => /🎯/.test(b.textContent || ""));
       if (chip) chip.click();
     })()`);
     await page.waitForTimeout(800);
-    const restored = await page.evaluate(`(() => ({
+    const restored = await page.evaluate<any>(`(() => ({
       chip: [...document.querySelectorAll("button")].some(b => /🎯/.test(b.textContent || "")),
       cards: document.querySelectorAll(".seed-grid > .card").length,
     }))()`);
@@ -135,10 +135,10 @@ try {
   console.log("\nAUX-06 — offline/error/empty are states, not spinners:");
   {
     const page = await boot(browser);
-    await page.evaluate(`(() => (window).__game.navigate("leaderboard"))()`);
+    await page.evaluate<any>(`(() => (window).__game.navigate("leaderboard"))()`);
     // Dev has no account service → 'unavailable' is the honest terminal state.
     await page.waitForTimeout(1800);
-    const lb = await page.evaluate(`(() => {
+    const lb = await page.evaluate<any>(`(() => {
       const panel = document.querySelector(".lb-panel");
       const text = panel?.textContent ?? "";
       return {
@@ -151,9 +151,9 @@ try {
     check("the unavailable board still shows the player's own numbers", lb.rows > 0, `rows=${lb.rows}`);
 
     // Friends panel on the same screen: signed-out shows the reason, not an empty list.
-    await page.evaluate(`(() => (window).__game.navigate("arena"))()`);
+    await page.evaluate<any>(`(() => (window).__game.navigate("arena"))()`);
     await page.waitForTimeout(1200);
-    const fr = await page.evaluate(`(() => {
+    const fr = await page.evaluate<any>(`(() => {
       const host = document.querySelector(".friends");
       const text = host?.textContent ?? "";
       return { host: !!host, reason: /đăng nhập|tài khoản|Bạn bè/.test(text), emptyLie: /Chưa có bạn nào/.test(text) && !/đăng nhập|tài khoản/i.test(text) };
@@ -167,13 +167,13 @@ try {
     const page = await boot(browser);
     // Open the real settings sheet from the topbar.
     await page.click('button[aria-label="Cài đặt"]').catch(async () => {
-      await page.evaluate(`(() => { const b = document.querySelector('.iconbtn[title="Cài đặt"]'); if (b) b.click(); })()`);
+      await page.evaluate<any>(`(() => { const b = document.querySelector('.iconbtn[title="Cài đặt"]'); if (b) b.click(); })()`);
     });
     await page.waitForTimeout(800);
-    const sheetOpen = await page.evaluate(`(() => /Cài đặt/.test(document.querySelector(".sheet")?.textContent ?? ""))()`);
+    const sheetOpen = await page.evaluate<any>(`(() => /Cài đặt/.test(document.querySelector(".sheet")?.textContent ?? ""))()`);
     check("settings sheet opens from the topbar", sheetOpen === true);
 
-    const motion = await page.evaluate(`(() => {
+    const motion = await page.evaluate<any>(`(() => {
       const row = [...document.querySelectorAll(".account-rowbtn")].find(b => /Chuyển động/.test(b.textContent || ""));
       if (!row) return { found: false };
       const before = { attr: document.documentElement.dataset.motion, key: localStorage.getItem("nongtrai.motion") };
@@ -183,7 +183,7 @@ try {
     })()`);
     check("motion setting publishes data-motion and persists", motion.found && motion.changed && motion.persisted, JSON.stringify(motion));
 
-    const glass = await page.evaluate(`(() => {
+    const glass = await page.evaluate<any>(`(() => {
       const row = [...document.querySelectorAll(".account-rowbtn")].find(b => /trong suốt/.test(b.textContent || ""));
       if (!row) return { found: false };
       /* Three states — system→glass resolves to the same "not solid" value, so
@@ -196,7 +196,7 @@ try {
     })()`);
     check("transparency setting publishes data-solid", glass.found && glass.changed && glass.key !== null, JSON.stringify(glass));
 
-    const quality = await page.evaluate(`(() => {
+    const quality = await page.evaluate<any>(`(() => {
       const row = [...document.querySelectorAll(".account-rowbtn")].find(b => /Chất lượng/.test(b.textContent || ""));
       if (!row) return { found: false };
       const before = document.documentElement.dataset.quality;
@@ -205,7 +205,7 @@ try {
     })()`);
     check("quality setting publishes data-quality", quality.found && quality.changed, JSON.stringify(quality));
 
-    const vol = await page.evaluate(`(() => {
+    const vol = await page.evaluate<any>(`(() => {
       const slider = document.querySelector('input[aria-label="Âm lượng hiệu ứng"]');
       if (!slider) return { found: false };
       slider.value = "30";

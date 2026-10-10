@@ -1143,7 +1143,12 @@ export function boot(root: HTMLElement) {
 
   // Dev-only handle for debugging and automated UI smoke tests. Guarded because
   // `import.meta.env` only exists under Vite, not in a plain Node/tsx run.
-  const isDev = typeof import.meta !== "undefined" && (import.meta as { env?: { DEV?: boolean } }).env?.DEV;
+  /* Dev builds and `--mode test` preview builds both expose the seam — the
+     test build is what performance suites measure (spec: numbers come from a
+     production transform, not the dev transform); real production builds keep
+     it stripped. */
+  const env = (import.meta as { env?: { DEV?: boolean; MODE?: string } }).env;
+  const isDev = typeof import.meta !== "undefined" && (env?.DEV === true || env?.MODE === "test");
   if (isDev && typeof window !== "undefined") {
     (window as unknown as Record<string, unknown>).__game = {
       store,

@@ -54,7 +54,7 @@ try {
   // Solid mode journey: every core screen still renders its content.
   {
     const page = await boot(browser);
-    await page.evaluate(`(() => {
+    await page.evaluate<any>(`(() => {
       const s = (window).__game.store;
       const btn = [...document.querySelectorAll("button")].find(b => /Cài đặt/.test(b.getAttribute("aria-label") || b.title || ""));
       localStorage.setItem("nongtrai.glass", "solid");
@@ -64,14 +64,14 @@ try {
     let allOk = true;
     const seen: string[] = [];
     for (const sc of screens) {
-      await page.evaluate(`(() => (window).__game.navigate(${JSON.stringify("X")} ))()`.replace("X", sc));
+      await page.evaluate<any>(`(() => (window).__game.navigate(${JSON.stringify("X")} ))()`.replace("X", sc));
       await page.waitForTimeout(700);
-      const n = await page.evaluate(`(() => document.querySelectorAll(".card, .plot, .seed-grid > *, .plantcard").length)()`);
+      const n = await page.evaluate<any>(`(() => document.querySelectorAll(".card, .plot, .seed-grid > *, .plantcard").length)()`);
       seen.push(`${sc}:${n}`);
       if (!(n > 0)) allOk = false;
     }
     check("solid mode renders content on garden/shop/collection/arena", allOk, seen.join(" "));
-    const solid = await page.evaluate(`(() => document.documentElement.dataset.solid)()`);
+    const solid = await page.evaluate<any>(`(() => document.documentElement.dataset.solid)()`);
     check("data-solid stayed applied through the journey", solid === "1", String(solid));
     await page.close();
   }
@@ -86,7 +86,7 @@ try {
     await page.waitForFunction(() => Boolean((window as any).__game));
     const skip = page.locator(".gate-skip");
     if (await skip.count()) await skip.click();
-    const rm = await page.evaluate(`(() => ({
+    const rm = await page.evaluate<any>(`(() => ({
       attr: document.documentElement.dataset.motion,
       plots: document.querySelectorAll(".plot").length,
       names: document.querySelectorAll(".pname").length,
@@ -99,33 +99,33 @@ try {
   // Keyboard: Space pauses a live fight — the same keydown a player uses.
   {
     const page = await boot(browser);
-    await page.evaluate(`(() => {
+    await page.evaluate<any>(`(() => {
       for (const p of (window).__game.store.state.plants) {
         p.growth.stage = "mature"; p.growth.stageReadyAt = Date.now();
         p.stats.attack = 30; p.stats.defense = 8000; p.stats.hp = 8000; p.stats.maxHp = 8000;
         p.stats.speed = 60; p.powerRating = 400;
       }
     })()`);
-    await page.evaluate(`(() => (window).__game.navigate("arena"))()`);
+    await page.evaluate<any>(`(() => (window).__game.navigate("arena"))()`);
     await page.waitForTimeout(900);
-    await page.evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Đấu với AI/.test(x.textContent||"")); if(b)b.click(); })()`);
+    await page.evaluate<any>(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Đấu với AI/.test(x.textContent||"")); if(b)b.click(); })()`);
     await page.waitForTimeout(900);
-    await page.evaluate(`(() => { const c=document.querySelector(".sheet .pickrow"); if(c)c.click(); })()`);
+    await page.evaluate<any>(`(() => { const c=document.querySelector(".sheet .pickrow"); if(c)c.click(); })()`);
     await page.waitForTimeout(900);
-    await page.evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Bắt đầu/.test(x.textContent||"")); if(b)b.click(); })()`);
+    await page.evaluate<any>(`(() => { const b=[...document.querySelectorAll("button")].find(x=>/Bắt đầu/.test(x.textContent||"")); if(b)b.click(); })()`);
     await page.waitForSelector(".battlefield", { timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(1200);
     // Space → paused veil; Space again → resume.
     await page.keyboard.press("Space");
     await page.waitForTimeout(500);
-    const paused = await page.evaluate(`(() => ({
+    const paused = await page.evaluate<any>(`(() => ({
       veil: !!document.querySelector(".pauseveil, [class*=pause]"),
       log: document.querySelector(".battlelog")?.textContent ?? "",
     }))()`);
     check("Space pauses a live fight", paused.veil === true || /tạm dừng|dừng/i.test(paused.log), JSON.stringify(paused));
     await page.keyboard.press("Space");
     await page.waitForTimeout(500);
-    const resumed = await page.evaluate(`(() => !document.querySelector(".pauseveil"))()`);
+    const resumed = await page.evaluate<any>(`(() => !document.querySelector(".pauseveil"))()`);
     check("and Space again resumes it", resumed === true);
     await page.close();
   }

@@ -21,7 +21,9 @@ const jobs: Job[] = readdirSync(join(root, "tools"))
   .filter(name => /^test-.*\.ts$/.test(name)).sort()
   .map(name => ({ name: name.slice(0, -3), script: join(root, "tools", name), browser: /from\s+["']playwright-core["']/.test(readFileSync(join(root, "tools", name), "utf8")) }))
   .filter(job => profile === "all" || (profile === "browser" ? job.browser : !job.browser));
-if (profile !== "browser") for (const seed of [1337, 42, 20261010]) {
+/* Spec (docs/34 §17.2): fuzz ≥5 seeds ×2000 ops on domain paths that changed.
+   The seeds are fixed so a failure reproduces by rerunning with the same arg. */
+if (profile !== "browser") for (const seed of [1337, 42, 20261010, 777, 999999]) {
   jobs.push({ name: `fuzz-store-${seed}`, script: join(root, "tools", "fuzz-store.ts"), args: [String(seed), "2000"] });
 }
 if (profile !== "browser") {

@@ -46,7 +46,7 @@ function fighter(s: GameStore, power = 900): string {
   p.growth.level = 30;
   p.locks.manual = false;
   p.powerRating = power;
-  p.stats.hp = 4000; p.stats.maxHp = 4000;
+  p.stats.hp = 4000;
   p.stats.attack = 400; p.stats.defense = 300;
   p.stats.speed = 320; p.stats.skillPower = 250;
   return p.plantId;
@@ -118,7 +118,7 @@ console.log("\nBAT-02/05 — replayAs freezes pre-settle stats; payout can't rew
 console.log("\nBAT-02 — a loss still settles once, then allows the next attempt:");
 {
   const s = fresh();
-  const id = fighter(s, 40); // deliberately under the stage floor? floor is ~38 for stage 1 — use high stage
+  fighter(s, 40); // deliberately under the stage floor? floor is ~38 for stage 1 — use high stage
   const strong = fighter(s, 900);
   /* Push the ladder with the strong plant to stage 2, then fight stage 3 with
      something that cannot win — attempts must count, not clear. */
@@ -128,7 +128,7 @@ console.log("\nBAT-02 — a loss still settles once, then allows the next attemp
      a weak entrant needs weak stats too, or it wins the fight it was meant to
      lose and the attempts counter never gets exercised. */
   const weak = s.get(weakId)!;
-  weak.stats.hp = 60; weak.stats.maxHp = 60;
+  weak.stats.hp = 60;
   weak.stats.attack = 8; weak.stats.defense = 5;
   weak.stats.speed = 8; weak.stats.skillPower = 5;
   const r = s.runAscentStage(weakId, 2);
