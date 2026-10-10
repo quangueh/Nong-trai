@@ -49,7 +49,7 @@ const SEED = `(async () => {
 })()`;
 
 async function checkLayout(page: Page, where: string): Promise<void> {
-  const res = await page.evaluate(`(() => {
+  const res = await page.evaluate<{ overflow: boolean; navBad: boolean; poke: number; sw: number; cw: number }>(`(() => {
     const de = document.documentElement;
     const overflow = de.scrollWidth > de.clientWidth + 1;
     /* A nav that has left the viewport is the classic "it looked fine in the
@@ -145,7 +145,7 @@ for (const w of [320, 768, 1280, 1920]) {
     await checkLayout(page, `pref-${name}`);
     /* Verify the pref actually did something measurable: solid kills
        backdrop-filter, reduce kills running animations. */
-    const check = await page.evaluate(`(() => {
+    const check = await page.evaluate<{ solid: boolean; blur: string; animating: number }>(`(() => {
       const solid = document.documentElement.dataset.solid === "1";
       const blur = getComputedStyle(document.querySelector(".card") || document.body).backdropFilter;
       const animating = document.getAnimations().filter((a) => a.playState === "running").length;

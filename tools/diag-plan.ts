@@ -1,3 +1,5 @@
+export {};
+
 const mem = new Map<string, string>();
 (globalThis as any).localStorage = {
   getItem: (k: string) => mem.get(k) ?? null,
@@ -9,7 +11,7 @@ const mem = new Map<string, string>();
 } as Storage;
 const { GameStore } = await import("../src/core/store");
 const { solveGrowthLadder } = await import("../src/render/plantRenderer");
-const { SPECIES, SPECIES_BY_ID } = await import("../src/config/species");
+const { SPECIES } = await import("../src/config/species");
 
 const store = new GameStore();
 store.state.nurseryCap = 60;
@@ -21,9 +23,7 @@ store.state.leafCoin = 10_000_000;
 const ORDER = ["seed", "sprout", "young", "mature", "awakened"];
 let checked = 0, planReg = 0;
 const bad: string[] = [];
-let lastSp = "";
 for (const sp of SPECIES) {
-  lastSp = sp.id;
   if (checked % 2000 === 0) console.log(`...${checked} @ ${sp.id}`);
   for (let t = 0; t < 2; t++) {   // 2 instances per species — enough signal, half the time
     store.state.seeds[sp.id as never] = 1;

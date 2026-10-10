@@ -1,0 +1,58 @@
+name: technical-tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --no-audit --no-fund
+      - run: npm --prefix worker ci --no-audit --no-fund
+      - run: npm run test:inventory
+      - run: npm run test:technical
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: technical-core
+          path: artifacts/technical-tests/
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VITE_ACCOUNT_API: https://account.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --no-audit --no-fund
+      - run: node node_modules/playwright-core/cli.js install --with-deps chromium
+      - name: Start isolated Vite server
+        run: |
+          npm run dev -- --host 127.0.0.1 --port 5173 --strictPort > /tmp/nong-trai-vite.log 2>&1 &
+          echo $! > /tmp/nong-trai-vite.pid
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:5173/src/main.ts > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/nong-trai-vite.log
+          exit 1
+      - run: npm run test:technical:browser
+      - name: Stop test server
+        if: always()
+        run: |
+          if [ -f /tmp/nong-trai-vite.pid ]; then kill "$(cat /tmp/nong-trai-vite.pid)" || true; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: technical-browser
+          path: |
+            artifacts/technical-tests/
+            shots/

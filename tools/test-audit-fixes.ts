@@ -10,14 +10,14 @@
 import { GameStore } from "../src/core/store";
 import { createSeedPlant, breedPlants, potentialFromGenes } from "../src/genetics/genomeGenerator";
 import { computeEcr } from "../src/genetics/ecrCalculator";
-import { simulateBattle, BattleSession } from "../src/battle/engine";
+import { simulateBattle, BattleSession, type Stance } from "../src/battle/engine";
 import { createBenchmarkPlant } from "../src/genetics/benchmarkRoster";
 import { applyCare, previewCare, careCooldownLeft, careWindowCount, xpRequired } from "../src/growth/care";
 import { finalRarityWeights, emptyPity, PITY } from "../src/config/rarity";
 import { stageTargetPower } from "../src/pve/ascent";
 import { breederXpForPlantLevel } from "../src/core/store";
 import { CARE_ACTIONS } from "../src/config/careActions";
-import type { Plant, Rarity, Stance } from "../src/core/types";
+import type { Plant } from "../src/core/types";
 
 const mem = new Map<string, string>();
 (globalThis as unknown as { localStorage: Storage }).localStorage = {
@@ -129,7 +129,7 @@ section("A05 · Phản Xạ Nhanh né đòn đầu tiên — một lần, đúng
       p.stats.evasion = 0;
     });
     const atk = mkPlant(`a05-a${i}`);
-    const res = simulateBattle(atk, def, { seed: `a05:${i}`, maxSeconds: 60 });
+    const res = simulateBattle(atk, def, { seed: `a05:${i}`, maxSeconds: 60, arena: "indoor" });
     const evaded = res.events.filter((e) => e.type === "EVADED" && e.other === "b");
     total += evaded.length;
     if (evaded.length > 1) moreThanOnce++;
@@ -141,7 +141,7 @@ section("A05 · Phản Xạ Nhanh né đòn đầu tiên — một lần, đúng
     const noTrait = mkPlant(`a05-c${i}`, (p) => {
       p.stats.evasion = 0;
     });
-    const res2 = simulateBattle(atk, noTrait, { seed: `a05:${i}`, maxSeconds: 60 });
+    const res2 = simulateBattle(atk, noTrait, { seed: `a05:${i}`, maxSeconds: 60, arena: "indoor" });
     control += res2.events.filter((e) => e.type === "EVADED" && e.other === "b").length;
   }
   check("trait né được ít nhất một trận trong 40 seed", total > 0, `${total}/40 trận`);
@@ -155,7 +155,7 @@ section("A14 · event nói đúng thứ đã xảy ra");
 {
   const a = mkPlant("a14-a");
   const b = mkPlant("a14-b");
-  const ses = new BattleSession(a, b, { seed: "a14:focus", maxSeconds: 30 });
+  const ses = new BattleSession(a, b, { seed: "a14:focus", maxSeconds: 30, arena: "indoor" });
   ses.useFocus("a");
   const energy = ses.log.find((e) => e.type === "ENERGY_GAINED");
   check("useFocus phát ENERGY_GAINED amount=40", energy?.side === "a" && energy.amount === 40);
@@ -194,7 +194,7 @@ section("A14 · event nói đúng thứ đã xảy ra");
   let sawStatus = false;
   let fakeHeal = false;
   for (let i = 0; i < 12 && !sawStatus; i++) {
-    const res = simulateBattle(regenCarrier, opp, { seed: `a14:regen:${i}`, maxSeconds: 60 });
+    const res = simulateBattle(regenCarrier, opp, { seed: `a14:regen:${i}`, maxSeconds: 60, arena: "indoor" });
     if (res.events.some((e) => e.type === "STATUS_APPLIED" && e.status === "regen")) sawStatus = true;
     if (res.events.some((e) => e.type === "HEAL_APPLIED" && e.text?.includes("bật Tái tạo"))) fakeHeal = true;
   }
@@ -208,7 +208,7 @@ section("A14 · event nói đúng thứ đã xảy ra");
   let sawCleanse = false;
   let ghostHeal = false;
   for (let i = 0; i < 12 && !sawCleanse; i++) {
-    const res = simulateBattle(cleanser, dotter, { seed: `a14:cleanse:${i}`, maxSeconds: 90 });
+    const res = simulateBattle(cleanser, dotter, { seed: `a14:cleanse:${i}`, maxSeconds: 90, arena: "indoor" });
     if (res.events.some((e) => e.type === "CLEANSED")) sawCleanse = true;
     if (res.events.some((e) => e.type === "HEAL_APPLIED" && e.amount === 0 && e.text?.includes("tẩy"))) ghostHeal = true;
   }
@@ -219,7 +219,7 @@ section("A14 · event nói đúng thứ đã xảy ra");
      the opponent, so the view animated the expiry on the wrong fighter. */
   let expiryOk = false;
   for (let i = 0; i < 12 && !expiryOk; i++) {
-    const res = simulateBattle(dotter, cleanser, { seed: `a14:exp:${i}`, maxSeconds: 90 });
+    const res = simulateBattle(dotter, cleanser, { seed: `a14:exp:${i}`, maxSeconds: 90, arena: "indoor" });
     const ticks = res.events.filter((e) => e.type === "STATUS_TICK");
     for (const t of ticks) {
       const exp = res.events.find((e) => e.type === "STATUS_EXPIRED" && e.status === t.status && e.t > t.t);
@@ -440,7 +440,7 @@ section("A13 · save cũ với mood/archetype rác được chữa");
 
 {
   mem.clear();
-  const store = new GameStore();
+  new GameStore();
   const raw = JSON.parse(localStorage.getItem("mutant-sprout-save-v1") ?? "{}") as { plants?: { mood?: string; archetype?: unknown }[] };
   (raw.plants ?? [])[0]!.mood = "⚡sét đánh";
   (raw.plants ?? [])[0]!.archetype = "không phải object";
@@ -450,7 +450,7 @@ section("A13 · save cũ với mood/archetype rác được chữa");
   check("mood rác → calm", plant.mood === "calm", `mood=${plant.mood}`);
   check("archetype rác → vector hợp lệ", typeof plant.archetype === "object" && Object.keys(plant.archetype).length > 0);
   // And the plant is actually usable in battle — the crash A13 described.
-  const res = simulateBattle(plant, mkPlant("a13-opp"), { seed: "a13", maxSeconds: 5 });
+  const res = simulateBattle(plant, mkPlant("a13-opp"), { seed: "a13", maxSeconds: 5, arena: "indoor" });
   check("cây đã chữa đánh được trận thật", res.events.length > 0);
 }
 

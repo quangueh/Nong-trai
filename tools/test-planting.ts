@@ -30,6 +30,7 @@ const g = globalThis as unknown as Record<string, unknown>;
 g.window = w;
 g.document = w.document;
 g.localStorage = w.localStorage;
+g.sessionStorage = w.sessionStorage;
 Object.defineProperty(globalThis, "navigator", { value: w.navigator, configurable: true, writable: true });
 g.HTMLElement = w.HTMLElement;
 g.Element = w.Element;
@@ -85,6 +86,10 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const { boot } = await import("../src/ui/app");
 const { store, navigate } = await import("../src/ui/app");
 const { STAT_GENES } = await import("../src/config/species");
+const { dayKey } = await import("../src/core/store");
+
+// The timed daily check-in nudge is covered separately, not a planting overlay.
+w.sessionStorage.setItem(`ci-shown:${dayKey(Date.now())}`, "1");
 
 await boot(w.document.getElementById("app")!);
 

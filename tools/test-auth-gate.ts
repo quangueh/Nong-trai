@@ -24,6 +24,8 @@ function check(name: string, ok: boolean, detail = ""): void {
 
 const b = await chromium.launch();
 const ctx = await b.newContext({ viewport: { width: 1180, height: 900 } });
+// This suite tests local gate decisions, not Google or the production Worker.
+await ctx.route("**/*", route => route.request().url().startsWith(`${URL}/`) ? route.continue() : route.abort());
 const page = await ctx.newPage();
 const errs: string[] = [];
 page.on("pageerror", (e: Error) => errs.push(String(e).slice(0, 200)));
@@ -44,8 +46,8 @@ async function bootWith(storage: Record<string, string>): Promise<void> {
     },
     storage,
   );
-  await page.reload({ waitUntil: "networkidle" });
-  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), undefined, { timeout: 20000 });
   await page.waitForTimeout(1400);
 }
 
@@ -74,8 +76,8 @@ check("a signed-in account is not shown the gate", (await gateShown()) === false
 check("and the game is playable", await page.evaluate(`(() => Boolean((window).__game?.store?.state?.plants))()`));
 
 /* --- after a reload ------------------------------------------------------- */
-await page.reload({ waitUntil: "networkidle" });
-await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
+await page.reload({ waitUntil: "domcontentloaded" });
+await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), undefined, { timeout: 20000 });
 await page.waitForTimeout(1500);
 check("still not gated after a reload", (await gateShown()) === false);
 check(

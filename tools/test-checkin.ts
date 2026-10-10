@@ -40,8 +40,6 @@ const T0 = Date.UTC(2026, 5, 10, 9); // a fixed morning — far from any day edg
 import { GameStore, dayKey } from "../src/core/store";
 import { dayInCycle, isMilestone, nextMilestone, giftFor, AUTO_CARE_MS, AUTO_CARE_MINUTES } from "../src/core/checkin";
 import { SPECIES_BY_ID } from "../src/config/species";
-import { careCooldownLeft } from "../src/growth/care";
-import { applyCare } from "../src/growth/care";
 
 /* --- 1. the cycle math ---------------------------------------------------- */
 
@@ -86,7 +84,7 @@ check("nothing comes after 30 inside the cycle", nextMilestone(30) === null);
 
   const c2 = store.claimCheckIn(T0 + DAY);
   check("the next day continues the streak", c2.ok && c2.gift?.streak === 2);
-  const c7pre = store.claimCheckIn(T0 + 2 * DAY);
+  store.claimCheckIn(T0 + 2 * DAY);
   store.state.checkIn.streak = 6; // fast-forward: pretend six days ran
   store.state.checkIn.lastDay = ""; // and today is open
   const c7 = store.claimCheckIn(T0 + 3 * DAY);

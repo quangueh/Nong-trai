@@ -91,10 +91,12 @@ async function open(opts: { w?: number; h?: number; reduced?: boolean } = {}): P
     ...(opts.reduced ? { reducedMotion: "reduce" as const } : {}),
   });
   const page = await ctx.newPage();
+  // Animation assertions must not wait for external fonts, GIS or cloud requests.
+  await ctx.route("**/*", route => route.request().url().startsWith(`${URL}/`) ? route.continue() : route.abort());
   const errs: string[] = [];
   page.on("pageerror", (e: Error) => errs.push(String(e).slice(0, 200)));
-  await page.goto(URL, { waitUntil: "networkidle" });
-  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
+  await page.goto(URL, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), undefined, { timeout: 20000 });
   await page.waitForTimeout(700);
   await page.evaluate(PREP);
   await page.waitForTimeout(700);
@@ -155,7 +157,7 @@ console.log("\n2. one level up:");
   await page.evaluate(`(() => { (window).__game.store.addPlantXp((window).__game.store.state.plants[0], 5000); })()`);
 
   const panel = await page
-    .waitForFunction(`(() => Boolean(document.querySelector(".lvlup-panel")))()`, { timeout: 8000 })
+    .waitForFunction(`(() => Boolean(document.querySelector(".lvlup-panel")))()`, undefined, { timeout: 8000 })
     .then(() => true)
     .catch(() => false);
   const sparks = await peak(page, ".lvlup-spark", 1400);
@@ -196,7 +198,7 @@ console.log("\n3. several levels at once:");
   const { page, ctx } = await open();
   await page.evaluate(`(() => { (window).__game.store.addPlantXp((window).__game.store.state.plants[0], 60000); })()`);
   await page
-    .waitForFunction(`(() => Boolean(document.querySelector(".lvlup-panel")))()`, { timeout: 8000 })
+    .waitForFunction(`(() => Boolean(document.querySelector(".lvlup-panel")))()`, undefined, { timeout: 8000 })
     .catch(() => {});
   await page.waitForTimeout(1700);
   await page.screenshot({ path: "shots/expanim/4-multi-level.png" });
@@ -250,7 +252,7 @@ console.log("\n4. interrupted mid-animation:");
 
   /* And the celebration can be interrupted and re-raised without doubling up. */
   await page.evaluate(`(() => { (window).__game.store.addPlantXp((window).__game.store.state.plants[0], 5000); })()`);
-  await page.waitForFunction(`(() => Boolean(document.querySelector(".lvlup-panel")))()`, { timeout: 8000 }).catch(() => {});
+  await page.waitForFunction(`(() => Boolean(document.querySelector(".lvlup-panel")))()`, undefined, { timeout: 8000 }).catch(() => {});
   await page.evaluate(`(() => (window).__game.navigate("arena"))()`);
   await page.waitForTimeout(400);
   await page.evaluate(`(() => { (window).__game.store.addPlantXp((window).__game.store.state.plants[0], 5000); })()`);
@@ -285,7 +287,7 @@ console.log("\n5. phone viewport:");
 
   /* The celebration on a phone too. */
   await page.evaluate(`(() => { (window).__game.store.addPlantXp((window).__game.store.state.plants[0], 40000); })()`);
-  await page.waitForFunction(`(() => Boolean(document.querySelector(".lvlup-panel")))()`, { timeout: 8000 }).catch(() => {});
+  await page.waitForFunction(`(() => Boolean(document.querySelector(".lvlup-panel")))()`, undefined, { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(300);
   await page.screenshot({ path: "shots/expanim/6-phone-levelup.png" });
   const panel = (await page.evaluate(`(() => {
@@ -366,7 +368,7 @@ console.log("\n6. reduced motion:");
   check("and no trails", (calm.trails as number) === 0, `${calm.trails}`);
 
   await page.evaluate(`(() => { (window).__game.store.addPlantXp((window).__game.store.state.plants[0], 9000); })()`);
-  await page.waitForFunction(`(() => Boolean(document.querySelector(".lvlup-panel")))()`, { timeout: 8000 }).catch(() => {});
+  await page.waitForFunction(`(() => Boolean(document.querySelector(".lvlup-panel")))()`, undefined, { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(400);
   const calmUp = (await page.evaluate(SNAP)) as Record<string, unknown>;
   await page.screenshot({ path: "shots/expanim/8-reduced-levelup.png" });

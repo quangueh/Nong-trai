@@ -3,6 +3,7 @@ node_modules
 
 # Build output
 dist
+artifacts/technical-tests/
 
 # Screenshots produced by the verification harness (tools/shot*.ts).
 # Regenerated on demand and about 35 MB, so they are output rather than source.

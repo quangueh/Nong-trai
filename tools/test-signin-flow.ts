@@ -50,7 +50,7 @@ function check(name: string, ok: boolean, detail = ""): void {
  */
 const WORKER_STUB = `
 (() => {
-  const HOST = "nong-trai-account.w46824884.workers.dev";
+  const HOSTS = ["nong-trai-account.w46824884.workers.dev", "account.test"];
   const ACCOUNT = "pl_seed";
 
   /* The cloud. In a closure, so a page reload genuinely re-reads it from the network
@@ -71,10 +71,8 @@ const WORKER_STUB = `
 
   /* Strip scheme and host, leaving "/api/google". */
   function routeOf(url) {
-    const at = url.indexOf(HOST);
-    if (at < 0) return null;
-    const from = url.indexOf("/", at + HOST.length);
-    return from < 0 ? "/" : url.slice(from);
+    const parsed = new URL(url, window.location.href);
+    return HOSTS.includes(parsed.hostname) ? parsed.pathname : null;
   }
 
   function json(obj) {
