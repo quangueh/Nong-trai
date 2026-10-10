@@ -13,7 +13,7 @@ if (!Number.isFinite(timeoutMs) || timeoutMs < 1_000) throw new Error("Timeout m
 /* Suites that are long by design, not by accident — three real-time 60s frame
    samples plus battle and heap cycles cannot fit a 300s envelope. Named rather
    than a blanket raise so a genuinely hung suite still dies at the default. */
-const SUITE_TIMEOUT: Record<string, number> = { "test-performance": 480_000, "test-soak": 1_500_000 };
+const SUITE_TIMEOUT: Record<string, number> = { "test-performance": 480_000, "test-soak": 2_100_000 };
 const filter = args.find(arg => arg.startsWith("--filter="))?.slice("--filter=".length);
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const reportDir = join(root, "artifacts", "technical-tests", stamp);

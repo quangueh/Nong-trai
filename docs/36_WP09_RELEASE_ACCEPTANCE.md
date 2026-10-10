@@ -21,9 +21,9 @@ carries the measurement it rests on; anything not measured says so.
 |---|---|
 | `npm run test:inventory` | 150 modules, 50 test suites |
 | `npm test` (legacy aggregate, 33 scripts) | **PASS — all 33 suites green, 0 FAIL across the run** |
-| `npm run test:technical` core | 36/36 last full run (incl. typecheck×3, contracts, schema, PWA, ads, fuzz×3→×5) |
-| `npm run test:technical:browser` | 12/12 standalone after flake triage |
-| fuzz-store | now 5 seeds × 2000 ops per spec §17.2 |
+| `npm run test:technical` core | **41/41 PASSED** at HEAD (typecheck×3, contracts, schema, PWA, ads, all domain suites, fuzz×5 seeds, production-build) |
+| `npm run test:technical:browser` | 16/18 in the profile run — `test-performance` + `test-soak` hit the 300s runner cap before per-suite timeouts landed; both **PASS standalone through the runner** after the fix (perf 306s, soak ~22min) |
+| fuzz-store | 5 seeds × 2000 ops — all green in the 41/41 core run |
 
 ## REL-03 — performance (measured on the production build, not dev)
 
@@ -38,7 +38,7 @@ inferring production numbers from the Vite dev transform — these come from pre
 | Battle sample | n=1131; p50 16.7 ms, p95 16.7 ms, p99 16.8 ms, worst 1166 ms (one-off on first fight — GC/asset warm-up; p99 unaffected) |
 | Heap | 40.1 MB baseline → 40.1 MB after 20 sheet cycles + 10 fights — flat |
 | Battlefield leak | 0 left mounted after 10 resolved fights |
-| **Soak (real-time)** | **PENDING — running**: 15 min garden+music with counters @0/5/10/15 min, 5 min hidden (CDP lifecycle), 20 route transitions, 10 consecutive fights, reload survival |
+| **Soak (real-time, prod build)** | **11/11** — 15 min garden+music: heap flat 23.4 MB @0/5/10/15 min, DOM 3975→3967, liveSources 4→11→8→8 (music genuinely running, no source leak), 0 background requests; 5 min hidden: 0 requests; 20 route transitions: no DOM/heap pile-up; 10 fights: 0 battlefields left; reload: plants 12→12, wallet 50915→50915. The runner repeat on the dev server shows the same flat profile (54.2 MB flat, 0 hidden-req) before it reached the phase cutoff |
 
 ## REL-04 — a11y journeys (test-rel04.ts — 7/7)
 
