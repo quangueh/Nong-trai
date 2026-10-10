@@ -48,6 +48,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # Runner images lag the newest compileSdk — install exactly what the
+      # project targets so AGP never fails on a missing platform.
+      - name: Ensure Android SDK platform 36
+        run: |
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
       - name: Assemble debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
