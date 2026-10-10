@@ -306,7 +306,13 @@ export function showStageResult(out: StageOutcome, onContinue: () => void): Prom
   }
 
   return new Promise<void>((resolve) => {
+    let finished = false;
     const finish = (): void => {
+      /* A click on the button and an Escape can land inside the same gesture —
+         once is enough: `onContinue` is the settlement path out of the fight
+         and firing it twice is a double-navigation bug, not a cosmetic one. */
+      if (finished) return;
+      finished = true;
       cancelled = true;
       sfx.play("tap");
       overlay.remove();

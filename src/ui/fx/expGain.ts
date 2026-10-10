@@ -27,6 +27,7 @@
 
 import { el } from "../components";
 import { reducedMotion, sfx } from "../../audio/audio";
+import { viNum } from "../../core/currency";
 
 /** How many trail dots per number, and the total element budget. Both fall back on a phone. */
 function particleBudget(): { trail: number; max: number } {
@@ -86,7 +87,7 @@ export function celebrateExpGain(opts: ExpGainOptions): void {
     const last = i === count - 1;
     // The remainder rides on the final chip rather than being dropped by integer division.
     const value = last ? amount - per * (count - 1) : per;
-    const chip = el("div", { class: "expfly" }, [`+${value.toLocaleString("vi-VN")}`]);
+    const chip = el("div", { class: "expfly" }, [`+${viNum(value)}`]);
     const jx = start.left + (i - (count - 1) / 2) * 16;
     const jy = start.top + (i % 2 === 1 ? -10 : 0);
 
@@ -121,7 +122,13 @@ export function celebrateExpGain(opts: ExpGainOptions): void {
       spawnTrailDot(chip, k, budget.trail);
     }
 
+    let finished = false;
     const done = (): void => {
+      /* The fallback timer and the animation's own end can both fire — remove()
+         is safe twice, but pulse() is not: a second call reflows the class and
+         replays the flash, one reward blinking twice. */
+      if (finished) return;
+      finished = true;
       chip.remove();
       pulse(bar, filled === true);
     };
