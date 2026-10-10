@@ -3,6 +3,7 @@
 import { Rng, seedToken } from "../core/rng";
 import { createSeedPlant } from "../genetics/genomeGenerator";
 import { renderPlantSvg } from "../render/plantRenderer";
+import { plantBedArt } from "../render/lazySvg";
 
 import type { Plant } from "../core/types";
 import { STAGE_LABEL } from "../core/types";
@@ -116,7 +117,9 @@ export function plantCard(plant: Plant, onClick: () => void): HTMLElement {
   if (flags.children.length) card.appendChild(flags);
 
   const bed = el("div", { class: "bed" });
-  bed.innerHTML = renderPlantSvg(plant, 150);
+  /* Same lazy-art budget as the garden plots — a deep collection renders
+     hundreds of beds and the ceiling counts every one. */
+  plantBedArt(bed, plant, 150);
   card.appendChild(bed);
 
   const name = el("div", { class: "pname" });

@@ -12,7 +12,7 @@ import { sellPrice } from "../../economy/shop";
 import { openDetail } from "./garden";
 import { getSpecies, type SpeciesId } from "../../config/species";
 import { createSeedPlant } from "../../genetics/genomeGenerator";
-import { renderPlantSvg } from "../../render/plantRenderer";
+import { plantBedArt } from "../../render/lazySvg";
 import { dominantElement, ELEMENT_INFO } from "../../config/elements";
 import { ARCHETYPE_ROLE } from "../../config/balance";
 import type { Plant } from "../../core/types";
@@ -265,7 +265,9 @@ function paintDex(root: HTMLElement, nav: Navigate, shell: Element): void {
       ribbon.style.background = `linear-gradient(90deg, ${RARITY_META[rep.rarity].colour}, ${RARITY_META[rep.rarity].colour}22)`;
       card.appendChild(ribbon);
       const bed = el("div", { class: "bed" });
-      bed.innerHTML = renderPlantSvg(rep, 150);
+      /* The dex grows with discovery — lazy art here for the same DOM-budget
+         reason as the garden plots it mirrors. */
+      plantBedArt(bed, rep, 150);
       card.appendChild(bed);
       card.appendChild(el("div", { class: "pname" }, [sp.name]));
       const dom = dominantElement(rep.dna.elementGenes);

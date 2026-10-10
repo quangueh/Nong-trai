@@ -9,7 +9,7 @@
  */
 
 import { el } from "../components";
-import { renderPlantSvg } from "../../render/plantRenderer";
+import { plantBedArt } from "../../render/lazySvg";
 import { RARITY_META } from "../../config/rarity";
 import { ELEMENT_INFO, dominantElement } from "../../config/elements";
 import { STAGE_LABEL, type Plant } from "../../core/types";
@@ -113,7 +113,10 @@ export function plotCard(plant: Plant, onClick: (card: HTMLElement) => void, plo
   const bed = el("div", { class: "bed" });
   bed.style.setProperty("--elc", ELEMENT_INFO[dom.id].color);
   bed.style.setProperty("--elglow", ELEMENT_INFO[dom.id].glow);
-  bed.innerHTML = renderPlantSvg(plant, 150);
+  /* Lazy art: the DOM budget (docs/27 §12) counts nodes, and 24 beds at ~300
+     each are over the 5.000 ceiling. Offscreen beds stay empty until the card
+     nears the viewport — the art on screen is unchanged. */
+  plantBedArt(bed, plant, 150);
   card.appendChild(bed);
 
   /* Ready-to-earn shine: three motes drifting over the crown. Kept to three
