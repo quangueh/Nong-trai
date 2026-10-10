@@ -245,6 +245,13 @@ export interface QuestContext {
    * event's species match counts a bred descendant.
    */
   lineageWins: Record<string, number>;
+  /**
+   * Care actions per lineage species — each living plant's whole care memory
+   * attributed to every species in its `baseLineage`. The "chăm dòng X n lần"
+   * step of the generated chain reads this so tending done while the quest was
+   * locked still counts, exactly as `lineageWins` does for fighting.
+   */
+  lineageCares: Record<string, number>;
 }
 
 /** A quest, resolved against the save, ready for the UI. */

@@ -29,9 +29,11 @@ import {
   type QuestContext,
 } from "../src/quests/engine";
 import { WEATHER_INFO, streakLabel, streakMultiplier } from "../src/config/quests";
+import { RULE_LABEL } from "../src/config/unlocks";
+import { currencyInfo } from "../src/core/currency";
 import { generatedMainQuests } from "../src/quests/generated";
 import type { CareActionId } from "../src/config/careActions";
-import type { SpeciesId } from "../src/config/species";
+import { SPECIES_BY_ID, type SpeciesId } from "../src/config/species";
 
 let passed = 0;
 let failed = 0;
@@ -77,6 +79,7 @@ function ctx(over: Partial<QuestContext> = {}): QuestContext {
     breeds: 0,
     cares: 0,
     lineageWins: {},
+    lineageCares: {},
     ...over,
   };
 }
@@ -343,6 +346,19 @@ section("8. The generated main line — it never runs out");
   const sp = gen0[0].id.slice("mx0a_".length);
   check("all four quests are about one species", gen0.every((q) => q.id.endsWith(`_${sp}`)), gen0.map((q) => q.id).join(","));
   check("and its rewards pay something real", gen0.every((q) => (q.rewards.exp ?? 0) + (q.rewards.coins ?? 0) > 0));
+  {
+    // The hint for slot a must answer "kiếm ở đâu" for real: the pinned shop card,
+    // the price in its own currency, and the actual gate when the species is locked.
+    const spDef = SPECIES_BY_ID[sp as SpeciesId];
+    const how = gen0[0].how ?? "";
+    check("the acquire hint says the card is one tap away", /chạm thẻ này/i.test(how) && /chợ/i.test(how), how.slice(0, 60));
+    check("the acquire hint names the price and currency", how.includes(spDef.seedPrice.toLocaleString("vi-VN")) && how.includes(currencyInfo(spDef.currency).icon), `${spDef.seedPrice}${currencyInfo(spDef.currency).icon}`);
+    if (spDef.unlock) {
+      const req = "k" in spDef.unlock ? spDef.unlock : (spDef.unlock.all ?? [])[0] ?? (spDef.unlock.any ?? [])[0];
+      check("the acquire hint names the real gate", req ? how.includes(RULE_LABEL[req.k](req.n)) : true, how.slice(-80));
+    }
+    check("the care hint admits the hired gardener", /người làm vườn/i.test(gen0[2].how ?? ""), gen0[2].how?.slice(0, 60));
+  }
 
   save = syncQuests(save, base, cat());
   check("sync creates the cycle's entries", gen0.every((q) => save.entries[q.id]));
@@ -384,10 +400,12 @@ section("8. The generated main line — it never runs out");
     const sOpen = syncQuests(sClaimed.save, grower(new Set([...doneAll, gen0[0].id])), cat());
     check("the garden grown while locked completes `b` when it opens", sOpen.entries[gen0[1].id].status === "completed", `status=${sOpen.entries[gen0[1].id]?.status}`);
 
-    // `c` measures the same way: wins this bloodline earned before it opened count.
-    const foughtCtx = ctx({ level: 6, claimed: new Set([...doneAll, gen0[0].id, gen0[1].id]), lineageWins: { [sp]: 99 } });
+    // `c` measures the same way: care this bloodline received before it opened counts.
+    const foughtCtx = ctx({ level: 6, claimed: new Set([...doneAll, gen0[0].id, gen0[1].id]), lineageCares: { [sp]: 99 } });
     const sFought = syncQuests(sOpen, foughtCtx, cat());
-    check("wins earned while `c` was locked count when it opens", sFought.entries[gen0[2].id].status === "completed", `status=${sFought.entries[gen0[2].id]?.status}`);
+    check("care earned while `c` was locked counts when it opens", sFought.entries[gen0[2].id].status === "completed", `status=${sFought.entries[gen0[2].id]?.status}`);
+    check("the care ask listens to the care stream", gen0[2].track.event === "care", gen0[2].track.event);
+    check("the care ask filters by bloodline", gen0[2].track.match?.species === sp, gen0[2].track.match?.species);
   }
 
   // Claim the rest of the cycle by marking it done — the mechanics of *earning* are
@@ -416,7 +434,22 @@ section("8. The generated main line — it never runs out");
   const sp1 = gen1.find((q) => q.id.startsWith("mx1a_"))!.id.slice("mx1a_".length);
   const c1Open = gen1.find((q) => q.id === `mx1a_${sp1}`)!;
   check("the new cycle's opener is unlocked", unlockMet(c1Open.unlock, ctxAfter0));
-  check("and the work got heavier", gen1[2].target >= gen0[2].target, `${gen0[2].target} -> ${gen1[2].target}`);
+  {
+    const c1 = gen1.find((q) => /^mx1c_/.test(q.id))!;
+    check("and the work got heavier", c1.target > gen0[2].target, `${gen0[2].target} -> ${c1.target}`);
+    const d1 = gen1.find((q) => /^mx1d_/.test(q.id))!;
+    check("the finale rotates — cycle 1 is new stages, not the same ask", d1.track.event === "stage_completed" && !d1.track.match?.boss, d1.track.event);
+    check("the stage finale says 'new' plainly", /mới/.test(d1.objective) && /không đánh lại/.test(d1.how ?? ""), d1.how?.slice(0, 60));
+    // Cycle 2 only generates once cycle 1's finale is claimed — hand it a save
+    // that says so, then read the third face of the rotation.
+    const save2 = structuredClone(save);
+    save2.entries[`mx1d_${sp1}`] = { status: "claimed", progress: 0 };
+    const gen2 = generatedMainQuests(save2, ctx({ level: 6, claimed: new Set([...after0.claimedSoFar, `mx1d_${sp1}`]), highestStage: 25 }));
+    const d2 = gen2.find((q) => /^mx2d_/.test(q.id));
+    check("cycle 2 exists once cycle 1 is done", d2 !== undefined, gen2.map((q) => q.id).join(","));
+    check("the finale rotates again — cycle 2 hunts a boss", d2!.track.match?.boss === true, JSON.stringify(d2!.track.match));
+    check("the boss hint names the next real boss stage", (d2!.how ?? "").includes("ải 30"), d2!.how?.slice(0, 60));
+  }
 
   // Before the fixed line is done, nothing is generated — the tutorial runs first.
   const early = generatedMainQuests(emptyQuestSave(DAY), ctx());

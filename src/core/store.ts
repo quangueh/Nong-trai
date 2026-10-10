@@ -947,7 +947,9 @@ export class GameStore {
     plant.validation = validateGenome(plant);
     addUnique(this.state.discovery.careActions, action);
     this.recordPlantDiscovery(plant);
-    this.questEvent({ name: "care", amount: 1 });
+    // The plant's bloodline rides the event so "chăm dòng X n lần" quests can
+    // count care aimed at that species — including on a bred descendant.
+    this.questEvent({ name: "care", amount: 1, species: plant.baseLineage });
     // Nectar, from tending. Paid on every action without exception, which is what makes
     // this currency a floor rather than a goal: a player who does nothing but tend can
     // always eventually reach the tier-2 shelf.
@@ -1008,7 +1010,7 @@ export class GameStore {
           // plant memory `ctx.cares` reads, so it must also land in the event
           // stream "chăm cây N lần" quests count. Otherwise the buff visibly
           // waters the garden while the daily swears nothing happened.
-          this.questEvent({ name: "care", amount: 1 });
+          this.questEvent({ name: "care", amount: 1, species: plant.baseLineage });
           did++;
           break;
         }
@@ -1917,9 +1919,17 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
      */
     let cares = 0;
     const lineageWins: Record<string, number> = {};
+    const lineageCares: Record<string, number> = {};
     for (const p of this.state.plants) {
-      for (const n of Object.values(p.careMemory.counts)) cares += n ?? 0;
-      for (const sp of p.baseLineage) lineageWins[sp] = (lineageWins[sp] ?? 0) + (p.battleRecord.wins || 0);
+      let plantCares = 0;
+      for (const n of Object.values(p.careMemory.counts)) {
+        cares += n ?? 0;
+        plantCares += n ?? 0;
+      }
+      for (const sp of p.baseLineage) {
+        lineageWins[sp] = (lineageWins[sp] ?? 0) + (p.battleRecord.wins || 0);
+        lineageCares[sp] = (lineageCares[sp] ?? 0) + plantCares;
+      }
     }
     return {
       level: this.state.breederLevel,
@@ -1937,6 +1947,7 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
       breeds: this.state.discovery.breeds,
       cares,
       lineageWins,
+      lineageCares,
     };
   }
 
@@ -1953,8 +1964,8 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
     // species whose shop gate is already met, and rebuilding the context per candidate
     // would make "what is my next quest" cost a full sweep per event.
     const unlockCtx = this.unlockContext();
-    const isOpen = (id: SpeciesId) => checkUnlock(unlockCtx, SPECIES_BY_ID[id]?.unlock).met;
-    return [...QUEST_CATALOG, ...generatedMainQuests(this.state.quests, ctx, isOpen)];
+    const gateInfo = (id: SpeciesId) => checkUnlock(unlockCtx, SPECIES_BY_ID[id]?.unlock);
+    return [...QUEST_CATALOG, ...generatedMainQuests(this.state.quests, ctx, gateInfo)];
   }
 
   /** Every quest, resolved for the UI. Syncs first, so a new quest appears without a migration. */
