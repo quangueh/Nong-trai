@@ -65,7 +65,7 @@ import { maybeAutoOpenCheckIn } from "./checkin";
 import { accountServiceAvailable } from "../account/api";
 import { openAccount } from "./accountSheet";
 import { SPECIES_BY_ID } from "../config/species";
-import { CURRENCIES, compactNumber, type CurrencyId } from "../core/currency";
+import { CURRENCIES, compactNumber, viNum, type CurrencyId } from "../core/currency";
 import { onSlotChange, restoreActiveAccount } from "../core/saveSlot";
 import {
   breederSnapshot,
@@ -580,7 +580,7 @@ function updatePills() {
 }
 
 function fmtInt(n: number): string {
-  return Math.round(n).toLocaleString("vi-VN");
+  return viNum(Math.round(n));
 }
 
 /**
@@ -623,12 +623,12 @@ function updateLevelBadge(): void {
     el("span", { class: "levelbadge-xp mono" }, [
       snap.capped
         ? "MAX"
-        : `${Math.round(snap.xp).toLocaleString("vi-VN")} / ${Math.round(snap.need).toLocaleString("vi-VN")}`,
+        : `${viNum(Math.round(snap.xp))} / ${viNum(Math.round(snap.need))}`,
     ]),
   );
   levelBadge.title = snap.capped
     ? "Cấp nhà lai tạo tối đa"
-    : `Cấp nhà lai tạo ${snap.level} — ${Math.round(snap.xp).toLocaleString("vi-VN")}/${Math.round(snap.need).toLocaleString("vi-VN")} EXP cấp ${snap.level + 1}`;
+    : `Cấp nhà lai tạo ${snap.level} — ${viNum(Math.round(snap.xp))}/${viNum(Math.round(snap.need))} EXP cấp ${snap.level + 1}`;
 }
 
 /**
@@ -731,7 +731,7 @@ function showNotice(notice: Notice): void {
     if (notice.moreCount && notice.moreCount > 0) {
       row.appendChild(
         el("div", { class: "notice-species-more" }, [
-          el("b", {}, [`+${notice.moreCount.toLocaleString("vi-VN")}`]),
+          el("b", {}, [`+${viNum(notice.moreCount)}`]),
           el("small", {}, [" loài"]),
         ]),
       );

@@ -624,8 +624,18 @@ const ELEMENT_TINT: Record<string, string> = {
  * Builds a full genome per call, so it is for one-off portraits and not for lists
  * of hundreds.
  */
+/** Icons are deterministic per species + size — a catalogue page asks for the
+ *  same art on every repaint, so the string is built once. */
+const seedIconCache = new Map<string, string>();
+
 export function seedIcon(speciesId: string, size = 52): string {
-  const rng = new Rng(`icon:${speciesId}`);
-  const plant = createSeedPlant(speciesId as SpeciesId, "icon", seedToken(rng.next()), 0);
-  return renderPlantSvg(plant, size);
+  const key = `${speciesId}:${size}`;
+  let svg = seedIconCache.get(key);
+  if (!svg) {
+    const rng = new Rng(`icon:${speciesId}`);
+    const plant = createSeedPlant(speciesId as SpeciesId, "icon", seedToken(rng.next()), 0);
+    svg = renderPlantSvg(plant, size);
+    seedIconCache.set(key, svg);
+  }
+  return svg;
 }

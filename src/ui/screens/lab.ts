@@ -4,10 +4,11 @@ import { sfx } from "../../audio/audio";
 import { spendChip } from "../fx/gardenFx";
 import { MAX_PLOTS, RULE_LABEL, checkUnlock, plotStatuses } from "../../config/unlocks";
 import { el, toast, fmt, seedChip, seedIcon } from "../components";
+import { lazySvgArt } from "../../render/lazySvg";
 import { store } from "../app";
 import { plantDisplayName } from "../../core/plantNames";
 import { CURRENCIES, type CurrencyId } from "../../core/currency";
-import { currencyIcon, currencyInfo } from "../../core/currency";
+import { currencyIcon, currencyInfo, viNum } from "../../core/currency";
 import {
   EXCHANGE_DAILY_CAP,
   EXCHANGE_FEE,
@@ -102,6 +103,13 @@ function paintSeeds(body: HTMLElement, seedFocus?: SpeciesId) {
    * player dismisses it. Kept out of `search` so the box stays free for real typing.
    */
   let pinned: SpeciesId | undefined = seedFocus && SPECIES_BY_ID[seedFocus] ? seedFocus : undefined;
+  /**
+   * Generation for the catalogue's progressive mount: the first batch of cards
+   * renders synchronously so the shelf answers a tap inside the interaction
+   * budget, and the rest append one frame at a time. A repaint bumps the
+   * generation so a stale batch never appends into a torn-down grid.
+   */
+  let mountGen = 0;
   let tier: number | null = null;
   /**
    * Three states, not two.
@@ -151,6 +159,7 @@ function paintSeeds(body: HTMLElement, seedFocus?: SpeciesId) {
    * the repair never actually landed on the live input.
    */
   const repaintShelf = () => {
+    mountGen++;
     list.replaceChildren(buildFeatured(), buildCatalogue());
   };
   const repaint = () => {
@@ -264,7 +273,7 @@ function paintSeeds(body: HTMLElement, seedFocus?: SpeciesId) {
     curChip("Mọi tiền tệ", "Mọi tiền tệ", null);
     for (const c of CURRENCIES) {
       const held = Math.round(balances[c.id] ?? 0);
-      curChip(`${c.icon} ${held.toLocaleString("vi-VN")}`, `${c.name} — bạn đang có ${held.toLocaleString("vi-VN")}`, c.id);
+      curChip(`${c.icon} ${viNum(held)}`, `${c.name} — bạn đang có ${viNum(held)}`, c.id);
     }
     wrap.appendChild(curRow);
 
@@ -412,9 +421,30 @@ function paintSeeds(body: HTMLElement, seedFocus?: SpeciesId) {
     const grid = el("div", { class: "seed-grid", style: "margin-bottom:10px" });
     // The lock filter is applied inside the query now, so pagination counts what is shown.
     const shown = res.entries;
-    for (const entry of shown) {
+    // First batch synchronous — the shelf answers inside the interaction
+    // budget; the rest mount one batch per frame so 24 heavy cards never
+    // become a single ~190ms task.
+    const FIRST = 8;
+    for (const entry of shown.slice(0, FIRST)) {
       const owned = store.state.seeds[entry.species] ?? 0;
       grid.appendChild(seedCard(getSpecies(entry.species), repaint, owned));
+    }
+    if (shown.length > FIRST) {
+      const gen = mountGen;
+      let at = FIRST;
+      const step = () => {
+        if (gen !== mountGen || !grid.isConnected) return;
+        for (const entry of shown.slice(at, at + 8)) {
+          const owned = store.state.seeds[entry.species] ?? 0;
+          grid.appendChild(seedCard(getSpecies(entry.species), repaint, owned));
+        }
+        at += 8;
+        if (at < shown.length) requestAnimationFrame(step);
+        else grid.dataset.shelfReady = "1"; // shelf fully mounted; tests wait on this
+      };
+      requestAnimationFrame(step);
+    } else {
+      grid.dataset.shelfReady = "1";
     }
     box.appendChild(grid);
 
@@ -447,7 +477,9 @@ function seedCard(sp: SpeciesDef, refresh: () => void, ownedOverride?: number): 
   const card = el("div", { class: "card", style: "margin-bottom:10px" });
   const row = el("div", { class: "row" });
   const icon = el("div", { style: "width:52px;height:52px;flex:none" });
-  icon.innerHTML = seedIcon(sp.id);
+  // The icon is the same heavy plant art as a garden bed — deferring it to
+  // intersection keeps a catalogue mount inside the interaction budget.
+  lazySvgArt(icon, () => seedIcon(sp.id, 52));
 
   const info = el("div", { class: "grow" });
   info.append(
@@ -637,7 +669,7 @@ function paintLand(body: HTMLElement, refresh: () => void) {
     body.appendChild(
       el("div", { class: "card", style: "margin-top:12px" }, [
         el("div", { class: "small", style: "font-weight:700" }, ["Ô kế tiếp"]),
-        el("div", { class: "tiny muted", style: "margin-top:4px" }, [cheapest ? `${cheapest.blocked} · ${cheapest.def.cost.toLocaleString("vi-VN")} xu` : "Vườn đã mở hết."]),
+        el("div", { class: "tiny muted", style: "margin-top:4px" }, [cheapest ? `${cheapest.blocked} · ${viNum(cheapest.def.cost)} xu` : "Vườn đã mở hết."]),
       ]),
     );
   }
@@ -649,7 +681,7 @@ function paintLand(body: HTMLElement, refresh: () => void) {
         el("div", { class: "small", style: "font-weight:700" }, [`Ô ${row.index}`]),
         el("div", { class: "tiny muted", style: "margin-top:2px" }, [row.blocked || "Sẵn sàng mở"]),
       ]),
-      el("div", { class: "mono", style: "font-weight:800" }, [`${row.def.cost.toLocaleString("vi-VN")} xu`]),
+      el("div", { class: "mono", style: "font-weight:800" }, [`${viNum(row.def.cost)} xu`]),
     ]);
     card.appendChild(head);
 
@@ -717,7 +749,7 @@ function paintLand(body: HTMLElement, refresh: () => void) {
 function paintExchange(body: HTMLElement, refresh: () => void) {
   body.appendChild(
     el("div", { class: "callout", style: "margin-bottom:12px" }, [
-      `Mọi loại tiền đổi qua lại được — riêng 🔥 Mảnh lửa chỉ đổi ra, không đổi vào. Đổi mất ${EXCHANGE_FEE * 100}% giá trị, tối đa ${EXCHANGE_DAILY_CAP.toLocaleString("vi-VN")}🪙 giá trị một ngày.`,
+      `Mọi loại tiền đổi qua lại được — riêng 🔥 Mảnh lửa chỉ đổi ra, không đổi vào. Đổi mất ${EXCHANGE_FEE * 100}% giá trị, tối đa ${viNum(EXCHANGE_DAILY_CAP)}🪙 giá trị một ngày.`,
     ]),
   );
 
@@ -730,7 +762,7 @@ function paintExchange(body: HTMLElement, refresh: () => void) {
     rateCard.appendChild(
       el("div", { class: "row", style: "padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05)" }, [
         el("span", { class: "grow small" }, [`${c.icon} 1 ${c.name}`]),
-        el("span", { class: "mono", style: "font-weight:700" }, [`= ${LEAF_VALUE[c.id].toLocaleString("vi-VN")} 🪙`]),
+        el("span", { class: "mono", style: "font-weight:700" }, [`= ${viNum(LEAF_VALUE[c.id])} 🪙`]),
       ]),
     );
   }
@@ -777,7 +809,7 @@ function paintExchange(body: HTMLElement, refresh: () => void) {
     fromSel.replaceChildren();
     for (const c of CURRENCIES) {
       const held = Math.round(store.state[c.id] ?? 0);
-      fromSel.appendChild(el("option", { value: c.id }, [`${c.icon} ${c.name} — có ${held.toLocaleString("vi-VN")}`]));
+      fromSel.appendChild(el("option", { value: c.id }, [`${c.icon} ${c.name} — có ${viNum(held)}`]));
     }
     fromSel.value = from;
   };

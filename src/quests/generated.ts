@@ -37,7 +37,7 @@
 
 import { SPECIES, SPECIES_BY_ID, type SpeciesId } from "../config/species";
 import { RULE_LABEL, type UnlockReq, type UnlockStatus } from "../config/unlocks";
-import { currencyInfo } from "../core/currency";
+import { currencyInfo, viNum } from "../core/currency";
 import type { QuestContext, QuestDef, QuestSave, QuestUnlock } from "./types";
 
 /** Generated ids look like `mx3b_emberleaf` — cycle 3, slot b, target emberleaf. */
@@ -143,7 +143,7 @@ function acquireHow(name: string, sp: SpeciesId): string {
   const def = SPECIES_BY_ID[sp];
   if (!def) return `Chạm thẻ này → Chợ mở sẵn thẻ ${name} → mua hạt.`;
   const cur = currencyInfo(def.currency);
-  const parts = [`Chạm thẻ này → Chợ mở sẵn thẻ ${name} → mua hạt (giá ${def.seedPrice.toLocaleString("vi-VN")}${cur.icon})`];
+  const parts = [`Chạm thẻ này → Chợ mở sẵn thẻ ${name} → mua hạt (giá ${viNum(def.seedPrice)}${cur.icon})`];
   // Where the money comes from — the card charges the species' own currency, so
   // "I cannot afford it" needs the earning loop of *that* currency, not coins.
   if (def.currency === "ember") {

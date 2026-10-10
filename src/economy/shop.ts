@@ -246,6 +246,13 @@ function searchable(text: string): string {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+/** One collator for the shelf sort — `localeCompare` resolves the locale on
+ *  every comparison, and a 20k-species sort is ~300k comparisons. */
+const VI_COLL = new Intl.Collator("vi");
+
+/** The unfiltered default-shelf order, computed once — see `queryCatalogue`. */
+let sortedAll: SpeciesDef[] | null = null;
+
 /** Filtered, paginated view of the registry. Never renders the whole thing. */
 export function queryCatalogue(q: CatalogueQuery): CataloguePage {
   const perPage = q.perPage ?? 24;
@@ -311,7 +318,7 @@ export function queryCatalogue(q: CatalogueQuery): CataloguePage {
    * depend on the order the registry happened to be generated in, so paging through the
    * same shelf twice could show the same species on two pages.
    */
-  const byName = (a: (typeof affordable)[number], b: (typeof affordable)[number]) => a.name.localeCompare(b.name, "vi");
+  const byName = (a: (typeof affordable)[number], b: (typeof affordable)[number]) => VI_COLL.compare(a.name, b.name);
   /* "Cheapest" means cheap *within its own currency* on the default shelf:
      ranking by leafCoin-equivalent collapses a tier into a single-currency
      page — nectar (1:1) always undercuts pollen (1:8) and ember cannot be
@@ -333,7 +340,15 @@ export function queryCatalogue(q: CatalogueQuery): CataloguePage {
     return r.max > r.min ? (s.seedPrice - r.min) / (r.max - r.min) : 0.5;
   };
   const sort = q.sort ?? "default";
-  if (sort === "price-asc" || sort === "price-desc") {
+  /* The unfiltered default shelf is a pure function of the static registry —
+     tier, price, currency and name never change inside a session — so its
+     order is computed once and every later identical query only slices.
+     Filtered or explicitly sorted queries still take the full path. */
+  const wholeRegistry = affordable.length === SPECIES.length;
+  let ordered: (typeof affordable)[number][];
+  if (sort === "default" && wholeRegistry && sortedAll) {
+    ordered = sortedAll;
+  } else if (sort === "price-asc" || sort === "price-desc") {
     /* An explicit price sort is a real-cost question, so here the
        leafCoin-equivalent is the honest comparator — and Ember, which no
        conversion can buy, sinks to the end of "asc" rather than leading it. */
@@ -347,15 +362,24 @@ export function queryCatalogue(q: CatalogueQuery): CataloguePage {
        runs by the face value, or a "descending" page reads 53, 63, 51, 56. */
     if (sort === "price-asc") affordable.sort((a, b) => eff(a) - eff(b) || a.seedPrice - b.seedPrice || byName(a, b));
     else affordable.sort((a, b) => eff(b) - eff(a) || b.seedPrice - a.seedPrice || byName(a, b));
+    ordered = affordable;
   } else {
-    // Cheapest tier first, cheapest within its currency's range inside it.
-    affordable.sort((a, b) => a.tier - b.tier || rel(a) - rel(b) || byName(a, b));
+    /* Cheapest tier first, cheapest within its currency's range inside it.
+       `rel` is per-species, so compute it once into a single numeric key —
+       tier*2+rel stays order-isomorphic because rel ∈ [0,1] — and the sort's
+       ~300k comparisons become arithmetic, with the collator reached only on
+       exact ties. */
+    const relKey = new Map<SpeciesId, number>();
+    for (const s of affordable) relKey.set(s.id, s.tier * 2 + rel(s));
+    affordable.sort((a, b) => relKey.get(a.id)! - relKey.get(b.id)! || byName(a, b));
+    ordered = affordable;
+    if (sort === "default" && wholeRegistry) sortedAll = ordered;
   }
 
-  const total = affordable.length;
+  const total = ordered.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
   const page = Math.min(Math.max(1, q.page ?? 1), pages);
-  const slice = affordable.slice((page - 1) * perPage, page * perPage);
+  const slice = ordered.slice((page - 1) * perPage, page * perPage);
 
   return {
     entries: slice.map((s) => {

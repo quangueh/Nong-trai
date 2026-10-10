@@ -14,7 +14,7 @@ import { sfx } from "../audio/audio";
 import { store, currentScreen } from "./app";
 import { dayKey } from "../core/store";
 import { giftFor, dayInCycle, MILESTONE_DAYS, type GiftLine } from "../core/checkin";
-import { currencyInfo } from "../core/currency";
+import { currencyInfo, viNum } from "../core/currency";
 import { SPECIES_BY_ID } from "../config/species";
 import { adsConfigured, showRewardedAd } from "../ads/ads";
 
@@ -32,7 +32,7 @@ function giftLabel(line: GiftLine): string {
   }
   if (line.kind === "currency" && line.currency) {
     const c = currencyInfo(line.currency);
-    return `${c.icon} ${c.name} ×${line.amount.toLocaleString("vi-VN")}`;
+    return `${c.icon} ${c.name} ×${viNum(line.amount)}`;
   }
   return "🎁 Quà";
 }

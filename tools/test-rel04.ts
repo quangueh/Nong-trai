@@ -66,6 +66,7 @@ try {
     for (const sc of screens) {
       await page.evaluate<any>(`(() => (window).__game.navigate(${JSON.stringify("X")} ))()`.replace("X", sc));
       await page.waitForTimeout(700);
+      if (sc === "lab") await page.waitForSelector('.seed-grid[data-shelf-ready="1"]', { timeout: 15000 }).catch(() => {});
       const n = await page.evaluate<any>(`(() => document.querySelectorAll(".card, .plot, .seed-grid > *, .plantcard").length)()`);
       seen.push(`${sc}:${n}`);
       if (!(n > 0)) allOk = false;

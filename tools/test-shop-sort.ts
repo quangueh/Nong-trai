@@ -40,7 +40,11 @@ await page.evaluate(`(() => {
   g.store.state.ember = 0;
   g.navigate("lab");
 })()`);
-await page.waitForTimeout(1200);
+/* The shelf mounts progressively — data-shelf-ready marks the last batch. */
+async function waitShelf(): Promise<void> {
+  await page.waitForSelector('.seed-grid[data-shelf-ready="1"]', { timeout: 15000 }).catch(() => {});
+}
+await waitShelf();
 
 /* The sort and affordability chips live inside the folded "Lọc" panel now, so it
    has to be opened before they can be clicked. Only "▸" is clicked: "▾" means
@@ -71,7 +75,7 @@ async function clickChip(label: string): Promise<boolean> {
     if (b) b.click();
     return Boolean(b);
   })()`);
-  await page.waitForTimeout(800);
+  await waitShelf();
   return hit === true;
 }
 
@@ -81,7 +85,7 @@ async function affordabilityOff(): Promise<void> {
     const b = [...document.querySelectorAll("button")].find((x) => /đủ tiền/.test(x.textContent || ""));
     if (b && /✓/.test(b.textContent || "")) b.click();
   })()`);
-  await page.waitForTimeout(700);
+  await waitShelf();
 }
 
 /**
@@ -99,7 +103,7 @@ async function clickCurrency(name: string): Promise<boolean> {
     if (b) b.click();
     return Boolean(b);
   })()`);
-  await page.waitForTimeout(800);
+  await waitShelf();
   return hit === true;
 }
 
@@ -188,7 +192,7 @@ await page.evaluate(`(() => {
   const next = [...document.querySelectorAll("button")].find((b) => (b.textContent || "").trim() === "Sau ›");
   if (next && !next.disabled) next.click();
 })()`);
-await page.waitForTimeout(800);
+await waitShelf();
 const page2 = await read();
 console.log(`ascending page 2: ${page2.prices.slice(0, 8).join(", ")} … page ${page2.page}`);
 check("page two is also ascending", isAsc(page2.prices), page2.prices.join(","));

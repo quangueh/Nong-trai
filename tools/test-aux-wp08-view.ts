@@ -80,7 +80,7 @@ try {
   {
     const page = await boot(browser);
     await page.evaluate<any>(`(() => (window).__game.navigate("lab"))()`);
-    await page.waitForTimeout(1200);
+    await page.waitForSelector('.seed-grid[data-shelf-ready="1"]', { timeout: 15000 }).catch(() => {});
     const shelf = await page.evaluate<any>(`(() => {
       const grid = document.querySelector(".seed-grid");
       const cards = grid ? grid.querySelectorAll(":scope > .card").length : -1;
@@ -96,6 +96,7 @@ try {
     // Search narrows the shelf through the real input event.
     await page.fill('input[placeholder*="Tìm"]', "tùng");
     await page.waitForTimeout(900);
+    await page.waitForSelector('.seed-grid[data-shelf-ready="1"]', { timeout: 15000 }).catch(() => {});
     const after = await page.evaluate<any>(`(() => {
       const cards = [...document.querySelectorAll(".seed-grid > .card")];
       return { count: cards.length, names: cards.slice(0, 5).map(c => c.textContent?.slice(0, 60)) };
@@ -110,7 +111,7 @@ try {
     /* The quest card lands here as `navigate("lab", { seed })` — drive the
        same route param the card does. */
     await page.evaluate<any>(`(() => (window).__game.navigate("lab", { seed: "thornroot" }))()`);
-    await page.waitForTimeout(1200);
+    await page.waitForSelector('.seed-grid[data-shelf-ready="1"]', { timeout: 15000 }).catch(() => {});
     const pinned = await page.evaluate<any>(`(() => {
       const chip = [...document.querySelectorAll("button")].find(b => /🎯/.test(b.textContent || ""));
       const cards = document.querySelectorAll(".seed-grid > .card").length;
@@ -123,7 +124,7 @@ try {
       const chip = [...document.querySelectorAll("button")].find(b => /🎯/.test(b.textContent || ""));
       if (chip) chip.click();
     })()`);
-    await page.waitForTimeout(800);
+    await page.waitForSelector('.seed-grid[data-shelf-ready="1"]', { timeout: 15000 }).catch(() => {});
     const restored = await page.evaluate<any>(`(() => ({
       chip: [...document.querySelectorAll("button")].some(b => /🎯/.test(b.textContent || "")),
       cards: document.querySelectorAll(".seed-grid > .card").length,

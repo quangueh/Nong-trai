@@ -25,7 +25,7 @@ import { renderPlantSvg } from "../../render/plantRenderer";
 import { skillMasteryPct, skillMasteryText } from "../../progression/objectives";
 import { celebrateExpGain } from "../fx/expGain";
 import { markUnlock, rewardFly } from "../fx/gardenFx";
-import { currencyInfo } from "../../core/currency";
+import { currencyInfo, viNum } from "../../core/currency";
 import { createSeedPlant } from "../../genetics/genomeGenerator";
 import type { Navigate, Screen } from "./types";
 import { gardenBar } from "./gardenBar";
@@ -330,7 +330,7 @@ function paintQuests(body: HTMLElement, nav: Navigate): void {
         if (got > 0) {
           rewardFly(all, totals);
           const parts = [
-            totals.coins ? `🪙 ${totals.coins.toLocaleString("vi-VN")}` : "",
+            totals.coins ? `🪙 ${viNum(totals.coins)}` : "",
             totals.exp ? `✨ ${totals.exp} EXP cây` : "",
             totals.breederXp ? `🎖️ ${totals.breederXp} EXP nhà lai` : "",
             totals.items ? `🧺 ${totals.items}` : "",
@@ -401,7 +401,7 @@ function questRewardChips(v: QuestView): HTMLElement[] {
   const chips: HTMLElement[] = [];
   if (r.exp) chips.push(rewardChip(`✨ ${r.exp} EXP cây`, "rw-exp"));
   if (r.breederXp) chips.push(rewardChip(`🎖️ ${r.breederXp} EXP nhà lai`, "rw-exp"));
-  if (r.coins) chips.push(rewardChip(`🪙 ${r.coins.toLocaleString("vi-VN")}`, "rw-coin"));
+  if (r.coins) chips.push(rewardChip(`🪙 ${viNum(r.coins)}`, "rw-coin"));
   if (r.items) chips.push(rewardChip(`🧺 ${r.items}`, "rw-item"));
   if (r.geneCrystal) chips.push(rewardChip(`💎 ${r.geneCrystal}`, "rw-crystal"));
   for (const u of r.unlocks ?? []) chips.push(rewardChip(`🔓 ${u}`, "rw-unlock"));
@@ -421,7 +421,7 @@ function questCard(v: QuestView, nav: Navigate): HTMLElement {
   const card = el("button", { class: `quest-card ${state}` });
   card.setAttribute("aria-label", `${v.def.title} — ${v.progress}/${v.target}`);
 
-  const pctText = `${Math.min(v.progress, v.target).toLocaleString("vi-VN")}/${v.target.toLocaleString("vi-VN")}`;
+  const pctText = `${viNum(Math.min(v.progress, v.target))}/${viNum(v.target)}`;
 
   const right =
     v.status === "completed"
@@ -668,7 +668,7 @@ function lockedPlot(status: PlotStatus, onChange: () => void): HTMLElement {
   box.append(
     el("div", { class: "plot-mark" }, [String(status.index)]),
     el("div", { class: "plot-req" }, [status.blocked || "Sẵn sàng mở"]),
-    el("div", { class: "plot-cost" }, [`${status.def.cost.toLocaleString("vi-VN")} xu`]),
+    el("div", { class: "plot-cost" }, [`${viNum(status.def.cost)} xu`]),
   );
 
   // No per-rule progress line here. The blocker line above already carries
@@ -817,7 +817,7 @@ function openSeedPicker(nav: Navigate, _anchor?: HTMLElement): void {
         el("span", { class: "tag" }, [ARCHETYPE_ROLE[sp.archetype] ?? sp.archetype]),
         owned > 0
           ? el("span", { class: "tag ok" }, [`Còn ${owned} hạt`])
-          : el("span", { class: "tag gold" }, [`Mua ${sp.seedPrice.toLocaleString("vi-VN")}${cur.icon}`]),
+          : el("span", { class: "tag gold" }, [`Mua ${viNum(sp.seedPrice)}${cur.icon}`]),
       ]),
     );
     const need = Math.max(0, qty - owned);
@@ -833,10 +833,10 @@ function openSeedPicker(nav: Navigate, _anchor?: HTMLElement): void {
     } else {
       const cost = seedPackPrice(sp.id, need);
       if (cost > store.state[sp.currency]) {
-        cta.textContent = `Thiếu ${(cost - store.state[sp.currency]).toLocaleString("vi-VN")}${cur.icon}`;
+        cta.textContent = `Thiếu ${viNum(cost - store.state[sp.currency])}${cur.icon}`;
         cta.setAttribute("disabled", "true");
       } else {
-        cta.textContent = `🌱 Mua ${need} + Trồng ${qty} · ${cost.toLocaleString("vi-VN")}${cur.icon}`;
+        cta.textContent = `🌱 Mua ${need} + Trồng ${qty} · ${viNum(cost)}${cur.icon}`;
         cta.removeAttribute("disabled");
       }
     }
@@ -860,7 +860,7 @@ function openSeedPicker(nav: Navigate, _anchor?: HTMLElement): void {
       ]),
       el("span", { class: "seed-pick-meta" }, [
         el("span", {}, [`⏱ ${growRangeMinutes()[0]}–${growRangeMinutes()[1]}p`]),
-        el("span", {}, [owned > 0 ? `còn ${owned}` : `${sp.seedPrice.toLocaleString("vi-VN")}${cur.icon}`]),
+        el("span", {}, [owned > 0 ? `còn ${owned}` : `${viNum(sp.seedPrice)}${cur.icon}`]),
       ]),
     );
     row.addEventListener("click", () => {

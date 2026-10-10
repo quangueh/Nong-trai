@@ -22,6 +22,7 @@
 import { xpRequired } from "../growth/care";
 import { BREEDER_LEVEL_CAP, xpForLevel } from "../core/store";
 import { PLOT_DEFS, type UnlockReq } from "../config/unlocks";
+import { viNum } from "../core/currency";
 import { TIER_UNLOCK } from "../economy/shop";
 import type { Plant } from "../core/types";
 
@@ -283,7 +284,7 @@ export function plantMilestone(level: number): PlantMilestone {
 export function xpRemainingText(s: ProgressionSnapshot): string {
   if (s.capped) return "Đã đạt cấp tối đa";
   const left = Math.max(0, s.need - s.xp);
-  return `Còn ${Math.round(left).toLocaleString("vi-VN")} EXP`;
+  return `Còn ${viNum(Math.round(left))} EXP`;
 }
 
 function clampPct(v: number): number {

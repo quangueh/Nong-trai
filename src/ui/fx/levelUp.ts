@@ -23,6 +23,7 @@
 
 import { el, dismissOnEscape } from "../components";
 import { reducedMotion, sfx } from "../../audio/audio";
+import { viNum } from "../../core/currency";
 import {
   xpRemainingText,
   type Milestone,
@@ -82,7 +83,7 @@ export function celebrateLevelUp(options: LevelUpOptions): Promise<void> {
     el("div", { class: "lvlup-level" }, [`${options.subjectIcon ?? "🌿"} Cấp ${options.level}`]),
     el("div", { class: "lvlup-exp" }, [
       options.expGained > 0
-        ? `+${options.expGained.toLocaleString("vi-VN")} EXP`
+        ? `+${viNum(options.expGained)} EXP`
         : `${options.subject} đã lên cấp`,
     ]),
   );
@@ -264,7 +265,7 @@ export function flyExpTo(target: Element | null, amount: number, from?: Element 
 
   const n = Math.min(6, 1 + Math.floor(amount / 120));
   for (let i = 0; i < n; i++) {
-    const chip = el("div", { class: "lvlup-fly" }, [`+${Math.round(amount / n).toLocaleString("vi-VN")}`]);
+    const chip = el("div", { class: "lvlup-fly" }, [`+${viNum(Math.round(amount / n))}`]);
     const jx = start.left + (i - (n - 1) / 2) * 18;
     chip.style.left = `${jx}px`;
     chip.style.top = `${start.top}px`;

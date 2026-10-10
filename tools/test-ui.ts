@@ -63,7 +63,9 @@ async function render(name: string, fn: () => unknown): Promise<HTMLElement | nu
   const host = w.document.getElementById("app")!;
   try {
     await fn();
-    await new Promise((r) => setTimeout(r, 5));
+    // 20ms, not 5: the shelf mounts its remaining cards one rAF batch per
+    // shimmed frame, and three batches need a few turns of the timer queue.
+    await new Promise((r) => setTimeout(r, 20));
     const text = host.textContent?.trim() ?? "";
     check(name, text.length > 0, `${text.length} chars`);
     return host;

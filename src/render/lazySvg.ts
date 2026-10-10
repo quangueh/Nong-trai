@@ -21,8 +21,8 @@
 import type { Plant } from "../core/types";
 import { renderPlantSvg } from "./plantRenderer";
 
-/** plant → art, held weakly so detached beds die with their card. */
-const pending = new WeakMap<Element, Plant>();
+/** bed → art thunk, held weakly so detached beds die with their card. */
+const pending = new WeakMap<Element, () => string>();
 
 let observer: IntersectionObserver | null = null;
 
@@ -34,11 +34,10 @@ function ensureObserver(): IntersectionObserver {
         if (!e.isIntersecting) continue;
         const bed = e.target as HTMLElement;
         observer!.unobserve(bed);
-        const plant = pending.get(bed);
-        if (!plant) continue;
+        const makeSvg = pending.get(bed);
+        if (!makeSvg) continue;
         pending.delete(bed);
-        const size = Number(bed.dataset.svgSize ?? 150) || 150;
-        bed.innerHTML = renderPlantSvg(plant, size);
+        bed.innerHTML = makeSvg();
         bed.dataset.lod = "full";
       }
     },
@@ -50,18 +49,40 @@ function ensureObserver(): IntersectionObserver {
 }
 
 /**
- * Fill `bed` with the plant's SVG — now if the platform cannot observe
- * intersections, deferred if it can. Safe to call on every card build; the
- * observer deduplicates via `unobserve` after the first mount.
+ * Fill `bed` with whatever `makeSvg` produces — now if the platform cannot
+ * observe intersections, deferred if it can. Safe to call on every card
+ * build; the observer deduplicates via `unobserve` after the first mount.
  */
-export function plantBedArt(bed: HTMLElement, plant: Plant, size = 150): void {
-  bed.dataset.svgSize = String(size);
+export function lazySvgArt(bed: HTMLElement, makeSvg: () => string): void {
   if (typeof IntersectionObserver !== "function") {
-    bed.innerHTML = renderPlantSvg(plant, size);
+    bed.innerHTML = makeSvg();
     bed.dataset.lod = "full";
     return;
   }
-  pending.set(bed, plant);
+  pending.set(bed, makeSvg);
   bed.dataset.lod = "deferred";
   ensureObserver().observe(bed);
+}
+
+/* Plant art is deterministic on (dna, growth, size): every garden repaint and
+ * every bed that scrolls in asks for the same string. The stage/level/dna key
+ * means a plant that grew in place can never return its old portrait, and the
+ * `WeakMap` never outlives the plant object itself. */
+const svgCache = new WeakMap<Plant, { key: string; svg: string }>();
+
+function cachedPlantSvg(plant: Plant, size: number, anim: boolean): string {
+  const key = `${size}|${anim}|${plant.growth.stage}|${plant.growth.level}|${JSON.stringify(plant.dna)}|${JSON.stringify(plant.visual)}`;
+  const hit = svgCache.get(plant);
+  if (hit && hit.key === key) return hit.svg;
+  const svg = renderPlantSvg(plant, size, { anim });
+  svgCache.set(plant, { key, svg });
+  return svg;
+}
+
+/**
+ * Fill `bed` with the plant's SVG through `lazySvgArt`.
+ */
+export function plantBedArt(bed: HTMLElement, plant: Plant, size = 150): void {
+  bed.dataset.svgSize = String(size);
+  lazySvgArt(bed, () => cachedPlantSvg(plant, size, false));
 }

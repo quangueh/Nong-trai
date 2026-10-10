@@ -17,6 +17,7 @@
  * out of sync with the save.
  */
 
+import { viNum } from "../core/currency";
 import type { Plant } from "../core/types";
 
 export type UnlockRule =
@@ -116,7 +117,7 @@ export const RULE_LABEL: Record<UnlockRule["k"], (n: number) => string> = {
   growthLevel: (n) => `Có cây đạt cấp ${n}`,
   awakened: (n) => `Thức tỉnh ${n} cây`,
   generation: (n) => `Có cây thế hệ ${n}`,
-  coin: (n) => `Có ${n.toLocaleString("vi-VN")} xu`,
+  coin: (n) => `Có ${viNum(n)} xu`,
   stage: (n) => `Vượt ải ${n}`,
   battles: (n) => `Đánh ${n} trận`,
   breeds: (n) => `Lai tạo ${n} lần`,
@@ -125,7 +126,7 @@ export const RULE_LABEL: Record<UnlockRule["k"], (n: number) => string> = {
 };
 
 function progress(n: number): string {
-  return n.toLocaleString("vi-VN");
+  return viNum(n);
 }
 
 /**

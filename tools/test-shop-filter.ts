@@ -49,7 +49,13 @@ await page.evaluate(`(() => {
   g.store.state.nurseryCap = 40;
   g.navigate("lab");
 })()`);
-await page.waitForTimeout(1200);
+/* The shelf mounts progressively (first batch synchronous, the rest per frame,
+ * marked data-shelf-ready when the last card lands). Counting before that flag
+ * would read the first batch only. */
+async function waitShelf(): Promise<void> {
+  await page.waitForSelector('.seed-grid[data-shelf-ready="1"]', { timeout: 15000 }).catch(() => {});
+}
+await waitShelf();
 
 /* The lock chips live inside the folded "Lọc" panel now, so it has to be opened
    before they can be clicked - and re-opened after every navigate, which resets
@@ -71,7 +77,7 @@ async function clickFilter(label: string): Promise<Reading> {
     if (b) b.click();
     return Boolean(b);
   })()`);
-  await page.waitForTimeout(700);
+  await waitShelf();
   return (await page.evaluate(`(() => {
     // Only the shelf grid. A looser selector also picks up the "nổi bật hôm nay" rail
     // above it, and those cards are never locked, which quietly drags the locked count
@@ -145,7 +151,7 @@ async function tierShelf(chip: string): Promise<number[]> {
     const b = [...document.querySelectorAll("button")].find((x) => (x.textContent || "").trim() === ${JSON.stringify(chip)});
     if (b) b.click();
   })()`);
-  await page.waitForTimeout(700);
+  await waitShelf();
   const r = await clickFilter("Tất cả");
   return r.currencies.filter((c) => c !== 0);
 }
@@ -156,7 +162,7 @@ const BLOSSOM = 0x1f33c;
 const FLAME = 0x1f525;
 
 await page.evaluate(`(() => { (window).__game.store.state.breederLevel = 30; (window).__game.navigate("lab"); })()`);
-await page.waitForTimeout(900);
+await waitShelf();
 await openFilters();
 
 const t2 = await tierShelf("II");
@@ -192,10 +198,11 @@ for (const [name, pass, detail] of deep) {
    the word typed into nothing. Typing a full word with the real keyboard is the only
    assertion that cannot fake passing. */
 await page.evaluate(`(() => { (window).__game.navigate("lab"); })()`);
-await page.waitForTimeout(700);
+await waitShelf();
 await page.click(".screen input.input");
 await page.keyboard.type("rễ gai", { delay: 60 });
 await page.waitForTimeout(400);
+await waitShelf();
 const afterType = (await page.evaluate(`(() => {
   const box = document.querySelector(".screen input.input");
   const first = document.querySelector(".seed-grid > *");
@@ -223,7 +230,7 @@ for (const [name, pass, detail] of typing) {
 /* A quest can pin the shelf to one species: "Mở giống X" should land on X's card, not
    on a 12,000-species shelf. */
 await page.evaluate(`(() => { (window).__game.navigate("lab", { seed: "emberleaf" }); })()`);
-await page.waitForTimeout(700);
+await waitShelf();
 const pinned = (await page.evaluate(`(() => ({
   cards: document.querySelectorAll(".seed-grid > *").length,
   hasPin: [...document.querySelectorAll("button")].some((b) => /🎯/.test(b.textContent || "")),
