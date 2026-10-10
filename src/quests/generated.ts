@@ -99,8 +99,15 @@ function gateCloseness(gate: UnlockStatus): number {
  * player has not discovered, preferring one whose shop gate is already open so the
  * quest is "go do it" rather than "come back when stronger". If no open undiscovered
  * species exists it takes the one whose gate is *closest* to met — pointing the
- * player at the nearest goal rather than an arbitrary far-off lock. If every gated
- * species is somehow tamed, the hashed pick stands and the quest self-completes.
+ * player at the nearest goal rather than an arbitrary far-off lock.
+ *
+ * The pool is the whole registry, not only gated species: gated quests are the best
+ * content push, but a player who has tamed every gated species still has untamed
+ * ones to point at — and a cycle must never settle on a species the player already
+ * owns, because its `current` measures (owns the seed, has planted it, has raised
+ * the bloodline) would all read complete the moment the quest appeared and the chain
+ * would pay out for nothing. A discovered species is the true last resort, for the
+ * day the whole registry is tamed.
  */
 function cycleSpecies(
   cycle: number,
@@ -112,19 +119,23 @@ function cycleSpecies(
   for (const id of Object.keys(save.entries)) {
     if (id.startsWith(ap)) return id.slice(ap.length) as SpeciesId;
   }
-  if (GATED.length === 0) return SPECIES[0].id;
-  const start = hash(`${ctx.playerId}:${PREFIX}:${cycle}`) % GATED.length;
+  const untamed = SPECIES.filter((s) => !ctx.discovered.has(s.id));
+  if (untamed.length === 0) {
+    // Everything is tamed — a discovered species is unavoidable here, so at least it is
+    // the deterministic one the chain has always pointed at.
+    return GATED.length ? GATED[hash(`${ctx.playerId}:${PREFIX}:${cycle}`) % GATED.length].id : SPECIES[0].id;
+  }
+  const start = hash(`${ctx.playerId}:${PREFIX}:${cycle}`) % untamed.length;
   let bestLocked: { id: SpeciesId; score: number } | null = null;
-  for (let k = 0; k < GATED.length; k++) {
-    const cand = GATED[(start + k) % GATED.length];
-    if (ctx.discovered.has(cand.id)) continue;
+  for (let k = 0; k < untamed.length; k++) {
+    const cand = untamed[(start + k) % untamed.length];
     if (!gateInfo) return cand.id;
     const gate = gateInfo(cand.id);
     if (gate.met) return cand.id;
     const score = gateCloseness(gate);
     if (!bestLocked || score > bestLocked.score) bestLocked = { id: cand.id, score };
   }
-  return bestLocked?.id ?? GATED[start].id;
+  return bestLocked!.id;
 }
 
 /** How many cycles have been fully claimed — the chain's depth counter. */

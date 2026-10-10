@@ -400,6 +400,13 @@ const AUTO_CARE_TICK_MS = 12_000;
 /** The furthest back an offline catch-up replays — a shade over the buff itself. */
 const AUTO_CARE_CATCHUP_MS = 16 * 60 * 1000;
 
+/**
+ * The daily quest ids, once. `unlockContext` needs them to keep claimed dailies out of
+ * the "claim N quests" count — their entries are deleted at day rollover, so counting
+ * them would let a species gate open today and shut again tomorrow.
+ */
+const DAILY_QUEST_IDS = new Set(QUEST_CATALOG.filter((q) => q.type === "daily").map((q) => q.id));
+
 export class GameStore {
   state: PlayerState;
   private listeners = new Set<() => void>();
@@ -723,8 +730,13 @@ export class GameStore {
    */
   unlockContext(): UnlockContext {
     let questClaims = 0;
-    for (const e of Object.values(this.state.quests.entries)) {
-      if (e.status === "claimed") questClaims++;
+    for (const [id, e] of Object.entries(this.state.quests.entries)) {
+      /*
+       * Dailies do not count toward "claim N quests" gates: a claimed daily's entry is
+       * deleted at the next day rollover, so letting it count would open a species gate
+       * today and re-lock it tomorrow — a shop card that flaps under the player.
+       */
+      if (e.status === "claimed" && !DAILY_QUEST_IDS.has(id)) questClaims++;
     }
     return contextFrom(this.state.plants, this.state.breederLevel, this.state.seeds, this.state.leafCoin, {
       ascentHighest: this.state.ascent.highest,

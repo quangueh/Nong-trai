@@ -307,8 +307,15 @@ export interface ClaimResult {
  * Take a finished quest's reward.
  *
  * Refuses anything that is not `completed`, which is what makes double-claiming impossible: the
- * status is the guard, and it is the same status the UI reads. A repeatable quest goes back to
- * `active` with no progress so it can be earned again the next day.
+ * status is the guard, and it is the same status the UI reads.
+ *
+ * A *daily* quest is claimed for the whole day: the entry is marked `claimed` with the day stamped
+ * on it, so the card reads "Đã nhận thưởng" instead of silently re-arming. Re-arming used to be the
+ * "repeatable" behaviour — and with the hired gardener firing real `care` events every tick, a
+ * claimed daily re-completed within the minute and paid out again. The day rollover in `syncQuests`
+ * deletes daily entries anyway, which is what makes the same definition reusable tomorrow — that is
+ * all "repeatable" ever meant. A repeatable *non*-daily (none exist today) still returns to `active`
+ * at zero progress.
  */
 export function claim(save: QuestSave, ctx: QuestContext, catalog: readonly QuestDef[], id: string): ClaimResult {
   const synced = syncQuests(save, ctx, catalog);
@@ -319,9 +326,12 @@ export function claim(save: QuestSave, ctx: QuestContext, catalog: readonly Ques
   if (entry.status !== "completed") return { ok: false, reason: "Chưa hoàn thành nhiệm vụ", save: synced };
 
   const entries = { ...synced.entries };
-  entries[id] = def.repeatable
-    ? { progress: 0, status: "active", ...(def.type === "daily" ? { day: ctx.day } : {}) }
-    : { progress: entry.progress, status: "claimed" };
+  entries[id] =
+    def.type === "daily"
+      ? { progress: entry.progress, status: "claimed", day: ctx.day }
+      : def.repeatable
+        ? { progress: 0, status: "active" }
+        : { progress: entry.progress, status: "claimed" };
   return { ok: true, def, save: { ...synced, entries } };
 }
 

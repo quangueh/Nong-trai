@@ -33,7 +33,7 @@ import { RULE_LABEL } from "../src/config/unlocks";
 import { currencyInfo } from "../src/core/currency";
 import { generatedMainQuests } from "../src/quests/generated";
 import type { CareActionId } from "../src/config/careActions";
-import { SPECIES_BY_ID, type SpeciesId } from "../src/config/species";
+import { SPECIES, SPECIES_BY_ID, type SpeciesId } from "../src/config/species";
 
 let passed = 0;
 let failed = 0;
@@ -198,13 +198,20 @@ section("3. Engine — advance and claim");
   const twice = claim(first.save, ctx(), QUEST_CATALOG, "main_01_plant");
   check("a claimed quest cannot be claimed again", !twice.ok);
 
-  // Repeatable dailies reset instead of marking claimed.
+  // Repeatable dailies are claimed for the rest of the day — re-arming the same
+  // definition belongs to tomorrow's roll, not to a same-day re-complete loop.
   const dailyCtx = ctx({ highestStage: 5, stagesCleared: 5 });
   const dailySave = syncQuests(emptyQuestSave(DAY), dailyCtx, QUEST_CATALOG);
   const dailyId = dailySave.dailyIds[0];
   const forced = { ...dailySave, entries: { ...dailySave.entries, [dailyId]: { progress: 99, status: "completed" as const, day: DAY } } };
   const dc = claim(forced, dailyCtx, QUEST_CATALOG, dailyId);
-  check("a claimed daily resets to active, not claimed", dc.ok && dc.save.entries[dailyId].status === "active" && dc.save.entries[dailyId].progress === 0);
+  check("a claimed daily is marked claimed for the day", dc.ok && dc.save.entries[dailyId].status === "claimed" && dc.save.entries[dailyId].day === DAY);
+  check("a claimed daily cannot be claimed twice the same day", !claim(dc.save, dailyCtx, QUEST_CATALOG, dailyId).ok);
+  check("sync never resurrects a claimed daily", syncQuests(dc.save, dailyCtx, QUEST_CATALOG).entries[dailyId]?.status === "claimed");
+  // And repeatable still means repeatable: tomorrow's rollover drops the entry entirely,
+  // so the same definition rolls fresh and can be earned and claimed again.
+  const tomorrow = syncQuests(dc.save, { ...dailyCtx, day: "2026-10-08" }, QUEST_CATALOG);
+  check("the next day wipes the claimed daily entry", tomorrow.entries[dailyId] === undefined || tomorrow.entries[dailyId].status === "active");
 
   // High mode keeps the best value, never adds.
   save = syncQuests(emptyQuestSave(DAY), ctx({ level: 3 }), QUEST_CATALOG);
@@ -454,6 +461,65 @@ section("8. The generated main line — it never runs out");
   // Before the fixed line is done, nothing is generated — the tutorial runs first.
   const early = generatedMainQuests(emptyQuestSave(DAY), ctx());
   check("the generated line waits for the tutorial", early.length === 0 || early.every((q) => !unlockMet(q.unlock, ctx())), `${early.length}`);
+
+  /*
+   * The chain must never aim at a species the player already tamed: its `current`
+   * measures (owns the seed, planted it, raised the bloodline) would all read
+   * complete at birth and the cycle would pay out for nothing — the actual
+   * "nhận thưởng hoài" loop. While even one species is untamed, the pick lands
+   * there; a discovered pick is only allowed once the whole registry is tamed.
+   */
+  {
+    const almostAll = new Set(SPECIES.map((s) => s.id));
+    almostAll.delete("emberleaf" as SpeciesId);
+    const genTamed = generatedMainQuests(emptyQuestSave(DAY), ctx({ level: 6, claimed: doneAll, discovered: almostAll }));
+    check("the chain aims at the one untamed species", genTamed[0]?.id === "mx0a_emberleaf", genTamed[0]?.id);
+    const allTamed = generatedMainQuests(emptyQuestSave(DAY), ctx({ level: 6, claimed: doneAll, discovered: new Set(SPECIES.map((s) => s.id)) }));
+    check("a fully-tamed registry still generates deterministically", allTamed.length === 4 && allTamed.every((q) => q.id.startsWith("mx0")), `${allTamed.length}`);
+  }
+}
+
+section("9. Reported bug — a claimed reward must not pay again");
+{
+  mem.clear();
+  const store = new GameStore();
+  // The daily shelf only exists past stage 2 — open it before the first quest read.
+  store.state.ascent.highest = 5;
+  const dailyView = store.questViews().find((v) => v.def.type === "daily");
+  const d0 = dailyView!.def.id;
+  store.state.quests.entries[d0] = { progress: dailyView!.target, status: "completed" };
+
+  const coins0 = store.state.leafCoin;
+  const first = store.claimQuest(d0);
+  check("the daily claims once", first.ok, first.reason);
+  const paid = store.state.leafCoin - coins0;
+  check("claiming a daily marks it claimed for the day", store.state.quests.entries[d0]?.status === "claimed");
+  check("the shelf shows it claimed, not claimable", store.questViews().find((v) => v.def.id === d0)?.status === "claimed");
+  check("the badge stops counting it", store.questViews().filter((v) => v.status === "completed").every((v) => v.def.id !== d0));
+
+  // Hammering the card — a double-click, a laggy tap-again — must pay nothing more.
+  let dup = 0;
+  for (let i = 0; i < 5; i++) if (store.claimQuest(d0).ok) dup++;
+  check("rapid duplicate claims all refuse", dup === 0 && store.state.leafCoin - coins0 === paid, `extra=${store.state.leafCoin - coins0 - paid}`);
+
+  // The hired gardener fires real care events all day — a claimed daily must not
+  // silently re-complete and re-pay the way it used to when claims reset it to active.
+  for (let i = 0; i < 30; i++) store.questEvent({ name: "care", amount: 1 });
+  check("same-day events cannot re-complete a claimed daily", store.questViews().find((v) => v.def.id === d0)?.status !== "completed");
+  check("and it still refuses to pay", !store.claimQuest(d0).ok && store.state.leafCoin - coins0 === paid);
+
+  // A reload reads the claimed state off disk — the guard is not just in memory.
+  const again = new GameStore();
+  check("a reload keeps the daily claimed", again.state.quests.entries[d0]?.status === "claimed");
+  check("a reloaded view agrees", again.questViews().find((v) => v.def.id === d0)?.status === "claimed");
+
+  // Claimed dailies must not feed the "claim N quests" species gates — the entry is
+  // deleted at day rollover, so counting it would flap a gate open then shut.
+  mem.clear();
+  const gate = new GameStore();
+  gate.state.quests.entries["main_01_plant"] = { progress: 1, status: "claimed" };
+  gate.state.quests.entries["daily_win_3"] = { progress: 3, status: "claimed", day: "2026-10-07" };
+  check("claimed dailies stay out of the quest-claim count", gate.unlockContext().questClaims === 1, `${gate.unlockContext().questClaims}`);
 }
 
 console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m\n`);
