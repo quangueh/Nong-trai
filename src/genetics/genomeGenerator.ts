@@ -440,7 +440,7 @@ export function breedPlants(parentA: Plant, parentB: Plant, ctx: BreedingContext
   };
 
   // --- rarity + validation ---------------------------------------------
-  const rarityScore = computeRarityScore(child, mutationTier, packages, targetRarity);
+  const rarityScore = computeRarityScore(child, mutationTier, packages, ctx.targetRarity);
   const rarity = rarityFromScore(rarityScore);
   child.rarityScore = round2(rarityScore);
   child.rarity = rarity;
@@ -938,7 +938,7 @@ function capitalise(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function computeRarityScore(child: Plant, tier: MutationTier, packages: GenePackage[], target: Rarity): number {
+function computeRarityScore(child: Plant, tier: MutationTier, packages: GenePackage[], target: Rarity | undefined): number {
   // geneNovelty: how many body genes are non-default and element variety.
   const nonDefault = Object.values(child.dna.bodyGenes).filter((v) => v !== "none").length;
   const elementVariety = ELEMENTS.filter((el) => (child.dna.elementGenes[el] ?? 0) > 0.15).length;
@@ -972,6 +972,9 @@ function computeRarityScore(child: Plant, tier: MutationTier, packages: GenePack
     stableExpression * 0.05;
 
   score *= 100;
+  /* No roll happened — callers that skip targetRarity mean "let the genome
+     decide", so the organic score stands. */
+  if (!target) return clamp(score, 0, 100);
   // The roll already picked the band the player was shown; a nudge only bent
   // the score toward it, so high-band targets regularly settled a band lower
   // (a "guaranteed" SSS landed S) and low targets overshot. Map the organic

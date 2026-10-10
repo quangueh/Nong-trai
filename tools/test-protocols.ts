@@ -335,6 +335,18 @@ for (const p of PROTOCOLS) {
   const ITER = 260;
   const counts: Record<Rarity, number> = { C: 0, B: 0, A: 0, S: 0, SS: 0, SSS: 0 };
   const tiers: Record<string, number> = {};
+  /* Real settlement rolls a band off the published table first, then generates
+     into it — breedPlants without a targetRarity is the generator's free-run
+     mode, not the player-facing path, so measuring that against the odds would
+     check a promise nobody makes. Roll the preview like store.breed does. */
+  const weights = s.breedingPreview(A, B, p.id)!;
+  let rollCursor = 0;
+  const roll = (i: number): Rarity => {
+    rollCursor = (rollCursor * 9301 + 49297 + i * 233) % 233280;
+    let r = (rollCursor / 233280) * 10000;
+    for (const band of RARITY_ORDER) { r -= weights[band]; if (r <= 0) return band; }
+    return "C";
+  };
   for (let i = 0; i < ITER; i++) {
     const res = breedPlants(pa, pb, {
       playerId: "test",
@@ -343,6 +355,7 @@ for (const p of PROTOCOLS) {
       tier: TIER,
       breederLevel: 60,
       protocol: p.id,
+      targetRarity: roll(i),
     }, 1_700_000_000_000 + i * 1000);
     counts[res.report.rarity]++;
     tiers[res.report.mutationTier] = (tiers[res.report.mutationTier] ?? 0) + 1;
