@@ -18,6 +18,7 @@ import {
   currencyInfo,
   currencyName,
   shortOf,
+  viNum,
   type CurrencyId,
 } from "./currency";
 import { EMBER_DAILY_CAP, rollDrops, type DropRoll } from "./drops";
@@ -704,7 +705,7 @@ export class GameStore {
     const gate = checkUnlock(ctx, def.unlock);
     if (!gate.met) return { ok: false, reason: `Chưa mở khóa: ${gate.summary}` };
     if (!this.debit(def.cost, `Mở ô vườn ${def.index}`)) {
-      return { ok: false, reason: `Không đủ ${def.cost.toLocaleString("vi-VN")} xu` };
+      return { ok: false, reason: `Không đủ ${viNum(def.cost)} xu` };
     }
     this.state.nurseryCap = def.index;
     this.commit("buyPlot");
@@ -754,7 +755,7 @@ export class GameStore {
    * ui/components: the store must not import the UI, which imports the store.
    */
   private static say(n: number): string {
-    return Math.round(n).toLocaleString("vi-VN");
+    return viNum(Math.round(n));
   }
 
   /** Spend a currency. Refuses rather than going negative, and says which one was short. */
@@ -1283,6 +1284,12 @@ export class GameStore {
       (p) => p.plantId !== a.plantId && p.plantId !== b.plantId,
     );
     this.state.discovery.breeds++;
+    // Snapshot which parts of the child are new BEFORE the book records them —
+    // after recordPlantDiscovery runs, "lần đầu" is no longer answerable.
+    result.report.firstDiscovery = {
+      newSpecies: result.plant.baseLineage.filter((sp) => !this.state.discovery.species.includes(sp)),
+      newTraits: result.plant.traits.filter((t) => !this.state.discovery.traits.includes(t)),
+    };
     this.recordPlantDiscovery(result.plant);
     // The child's lineage and generation ride the event: a "lai được thế hệ N" quest is a
     // measurement, and a "trồng dòng X" quest should count a bred descendant too.
@@ -1863,7 +1870,7 @@ private announcePlantLevelUp(plant: Plant, levels: number, xpGranted: number) {
           this.state.breederLevel === BREEDER_LEVEL_CAP
             ? "Đã đạt cấp cao nhất."
             : fresh.length > 0
-              ? `Mở khoá ${fresh.length.toLocaleString("vi-VN")} loài cây mới.`
+              ? `Mở khoá ${viNum(fresh.length)} loài cây mới.`
               : "Chưa có loài nào mở thêm — hãy trồng cây và tích luỹ để mở tiếp.",
         levelUp: {
           subject: "breeder",

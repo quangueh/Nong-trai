@@ -394,6 +394,44 @@ export function openMutationReport(result: BreedingResult, onClose: () => void) 
   headline.append(thumb, htext);
   content.appendChild(headline);
 
+  /* Discovery state — the badge answers "did this one add to my book" without
+     making the player cross-check the dex. */
+  const fd = report.firstDiscovery;
+  if (fd && (fd.newSpecies.length || fd.newTraits.length)) {
+    const bits: string[] = [];
+    if (fd.newSpecies.length) bits.push(`${fd.newSpecies.length} loài mới`);
+    if (fd.newTraits.length) bits.push(`${fd.newTraits.length} đặc tính mới`);
+    content.appendChild(el("div", { class: "callout", style: "margin-top:10px;font-weight:700" },
+      [`🧬 Khám phá mới: ${bits.join(" · ")}`]));
+  }
+
+  /* The two plants fusion consumed, beside the child they produced — the
+     report is the only place the comparison can live, because settlement
+     already removed the parents from the garden. */
+  if (report.parents?.length) {
+    content.appendChild(el("div", { class: "sec-title", style: "margin-top:12px" }, ["Cha mẹ"]));
+    const pc = el("div", { class: "card" });
+    for (const par of report.parents) {
+      const row = el("div", { class: "row", style: "padding:3px 0;gap:8px;align-items:center" });
+      row.append(
+        el("div", { class: "grow" }, [
+          el("div", { class: "small", style: "font-weight:600" }, [par.name]),
+          el("div", { class: "tiny muted" }, [`Cấp ${par.level} · Sức mạnh ${par.power}`]),
+        ]),
+        rarityTag(par.rarity),
+      );
+      pc.appendChild(row);
+    }
+    const best = Math.max(...report.parents.map((p) => p.power));
+    const diff = plant.powerRating - best;
+    pc.appendChild(el("div", { class: "tiny", style: "margin-top:4px" }, [
+      diff >= 0
+        ? `Con mạnh hơn cả cha mẹ (+${diff} sức mạnh)`
+        : `Con yếu hơn cha mẹ mạnh nhất ${-diff} sức mạnh`,
+    ]));
+    content.appendChild(pc);
+  }
+
   // mutations
   content.appendChild(el("div", { class: "sec-title", style: "margin-top:12px" }, ["Đột biến"]));
   const mutList = el("div", { class: "card" });

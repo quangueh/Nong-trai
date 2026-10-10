@@ -15,7 +15,7 @@ import { speciesAffinity } from "../config/species";
 import { TRAITS, TRAITS_BY_ID, TRAIT_ELEMENTS, type TraitDef } from "../config/traits";
 import { GENE_PACKAGES, type GenePackage } from "../config/genePackages";
 import { STAT_COST, TIER_META, TIER_ORDER, type CombatTier, type Stats } from "../config/balance";
-import { MUTATION_TIER_META, RARITY_META, RARITY_REQUIREMENT, rarityFromScore, type MutationTier, type Rarity } from "../config/rarity";
+import { MUTATION_TIER_META, RARITY_META, RARITY_ORDER, RARITY_REQUIREMENT, rarityFromScore, type MutationTier, type Rarity } from "../config/rarity";
 import { getProtocol, type ProtocolId } from "./protocols";
 import { buildSkillsFromGenes } from "./skillGenerator";
 import { plantName } from "./names";
@@ -61,6 +61,12 @@ export interface MutationReport {
   strengths: string[];
   weaknesses: string[];
   generationFallbackUsed: boolean;
+  /** The two plants the fusion consumed — the report's "so với cha mẹ" line
+      cannot look them up afterwards because settlement already removed them. */
+  parents: { name: string; rarity: Rarity; power: number; level: number }[];
+  /** Set by the store before it records discovery: which parts of this child
+      were new to the player's book. Generator itself cannot know. */
+  firstDiscovery?: { newSpecies: string[]; newTraits: string[] };
 }
 
 
@@ -512,6 +518,12 @@ export function breedPlants(parentA: Plant, parentB: Plant, ctx: BreedingContext
       strengths: strengthLines(child, domArch),
       weaknesses: weaknessLines(child, domArch),
       generationFallbackUsed: false,
+      parents: [parentA, parentB].map((p) => ({
+        name: p.name,
+        rarity: p.rarity,
+        power: p.powerRating,
+        level: p.growth.level,
+      })),
     },
   };
   return report;
@@ -960,10 +972,15 @@ function computeRarityScore(child: Plant, tier: MutationTier, packages: GenePack
     stableExpression * 0.05;
 
   score *= 100;
-  // Nudge toward the rolled target band without breaking the content.
-  const targetScore = RARITY_META[target].minScore + 5;
-  score = score * 0.72 + targetScore * 0.28;
-  return clamp(score, 0, 100);
+  // The roll already picked the band the player was shown; a nudge only bent
+  // the score toward it, so high-band targets regularly settled a band lower
+  // (a "guaranteed" SSS landed S) and low targets overshot. Map the organic
+  // score into the rolled band instead — within-band ordering still rewards a
+  // better genome, and the published odds become literally true.
+  const floor = RARITY_META[target].minScore;
+  const nextIdx = RARITY_ORDER.indexOf(target) + 1;
+  const ceiling = nextIdx < RARITY_ORDER.length ? RARITY_META[RARITY_ORDER[nextIdx]].minScore : 100;
+  return floor + (clamp(score, 0, 100) / 100) * (ceiling - floor) * 0.9999;
 }
 
 // ---------------------------------------------------------------------------
