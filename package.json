@@ -69,9 +69,11 @@
     "test:prefs": "tsx tools/test-prefs.ts",
     "build:test": "vite build --mode test --outDir dist-test",
     "preview:test": "vite preview --outDir dist-test --port 4174",
-    "test:perf": "tsx tools/test-performance.ts"
+    "test:perf": "tsx tools/test-performance.ts",
+    "test:app-shell": "tsx tools/test-app-shell.ts"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^26.6.3",
     "jsdom": "^30.1.1",
@@ -79,5 +81,9 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.5"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2"
   }
 }

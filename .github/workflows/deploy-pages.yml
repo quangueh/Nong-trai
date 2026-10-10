@@ -1,0 +1,55 @@
+# Push → production. The Pages project is direct-upload (not git-linked), so
+# this workflow is the bridge that makes "push source → app/site updates" real:
+# every push to main builds, runs the technical gates, then deploys dist/ to
+# Cloudflare Pages. The APK shell loads that URL — no APK rebuild needed for
+# content updates.
+#
+# Required repo secrets for the deploy step (build+test still run without them):
+#   CLOUDFLARE_API_TOKEN   — an API token with "Cloudflare Pages: Edit"
+#   CLOUDFLARE_ACCOUNT_ID  — 74e68368993df775a81d79eba2345a1b
+# When the secrets are absent the job goes green but prints a notice and skips
+# the upload — a missing secret must not masquerade as a failing build.
+
+name: deploy-pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  ship:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Build + typecheck
+        run: npm run build
+
+      - name: Technical gates (core)
+        run: npm run test:technical
+
+      - name: Deploy dist/ to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not set — build+tests passed, deploy skipped."
+            exit 0
+          fi
+          npx wrangler pages deploy dist --project-name=nong-trai --branch=main \
+            --commit-hash="${{ github.sha }}" \
+            --commit-message="${{ github.event.head_commit.message }}"

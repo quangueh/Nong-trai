@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportHeight="108"
+    android:viewportWidth="108">
+    <!-- A sprout: stem + two leaves, centred in the adaptive safe zone -->
+    <path
+        android:fillColor="#8FD98A"
+        android:pathData="M54,72 L54,50 Q54,38 44,34" />
+    <path
+        android:fillColor="#8FD98A"
+        android:pathData="M54,72 L51.5,72 L51.5,50 L54,50 Z" />
+    <path
+        android:fillColor="#B8E9A8"
+        android:pathData="M54,52 C54,40 62,32 74,32 C74,44 66,52 54,52 Z" />
+    <path
+        android:fillColor="#6FBF6A"
+        android:pathData="M54,52 C54,40 46,32 34,32 C34,44 42,52 54,52 Z" />
+    <path
+        android:fillColor="#4A7A52"
+        android:pathData="M34,74 Q54,68 74,74 Q54,80 34,74 Z" />
+</vector>

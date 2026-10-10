@@ -32,3 +32,11 @@ jobs:
       - name: Pages is serving the shell
         run: |
           curl -fsS -o /dev/null -w "%{http_code}\n" https://nong-trai-9u0.pages.dev/
+
+      - name: Install a real browser for the app-shell check
+        run: npx playwright-core install chromium --with-deps || npx playwright install chromium --with-deps
+
+      # The same URL the APK's WebView loads — boots the game, plays guest,
+      # reloads, and checks the save survives — the "app works like the web" gate.
+      - name: App-shell smoke (boot → guest → garden → save persists → SW)
+        run: npx tsx tools/test-app-shell.ts

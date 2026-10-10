@@ -5,6 +5,18 @@
 - Frontend: `npm run build` (typecheck + vite build), rồi deploy Pages:
   `npx wrangler pages deploy dist --project-name=nong-trai --branch=main`
   (chạy trong `worker/` — nơi wrangler đã login). Site: `https://nong-trai-9u0.pages.dev`.
+  Hoặc để `.github/workflows/deploy-pages.yml` tự deploy mỗi push main (cần
+  secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`, xem docs/42).
+
+## Android APK
+
+- Shell Capacitor trong `android/` — WebView load production URL
+  (`capacitor.config.ts` → `server.url`). Game update tự động khi Pages deploy;
+  APK chỉ cần rebuild khi `android/` hoặc config đổi.
+- Build qua `.github/workflows/android-apk.yml` → artifact `nong-trai-debug-apk`
+  + emulator boot smoke. Chi tiết: `docs/42_APK_BUILD.md`.
+- Google sign-in bị Google chặn trong WebView — `googlePanel` tự ẩn trong app;
+  dùng email/guest trong app, link Google trên web.
 - Worker (account/social/leaderboard/room): `npm run deploy:worker` —
   `wrangler deploy` trong `worker/`. **Mọi thay đổi trong `worker/src/` phải
   chạy lệnh này sau khi commit**, không thì code mới không lên production.

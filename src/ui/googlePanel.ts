@@ -40,6 +40,17 @@ const GOOGLE_G = `<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
 <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
 </svg>`;
 
+/**
+ * Inside the Android app the sign-in runs in a WebView, and Google refuses to
+ * serve its script there (WebView UAs are rejected by policy). Showing the
+ * button anyway is a dead end that errors out *after* the tap — so the app
+ * shell skips it up front and points at the email form instead.
+ */
+const inAppShell =
+  (typeof navigator !== "undefined" && /; wv\)/.test(navigator.userAgent)) ||
+  (typeof window !== "undefined" &&
+    Boolean((window as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.()));
+
 export interface GooglePanelResult {
   /** Append in order. Kept as an array so the caller decides the surrounding layout. */
   nodes: HTMLElement[];
@@ -261,7 +272,7 @@ export function googlePanel(
    * handed back on the result, so a sheet opened repeatedly does not stack listeners.
    */
 
-  if (!googleSignInAvailable) {
+  if (!googleSignInAvailable || inAppShell) {
     // Removes both the styled button and Google's empty target. Replaced the whole
     // slot, which would have left one of the two behind on the next render.
     action.remove();
@@ -270,9 +281,11 @@ export function googlePanel(
       el("div", { class: "gpanel-off" }, [
         el("div", { class: "small", style: "font-weight:700" }, ["Đăng nhập Google"]),
         el("div", { class: "tiny muted", style: "margin-top:3px" }, [
-          `Chưa bố trí đị bềt đế. Thiếu VITE_GOOGLE_CLIENT_ID (hiện có: ${
-            GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID.slice(0, 12) + "…" : "rỗng"
-          }).`,
+          inAppShell
+            ? "Bản app chưa mở được đăng nhập Google — dùng email bên dưới, hoặc chơi khách rồi đăng nhập Google trên web để đồng bộ."
+            : `Chưa bố trí đị bềt đế. Thiếu VITE_GOOGLE_CLIENT_ID (hiện có: ${
+                GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID.slice(0, 12) + "…" : "rỗng"
+              }).`,
         ]),
       ]),
     );
