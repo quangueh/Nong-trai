@@ -291,9 +291,35 @@ class AudioEngine {
       // that the effect still reads as "the same sound".
       const jitter = 1 + (Math.random() - 0.5) * 0.06;
       build(ctx, out, t, name, detune * jitter);
+
+      /*
+       * Sidechain-style duck: an effect dips the music bus for a beat so a hit
+       * reads over the bed instead of on top of it. The dip is a ramp both ways
+       * — a stepped gain is a click — and an effect landing inside the window
+       * re-arms the same dip rather than stacking a deeper one, so machine-gun
+       * effects keep one constant duck level instead of pumping the bed.
+       *
+       * `setMusicVolume` cancels this schedule when it runs, so a volume change
+       * mid-duck lands at the right level rather than the ducked one.
+       */
+      if (this.musicOut && this.musicVolume > 0) {
+        const g = this.musicOut.gain;
+        g.cancelScheduledValues(t);
+        g.setTargetAtTime(this.musicVolume * 0.55, t, 0.02);
+        g.setTargetAtTime(this.musicVolume, t + 0.35, 0.25);
+      }
     } catch {
       // A dropped sound is never worth breaking a frame over.
     }
+  }
+
+  /**
+   * Test/ops introspection: the live music-bus gain as the AudioParam reports
+   * it. Dips below `musicVolume` while an effect ducks the bed, and returns to
+   * it after — a duck that never came back would show up here as a wrong number.
+   */
+  get musicGain(): number | null {
+    return this.musicOut?.gain.value ?? null;
   }
 
   /** Stop everything; for when the tab is hidden. */
