@@ -1,0 +1,394 @@
+[
+  {
+    "viewport": "320x740-se",
+    "screen": "garden",
+    "file": "shots/viewport-sweep/320x740-se/garden.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "320x740-se",
+    "screen": "collection",
+    "file": "shots/viewport-sweep/320x740-se/collection.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "320x740-se",
+    "screen": "breeding",
+    "file": "shots/viewport-sweep/320x740-se/breeding.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "320x740-se",
+    "screen": "arena",
+    "file": "shots/viewport-sweep/320x740-se/arena.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "320x740-se",
+    "screen": "ascent",
+    "file": "shots/viewport-sweep/320x740-se/ascent.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "320x740-se",
+    "screen": "leaderboard",
+    "file": "shots/viewport-sweep/320x740-se/leaderboard.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "320x740-se",
+    "screen": "lab",
+    "file": "shots/viewport-sweep/320x740-se/lab.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "390x844-iphone12",
+    "screen": "garden",
+    "file": "shots/viewport-sweep/390x844-iphone12/garden.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "390x844-iphone12",
+    "screen": "collection",
+    "file": "shots/viewport-sweep/390x844-iphone12/collection.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "390x844-iphone12",
+    "screen": "breeding",
+    "file": "shots/viewport-sweep/390x844-iphone12/breeding.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "390x844-iphone12",
+    "screen": "arena",
+    "file": "shots/viewport-sweep/390x844-iphone12/arena.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "390x844-iphone12",
+    "screen": "ascent",
+    "file": "shots/viewport-sweep/390x844-iphone12/ascent.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "390x844-iphone12",
+    "screen": "leaderboard",
+    "file": "shots/viewport-sweep/390x844-iphone12/leaderboard.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "390x844-iphone12",
+    "screen": "lab",
+    "file": "shots/viewport-sweep/390x844-iphone12/lab.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "430x932-iphone15",
+    "screen": "garden",
+    "file": "shots/viewport-sweep/430x932-iphone15/garden.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "430x932-iphone15",
+    "screen": "collection",
+    "file": "shots/viewport-sweep/430x932-iphone15/collection.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "430x932-iphone15",
+    "screen": "breeding",
+    "file": "shots/viewport-sweep/430x932-iphone15/breeding.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "430x932-iphone15",
+    "screen": "arena",
+    "file": "shots/viewport-sweep/430x932-iphone15/arena.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "430x932-iphone15",
+    "screen": "ascent",
+    "file": "shots/viewport-sweep/430x932-iphone15/ascent.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "430x932-iphone15",
+    "screen": "leaderboard",
+    "file": "shots/viewport-sweep/430x932-iphone15/leaderboard.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "430x932-iphone15",
+    "screen": "lab",
+    "file": "shots/viewport-sweep/430x932-iphone15/lab.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "768x1024-ipad",
+    "screen": "garden",
+    "file": "shots/viewport-sweep/768x1024-ipad/garden.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "768x1024-ipad",
+    "screen": "collection",
+    "file": "shots/viewport-sweep/768x1024-ipad/collection.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "768x1024-ipad",
+    "screen": "breeding",
+    "file": "shots/viewport-sweep/768x1024-ipad/breeding.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "768x1024-ipad",
+    "screen": "arena",
+    "file": "shots/viewport-sweep/768x1024-ipad/arena.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "768x1024-ipad",
+    "screen": "ascent",
+    "file": "shots/viewport-sweep/768x1024-ipad/ascent.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "768x1024-ipad",
+    "screen": "leaderboard",
+    "file": "shots/viewport-sweep/768x1024-ipad/leaderboard.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "768x1024-ipad",
+    "screen": "lab",
+    "file": "shots/viewport-sweep/768x1024-ipad/lab.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1366x768-laptop",
+    "screen": "garden",
+    "file": "shots/viewport-sweep/1366x768-laptop/garden.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1366x768-laptop",
+    "screen": "collection",
+    "file": "shots/viewport-sweep/1366x768-laptop/collection.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1366x768-laptop",
+    "screen": "breeding",
+    "file": "shots/viewport-sweep/1366x768-laptop/breeding.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1366x768-laptop",
+    "screen": "arena",
+    "file": "shots/viewport-sweep/1366x768-laptop/arena.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1366x768-laptop",
+    "screen": "ascent",
+    "file": "shots/viewport-sweep/1366x768-laptop/ascent.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1366x768-laptop",
+    "screen": "leaderboard",
+    "file": "shots/viewport-sweep/1366x768-laptop/leaderboard.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1366x768-laptop",
+    "screen": "lab",
+    "file": "shots/viewport-sweep/1366x768-laptop/lab.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1920x1080-desktop",
+    "screen": "garden",
+    "file": "shots/viewport-sweep/1920x1080-desktop/garden.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1920x1080-desktop",
+    "screen": "collection",
+    "file": "shots/viewport-sweep/1920x1080-desktop/collection.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1920x1080-desktop",
+    "screen": "breeding",
+    "file": "shots/viewport-sweep/1920x1080-desktop/breeding.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1920x1080-desktop",
+    "screen": "arena",
+    "file": "shots/viewport-sweep/1920x1080-desktop/arena.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1920x1080-desktop",
+    "screen": "ascent",
+    "file": "shots/viewport-sweep/1920x1080-desktop/ascent.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1920x1080-desktop",
+    "screen": "leaderboard",
+    "file": "shots/viewport-sweep/1920x1080-desktop/leaderboard.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "1920x1080-desktop",
+    "screen": "lab",
+    "file": "shots/viewport-sweep/1920x1080-desktop/lab.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "844x390-landscape",
+    "screen": "garden",
+    "file": "shots/viewport-sweep/844x390-landscape/garden.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "844x390-landscape",
+    "screen": "collection",
+    "file": "shots/viewport-sweep/844x390-landscape/collection.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "844x390-landscape",
+    "screen": "breeding",
+    "file": "shots/viewport-sweep/844x390-landscape/breeding.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "844x390-landscape",
+    "screen": "arena",
+    "file": "shots/viewport-sweep/844x390-landscape/arena.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "844x390-landscape",
+    "screen": "ascent",
+    "file": "shots/viewport-sweep/844x390-landscape/ascent.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "844x390-landscape",
+    "screen": "leaderboard",
+    "file": "shots/viewport-sweep/844x390-landscape/leaderboard.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  },
+  {
+    "viewport": "844x390-landscape",
+    "screen": "lab",
+    "file": "shots/viewport-sweep/844x390-landscape/lab.png",
+    "hOverflowPx": 0,
+    "navInView": true,
+    "errors": 0
+  }
+]

@@ -138,7 +138,7 @@ section("BRD-§10 — route switch mid-ceremony cannot lose or repeat the result
   const { page, errs } = await boot();
   await page.evaluate<any>(`(async () => { ${MOD} })()`);
   // A real settle first — the child exists before the first frame plays.
-  const childId = await page.evaluate<any>(`(async () => {
+  await page.evaluate<any>(`(async () => {
     const sp = await import("/src/config/species.ts");
     const g = (window).__game;
     const s = g.store;
