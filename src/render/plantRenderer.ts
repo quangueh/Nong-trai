@@ -311,7 +311,7 @@ function stemCurl(stem: string, v: VisualGenes, rng: Rng): number {
  * young plants out of the top of the frame. Solving the ladder in order with the
  * previous stage as a floor satisfies both.
  */
-function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
+export function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
   const SOIL_TOP = 84;
   // A few units of slack absorbs the residual error in the canopy estimate; without
   // it, one strongly-curled plant in ~120 could still overhang by a pixel.
@@ -419,12 +419,28 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
   // poking out — most often on a plant whose floor height is already close to
   // the frame limit. Rather than let it clip, take the remainder out of the
   // decorative parts. Measured by `tools/shot.ts --bounds`.
+  //
+  // `floor` carries the previous stage's *clamped* height across the ladder:
+  // shaving a stage below what the earlier stage ended at is exactly the
+  // "plant shrinks as it matures" bug the solve order was built to prevent —
+  // this pass used to shave each stage independently and quietly reintroduced
+  // it on ~a third of the registry. When the floor binds, the leftover shrink
+  // comes out of bloom/leaf scale past their normal floors instead — small
+  // decoration reads far better than a shorter stem — or, for width, out of the
+  // bloom tip allowance, which is the only part of `stemSide` that scales.
+  let floor = 0;
   for (const stage of STAGE_ORDER) {
     const comp = compositionFor(plant, stage);
     const baseScale = v.scale * (STAGE_SCALE[stage] ?? 1);
     const bloomR = (body.flower === "bud" ? 7 : 16) * baseScale;
     const hasBloom = body.flower !== "none" && complexity > 0.3 && stage !== "seed" && stage !== "sprout";
     const plan = out[stage];
+    // The floor is a floor in both directions: the solve loop can floor-bind a
+    // whole tail of stages at one low height, then the deeper decoration squeeze
+    // below lets an earlier stage fit *taller* — leaving a later stage under the
+    // floor its predecessor already passed. Raise it here; the guard loop only
+    // ever fits downward, so nothing above the floor can be created this way.
+    if (plan.height < floor) plan.height = floor;
     for (let guard = 0; guard < 40; guard++) {
       const skeleton = buildHabit(habit, cx, SOIL_TOP, plan.height, lean, sway, complexity, geoRng, stage);
       skeleton.main.push(...curledTip(skeleton.main, stemCurl(body.stem, v, geoRng)));
@@ -434,12 +450,19 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
       // iteration budget with the plant still wide, and `--bounds` showed that
       // leaving both axes unverified here is what let stems out of the frame.
       //
-      // Height is the only lever that narrows a stem, so this is the one place a
-      // width problem gets fixed even when the monotonic-growth floor has already
-      // spent the shrink budget. Clipping is worse.
+      // Height is the only lever that narrows a stem — up to the floor. Past it,
+      // squeeze the bloom's tip allowance instead: it is decoration, it is part
+      // of `stemSide`, and a smaller crown is what the order of damage prefers.
       const tipAllowance = Math.max(4, (body.flower === "bud" ? 7 : 16) * baseScale * plan.bloomScale + 2);
       const stemSide = horizontalStemExtent(skeleton) + Math.abs(sway) + tipAllowance;
-      if (stemSide > SIDE_MARGIN) plan.height *= Math.max(0.88, SIDE_MARGIN / stemSide);
+      if (stemSide > SIDE_MARGIN) {
+        const h = plan.height * Math.max(0.88, SIDE_MARGIN / stemSide);
+        if (h >= floor) plan.height = h;
+        else {
+          plan.height = floor;
+          plan.bloomScale = Math.max(0.3, plan.bloomScale * Math.max(0.6, SIDE_MARGIN / stemSide));
+        }
+      }
       plan.fitX = Math.min(plan.fitX, fitFromRoom(stemSide, leafReachFor(stage, baseScale)));
       if (top >= TOP_MARGIN && stemSide <= SIDE_MARGIN) break;
       // Take it out of the leaves first, then the bloom: both are decoration, the
@@ -447,13 +470,22 @@ function solveGrowthLadder(plant: Plant): Record<string, GrowthPlan> {
       if (plan.leafScale > 0.45) plan.leafScale *= 0.9;
       else if (plan.bloomScale > 0.4) plan.bloomScale *= 0.9;
       else {
-        // Last resort: shave the height. It violates the monotonic-growth floor,
-        // but a few units of clipped stem is far less noticeable than a crown
-        // hanging outside the frame. Kept looping rather than breaking after one
-        // shave — a single step was not always enough to close the gap.
-        plan.height *= Math.max(0.9, (SOIL_TOP - TOP_MARGIN) / Math.max(1, SOIL_TOP - top));
+        // Last resort: shave the height — but never below the floor, and never
+        // *above* either: `Math.max(0.9, ratio)` with a ratio over 1 grew the
+        // stem when the canopy already fit vertically and only the width was
+        // over, which is how a clamp meant to bound things inflated them. The
+        // multiplier is now strictly a shrink (3-10% a pass); when the floor
+        // binds, keep squeezing the decoration past its normal floors instead.
+        const h = plan.height * Math.max(0.9, Math.min(0.97, (SOIL_TOP - TOP_MARGIN) / Math.max(1, SOIL_TOP - top)));
+        if (h >= floor) plan.height = h;
+        else {
+          plan.height = floor;
+          plan.leafScale = Math.max(0.2, plan.leafScale * 0.88);
+          plan.bloomScale = Math.max(0.15, plan.bloomScale * 0.88);
+        }
       }
     }
+    floor = plan.height;
   }
   return out;
 }
