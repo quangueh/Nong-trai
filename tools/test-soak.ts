@@ -16,7 +16,7 @@
 import { chromium, type Browser, type Page } from "playwright-core";
 import { applyFixture } from "./fixtures";
 
-const BASE = process.env.TEST_BASE_URL ?? "http://localhost:4174";
+const BASE = process.env.TEST_BASE_URL ?? "http://localhost:5173";
 const GARDEN_MS = Number(process.env.SOAK_GARDEN_MS ?? 15 * 60 * 1000);
 const HIDDEN_MS = Number(process.env.SOAK_HIDDEN_MS ?? 5 * 60 * 1000);
 const SAMPLES = Math.max(2, Number(process.env.SOAK_SAMPLES ?? 4)); // 0/5/10/15
@@ -31,20 +31,20 @@ type Counters = { heapMB: number; dom: number; sources: number; reqs: number };
 
 async function counters(page: Page, reqs: number): Promise<Counters> {
   const c = await page.evaluate<any>(`(() => {
-    const g = (window as any).__game;
+    const g = (window).__game;
     return {
-      heap: (performance as any).memory ? (performance as any).memory.usedJSHeapSize : -1,
+      heap: performance.memory ? performance.memory.usedJSHeapSize : -1,
       dom: document.getElementsByTagName("*").length,
-      sources: g?.music ? (g.music as any).stats?.().sources ?? -1 : -1,
+      sources: g?.music ? g.music.stats?.().liveSources ?? -1 : -1,
     };
   })()`);
   return { heapMB: c.heap / 1048576, dom: c.dom, sources: c.sources, reqs };
 }
 
 const routeCycle = async (page: Page) => {
-  for (const nav of ["shop", "collection", "quests", "garden"]) {
+  for (const nav of ["lab", "collection", "breeding", "garden"]) {
     await page.click(`[data-nav="${nav}"]`).catch(async () => {
-      await page.evaluate<any>(`(window as any).__game.app.show("${nav}")`);
+      await page.evaluate<any>(`(window).__game.navigate("${nav}")`);
     });
     await page.waitForTimeout(300);
   }
@@ -64,9 +64,16 @@ async function main() {
   await page.evaluate<any>(`localStorage.setItem("nongtrai.onboarded", "1"); localStorage.setItem("ci-shown", new Date().toDateString())`);
   await applyFixture(page, "F02");
 
-  /* Music on for real — the whole point of the audio half of the soak. */
-  await page.evaluate<any>(`(window as any).__game.music.start("garden")`);
+  /* Music on for real — the whole point of the audio half of the soak. A real
+     pointer event takes the same path a player's first tap does (sfx.unlock +
+     music.start on the gesture), so liveSources actually means "audible". */
+  await page.mouse.click(200, 120);
   await page.waitForTimeout(1500);
+  const musicUp = await page.evaluate<any>(`(() => {
+    const g = (window).__game;
+    return { running: g.music.stats().running, ctx: g.sfx?.context?.state ?? "none" };
+  })()`);
+  check(musicUp.running === true && musicUp.ctx === "running", "music bed actually running after the unlock gesture", JSON.stringify(musicUp));
 
   const samples: Counters[] = [await counters(page, reqs)];
   const t0 = Date.now();
@@ -85,12 +92,21 @@ async function main() {
   check(Math.abs(last.dom - first.dom) < first.dom * 0.5, "DOM stable over soak", `${first.dom}→${last.dom}`);
   check(last.sources >= 0 && last.sources <= 64, "audio sources bounded", `sources=${last.sources}`);
 
-  /* Hidden phase — background lifecycle must not queue a backlog of work. */
-  const cdp = await ctx.newCDPSession(page);
-  await cdp.send("Page.setWebLifecycleState", { state: "hidden" as "active" });
+  /* Hidden phase — the app reacts to document.hidden/visibilitychange. Headless
+     Chromium cannot occlude a page (cover-tab does not flip hidden either), so
+     the trigger is shimmed: override the same properties the browser would set
+     and dispatch the same event. Every handler still runs the real path. */
+  await page.evaluate<any>(`(() => {
+    (window).__setHidden = (v) => {
+      Object.defineProperty(document, "hidden", { get: () => v, configurable: true });
+      Object.defineProperty(document, "visibilityState", { get: () => v ? "hidden" : "visible", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+  })()`);
+  await page.evaluate<any>(`(window).__setHidden(true)`);
   const hiddenReqs = reqs;
   await page.waitForTimeout(HIDDEN_MS);
-  await cdp.send("Page.setWebLifecycleState", { state: "active" });
+  await page.evaluate<any>(`(window).__setHidden(false)`);
   await page.waitForTimeout(2000);
   const hiddenStorm = reqs - hiddenReqs;
   check(hiddenStorm < 500, "no request storm while hidden", `reqs during hidden=${hiddenStorm}`);
@@ -110,17 +126,28 @@ async function main() {
   console.log("\n  fights:");
   for (let i = 0; i < 10; i++) {
     await page.evaluate<any>(`(() => {
-      const g = (window as any).__game;
+      const g = (window).__game;
       const st = g.store.state;
-      const p = st.plants.find((pl: any) => !pl.locks?.battle);
+      const p = st.plants.find((pl) => !pl.locks || !pl.locks.battle);
       if (!p) return;
       p.stats.speed = 500; p.stats.attack = 400; p.powerRating = 999;
-      g.app.show("arena");
+      g.navigate("arena");
     })()`);
-    await page.waitForSelector('[data-action="fight-ai"]', { timeout: 10000 });
-    await page.click('[data-action="fight-ai"]');
-    await page.waitForSelector(".battle-end, .result-banner, .stagelive-panel", { timeout: 60000 });
-    await page.evaluate<any>(`(window as any).__game.app.show("garden")`);
+    await page.waitForTimeout(600);
+    await page.evaluate<any>(`(() => {
+      const b = [...document.querySelectorAll("button")].find(x => /Đấu với AI/.test(x.textContent || ""));
+      if (b) b.click();
+    })()`);
+    await page.waitForTimeout(600);
+    await page.evaluate<any>(`(() => { const c = document.querySelector(".sheet .pickrow"); if (c) c.click(); })()`);
+    await page.waitForTimeout(600);
+    await page.evaluate<any>(`(() => {
+      const b = [...document.querySelectorAll("button")].find(x => /Bắt đầu/.test(x.textContent || ""));
+      if (b) b.click();
+    })()`);
+    await page.waitForSelector(".battlefield", { timeout: 15000 });
+    await page.waitForSelector(".result-banner", { timeout: 100000 });
+    await page.evaluate<any>(`(window).__game.navigate("garden")`);
     await page.waitForTimeout(400);
   }
   await page.waitForTimeout(2500);
@@ -129,15 +156,15 @@ async function main() {
 
   /* Data survival — a reload mid-session must keep plants and currency. */
   const before = await page.evaluate<any>(`(() => {
-    const st = (window as any).__game.store.state;
-    return { plants: st.plants.length, leaf: st.wallet.leafCoin };
+    const st = (window).__game.store.state;
+    return { plants: st.plants.length, leaf: st.leafCoin };
   })()`);
   await page.reload();
-  await page.waitForFunction(() => Boolean((window as any).__game?.store), { timeout: 15000 });
+  await page.waitForFunction(() => Boolean((window).__game?.store), { timeout: 15000 });
   await page.waitForTimeout(1000);
   const after = await page.evaluate<any>(`(() => {
-    const st = (window as any).__game.store.state;
-    return { plants: st.plants.length, leaf: st.wallet.leafCoin };
+    const st = (window).__game.store.state;
+    return { plants: st.plants.length, leaf: st.leafCoin };
   })()`);
   check(after.plants >= before.plants, "plants survive reload mid-soak", `${before.plants}→${after.plants}`);
   check(after.leaf >= before.leaf, "wallet survives reload mid-soak", `${before.leaf}→${after.leaf}`);
