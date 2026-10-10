@@ -280,6 +280,13 @@ console.log("\nthe moments that carry the game:");
     for (const p of g.store.state.plants) {
       p.growth.stage = "mature"; p.growth.stageReadyAt = Date.now();
       p.growth.level = 20; p.powerRating = 250; p.tier = "bloom";
+      /* Stage 10 is a boss (~240+affix power): default starter stats made the
+         fight a coin flip, and a LOSS records "lose" where the assertions below
+         expect "reward"/"unlock". A body that clearly out-stats the boss keeps
+         the win certain while still taking enough swings for the pause click. */
+      p.stats.hp = 3000; p.stats.maxHp = 3000;
+      p.stats.attack = 220; p.stats.defense = 300;
+      p.stats.speed = 350; p.stats.skillPower = 200;
     }
     g.navigate("ascent");
   })()`);
