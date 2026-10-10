@@ -52,8 +52,14 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put("/index.html", copy));
+          // Only a working shell may replace the cached one — storing an error
+          // page here would serve the outage again on the next offline open,
+          // the same permanent-outage bug the asset branch below guards. The
+          // write rides waitUntil so the worker cannot be killed mid-put.
+          if (res.ok) {
+            const copy = res.clone();
+            e.waitUntil(caches.open(CACHE).then((c) => c.put("/index.html", copy)));
+          }
           return res;
         })
         .catch(() => caches.match("/index.html")),
