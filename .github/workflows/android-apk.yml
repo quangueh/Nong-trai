@@ -111,6 +111,25 @@ jobs:
           path: apk-smoke.png
           retention-days: 14
 
+      # Push the verified APK onto GitHub itself: a rolling "apk-latest"
+      # release whose download URL never changes —
+      #   releases/download/apk-latest/app-debug.apk
+      # Only runs after the emulator smoke above passed, so a broken shell
+      # can never reach the release page.
+      - name: Publish rolling release (apk-latest)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: "Nông Trại APK — bản mới nhất"
+          body: |
+            APK debug build từ commit ${{ needs.build.outputs.sha }} — đã qua emulator boot smoke.
+
+            Cài: chuyển file vào điện thoại → mở → cho phép "install unknown apps".
+            Game tự cập nhật theo site mỗi lần mở app; APK chỉ cần cài lại khi shell đổi.
+          prerelease: true
+          files: apk/app-debug.apk
+
       - name: Attach APK to tag release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2

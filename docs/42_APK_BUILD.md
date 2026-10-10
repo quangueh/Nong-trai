@@ -22,15 +22,19 @@ APK (android/) ──► WebView loads URL ────────────�
 ## Getting the APK
 
 `.github/workflows/android-apk.yml` builds `app-debug.apk` on every push/tag
-and on `workflow_dispatch`:
+and on `workflow_dispatch`. After the emulator boot smoke passes, the APK is
+published back onto GitHub itself:
 
-- **Actions → android-apk → artifacts → `nong-trai-debug-apk`** — download,
-  copy to the phone, install ("install unknown apps").
+- **Rolling release `apk-latest`** — stable download link, always the newest
+  verified build:
+  `https://github.com/quangueh/Nong-trai/releases/download/apk-latest/app-debug.apk`
+- **Actions → android-apk → artifacts → `nong-trai-debug-apk`** — same file,
+  30-day retention.
 - Tagged pushes (`git tag v1.0 && git push --tags`) also attach the APK to a
-  GitHub Release.
+  permanent versioned Release.
 - `emu-smoke` boots the APK on an API-34 emulator in CI: install → launch →
   asserts the activity is resumed and logcat has no FATAL → screenshot artifact.
-  A red smoke run means the shell itself is broken — don't ship that artifact.
+  A red smoke run means the shell itself is broken — nothing is published.
 
 Debug-signed APKs are fine for sideloading/personal use. Play-Store release
 signing needs a keystore in secrets (`KEYSTORE_B64`, `KEY_ALIAS`,
