@@ -148,10 +148,15 @@ for (const s of screens) {
 }
 
 // The garden's tabs, since those are new and the production bundle is where a
-// class-name collision would show up.
+// class-name collision would show up. They are the *mobile* navigation — at
+// >=1024px the stylesheet hides the rail (`.screen:has(.garden-scene) .tabs`)
+// because the desktop two-pane layout puts the same content in the side panel,
+// so the walk has to run at phone size or every click legitimately hits
+// display:none.
+await page.setViewportSize({ width: 390, height: 844 });
 await page.evaluate(`(() => { document.querySelector('.navitem[data-screen="garden"]').click(); })()`);
 await page.waitForTimeout(350);
-for (const label of ["Hôm nay", "Túi hạt", "Vườn"]) {
+for (const label of ["Nhiệm vụ", "Túi hạt", "Vườn"]) {
   await page.locator(".tabs .tab", { hasText: label }).first().click();
   await page.waitForTimeout(280);
   const t = await page.evaluate(`(() => {
