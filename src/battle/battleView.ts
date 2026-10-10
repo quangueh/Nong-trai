@@ -153,6 +153,9 @@ estartTimer. */
       this.hidePauseVeil();
       this.restartTimer();
     }
+    // The mirrored cue pair was built for exactly this beat — pausing silently
+    // reads as "the button did nothing", especially on touch.
+    sfx.play(this.paused ? "pause" : "resume");
     if (this.pauseBtn) this.pauseBtn.textContent = this.paused ? "▶" : "⏸";
   }
 

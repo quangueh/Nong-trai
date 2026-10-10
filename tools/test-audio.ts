@@ -85,14 +85,15 @@ async function open(opts: { autoplay?: boolean } = {}): Promise<{ page: Page; er
     ...(opts.autoplay === false ? {} : { args: ["--autoplay-policy=no-user-gesture-required"] }),
   });
   const page = await ctx.newPage();
+  await ctx.route("**/*", route => route.request().url().startsWith(`${URL}/`) ? route.continue() : route.abort());
   const errs: string[] = [];
   page.on("pageerror", (e: Error) => errs.push(String(e).slice(0, 200)));
   page.on("console", (m: { type: () => string; text: () => string }) => {
     if (m.type() === "error" && !/GSI_LOGGER|403|Failed to load/.test(m.text())) errs.push(m.text().slice(0, 200));
   });
   (page as Page & { __errs: string[] }).__errs = errs;
-  await page.goto(URL, { waitUntil: "networkidle" });
-  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
+  await page.goto(URL, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), undefined, { timeout: 20000 });
   await page.waitForTimeout(700);
   await page.evaluate(`(() => {
     const a = [...document.querySelectorAll("a, button")].find(x => /không cần tài khoản/i.test(x.textContent || ""));
@@ -126,8 +127,9 @@ console.log("\nnothing runs before the first gesture:");
   const page = await ctx.newPage();
   const errs: string[] = [];
   page.on("pageerror", (e: Error) => errs.push(String(e).slice(0, 200)));
-  await page.goto(URL, { waitUntil: "networkidle" });
-  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
+  await ctx.route("**/*", route => route.request().url().startsWith(`${URL}/`) ? route.continue() : route.abort());
+  await page.goto(URL, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), undefined, { timeout: 20000 });
   await page.waitForTimeout(1200);
 
   const before = (await page.evaluate(`(() => {
@@ -217,8 +219,8 @@ console.log("\nmute, and the two volumes:");
 
   /* --- and they survive a reload --- */
   await page.evaluate(`(() => (window).__game.sfx.setMuted(true))()`);
-  await page.reload({ waitUntil: "networkidle" });
-  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), undefined, { timeout: 20000 });
   await page.waitForTimeout(700);
   const after = (await page.evaluate(`(() => {
     const g = (window).__game;
@@ -290,7 +292,14 @@ console.log("\nthe moments that carry the game:");
     const b = [...document.querySelectorAll(".stagebrief-panel button")].find(x => /Bắt đầu/.test(x.textContent || ""));
     if (b) b.click();
   })()`);
-  await page.waitForSelector(".stagelive-panel", { timeout: 150000 }).catch(() => {});
+  /*
+   * `.battlefield`, not `.stagelive-panel`: the panel is the RESULT overlay, so
+   * waiting for it meant pausing a fight that had already ended — `togglePause`
+   * no-ops on finished, the clicks recorded nothing, and the two `length = 0`
+   * wipes then destroyed the start/win cues the next block asserted on. The
+   * live replay keeps `.battlefield` mounted from `view.start()` on.
+   */
+  await page.waitForSelector(".battlefield", { timeout: 30000 }).catch(() => {});
 
   /*
    * Pause and resume, through the real pause button.
@@ -298,36 +307,46 @@ console.log("\nthe moments that carry the game:");
    * The module-level `__game.battleView` only reports the arena's main view; ladder and the
    * arena modal both keep their views local. Clicking the visible pause button avoids that trap
    * and matches what a player actually does.
+   *
+   * Index slices, not `length = 0`: the fight's whole sound arc stays in the buffer
+   * for the stage assertions below. Wiping it is how `start`/`win`/`reward` were
+   * "missing" — they had already played and were erased, not never fired.
    */
   const paused = (await page.evaluate(`(async () => {
     const g = (window).__game;
     const btn = document.querySelector('button[title^="Tạm dừng"]');
     if (!btn) return { error: "no pause button" };
 
-    g.__recorded.length = 0;
-    (btn as HTMLButtonElement).click();
+    const at = g.__recorded.length;
+    btn.click();
     await new Promise(r => setTimeout(r, 350));
-    const a = [...new Set(g.__recorded.map(c => c.name))];
-    g.__recorded.length = 0;
-    (btn as HTMLButtonElement).click();
+    const a = [...new Set(g.__recorded.slice(at).map(c => c.name))];
+    const veil = !!document.querySelector(".battle-paused");
+    const at2 = g.__recorded.length;
+    btn.click();
     await new Promise(r => setTimeout(r, 350));
-    return { paused: a, resumed: [...new Set(g.__recorded.map(c => c.name))] };
-  })()`)) as Record<string, string[]>;
+    return { paused: a, resumed: [...new Set(g.__recorded.slice(at2).map(c => c.name))], veil, veilGone: !document.querySelector(".battle-paused") };
+  })()`)) as Record<string, unknown>;
   console.log(`  pause/resume: ${JSON.stringify(paused)}`);
   if (paused.error) {
     check("a live fight to pause", false, String(paused.error));
   } else {
-    check("a live fight to pause", true);
-    check("pausing is audible", paused.paused.includes("pause"), JSON.stringify(paused.paused));
-    check("and resuming is a different sound", paused.resumed.includes("resume") && !paused.resumed.includes("pause"), JSON.stringify(paused.resumed));
+    check("a live fight to pause", paused.veil === true, "pause veil never showed — the replay ended before the click");
+    check("pausing is audible", (paused.paused as string[]).includes("pause"), JSON.stringify(paused.paused));
+    check("and resuming is a different sound", (paused.resumed as string[]).includes("resume") && !(paused.resumed as string[]).includes("pause"), JSON.stringify(paused.resumed));
+    check("and the fight visibly resumed", paused.veilGone === true);
   }
 
   /*
    * Wait for the fight to actually resolve rather than sleeping a guessed interval and reading
    * whatever is on screen — a fixed wait cannot tell "still fighting" from "already over", and
    * this suite has now been bitten by that distinction three separate ways.
+   *
+   * `.stagelive-panel` is the class the result overlay really mounts; the old selector list
+   * (`.stageover-panel, .stagelive-panel.is-over, .stageresult`) matched nothing in the DOM and
+   * burned the whole 150s timeout inside `.catch()` on every run.
    */
-  await page.waitForSelector(".stageover-panel, .stagelive-panel.is-over, .stageresult", { timeout: 150000 }).catch(() => {});
+  await page.waitForSelector(".stagelive-panel", { timeout: 150000 }).catch(() => {});
   await page.waitForTimeout(4500);
 
   const onStage = await calls(page);
@@ -349,51 +368,88 @@ console.log("\nthe moments that carry the game:");
    * never had two hits in a row to count, and there was no live fight left to pause. Both
    * assertions were reporting on a fight that had already ended.
    *
-   * A combo needs consecutive hits without being interrupted, so it needs a fight that lasts.
+   * A combo needs consecutive hits without being interrupted, so it needs a fight that lasts —
+   * and the stats are shaped for exactly that: speed at the 0.4s interval floor swings
+   * several times before the opponent's first action, low attack keeps the foe alive long
+   * enough to hear the run build, and high evasion means being hit (which breaks the run)
+   * is rare. The AI opponent is scaled to `powerRating`, so that stays low on purpose.
    */
   await page.evaluate(`(() => {
     const g = (window).__game;
-    for (const p of g.store.state.plants) p.powerRating = 240;
+    for (const p of g.store.state.plants) {
+      p.powerRating = 240;
+      p.stats.speed = 500;
+      /* Enough to keep a run alive, not enough to mute "being hit": 0.6 made the
+         foe's swings whiff half the time, so the 'enemy' cue below could not
+         fire — the assertion needs to be hit *sometimes*. */
+      p.stats.evasion = 0.2;
+      p.stats.attack = 40;
+    }
     g.navigate("arena");
   })()`);
   await page.waitForTimeout(900);
-  await page.evaluate(`(() => {
-    const b = [...document.querySelectorAll("button")].find(x => /Đấu với AI/.test(x.textContent || ""));
-    if (b) b.click();
-  })()`);
-  await page.waitForTimeout(900);
-  await page.evaluate(`(() => { const c = document.querySelector(".sheet .pickrow"); if (c) c.click(); })()`);
-  await page.waitForTimeout(900);
-  await page.evaluate(`(() => {
-    (window).__game.__recorded.length = 0;
-    const b = [...document.querySelectorAll("button")].find(x => /Bắt đầu/.test(x.textContent || ""));
-    if (b) b.click();
-  })()`);
-  await page.waitForSelector(".battlefield", { timeout: 20000 }).catch(() => {});
 
   /*
-   * Polled, not sampled.
+   * Polled, not sampled — and bounded-retried.
    *
    * A combo is a run of consecutive hits, and whether one has formed by any given second is
    * down to how the fight is going — sampling once reports a coin flip and calls it a failure.
-   * So this waits for the combo to appear, within a fight that is known to still be running.
+   * The stat shaping makes a combo near-certain in one fight; the retry absorbs the residue
+   * (a foe that dodges the first two swings) without re-rolling the whole suite.
    */
-  const sawCombo = await page.evaluate(`(async () => {
-    const g = (window).__game;
-    const until = performance.now() + 9000;
-    while (performance.now() < until) {
-      if (g.__recorded.some(c => c.name === "combo")) return true;
-      if (!document.querySelector(".battlefield")) return false;   // the fight ended first
-      await new Promise(r => setTimeout(r, 60));
-    }
-    return false;
-  })()`);
-  const midFight = await calls(page);
-  const uniq = [...new Set(midFight)];
-  console.log(`  a live fight: ${JSON.stringify(uniq)}`);
+  let uniq: string[] = [];
+  let sawCombo = false;
+  let heardEnemy = false;
+  for (let attempt = 0; attempt < 2 && !(sawCombo && heardEnemy); attempt++) {
+    await page.evaluate(`(() => {
+      const g = (window).__game;
+      g.battleView?.destroy();
+      g.navigate("arena");
+    })()`);
+    await page.waitForTimeout(900);
+    await page.evaluate(`(() => {
+      const b = [...document.querySelectorAll("button")].find(x => /Đấu với AI/.test(x.textContent || ""));
+      if (b) b.click();
+    })()`);
+    await page.waitForTimeout(900);
+    await page.evaluate(`(() => { const c = document.querySelector(".sheet .pickrow"); if (c) c.click(); })()`);
+    await page.waitForTimeout(900);
+    await page.evaluate(`(() => {
+      (window).__game.__recorded.length = 0;
+      const b = [...document.querySelectorAll("button")].find(x => /Bắt đầu/.test(x.textContent || ""));
+      if (b) b.click();
+    })()`);
+    await page.waitForSelector(".battlefield", { timeout: 20000 }).catch(() => {});
+
+    /*
+     * Poll for BOTH beats: the combo proves our run formed, and `enemy` proves a
+     * hostile hit connected — it cannot fire until the foe's first ~2.4s swing
+     * lands, which is *after* the combo is already on the board at this speed.
+     * Reading right after "combo" is exactly how the previous run went quiet.
+     */
+    const heard = (await page.evaluate(`(async () => {
+      const g = (window).__game;
+      const seen = { combo: false, enemy: false };
+      const until = performance.now() + 12000;
+      while (performance.now() < until && !(seen.combo && seen.enemy)) {
+        for (const c of g.__recorded) {
+          if (c.name === "combo") seen.combo = true;
+          if (c.name === "enemy") seen.enemy = true;
+        }
+        if (!document.querySelector(".battlefield")) break;   // the fight ended first
+        await new Promise(r => setTimeout(r, 60));
+      }
+      return seen;
+    })()`)) as { combo: boolean; enemy: boolean };
+    sawCombo = heard.combo === true;
+    heardEnemy = heard.enemy === true;
+    const midFight = await calls(page);
+    uniq = [...new Set(midFight)];
+    console.log(`  a live fight${attempt ? ` (attempt ${attempt + 1})` : ""}: ${JSON.stringify(uniq)}`);
+  }
   check("the fight announces itself", uniq.includes("start"), JSON.stringify(uniq));
   check("and something lands", uniq.includes("hit") || uniq.includes("cast"), JSON.stringify(uniq));
-  check("being hit sounds different from hitting", uniq.includes("enemy"), JSON.stringify(uniq));
+  check("being hit sounds different from hitting", heardEnemy, JSON.stringify(uniq));
   check("a combo builds and is audible while it does", sawCombo === true, JSON.stringify(uniq));
   await page.screenshot({ path: "shots/audio/3-fight.png" });
 
@@ -415,8 +471,9 @@ console.log("\nthe game survives having no audio at all:");
 
   // Remove the constructor before any script runs, so `available` is false from the start.
   await page.addInitScript(`delete window.AudioContext; delete window.webkitAudioContext;`);
-  await page.goto(URL, { waitUntil: "networkidle" });
-  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
+  await ctx.route("**/*", route => route.request().url().startsWith(`${URL}/`) ? route.continue() : route.abort());
+  await page.goto(URL, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), undefined, { timeout: 20000 });
   await page.waitForTimeout(700);
   await page.evaluate(`(() => {
     const a = [...document.querySelectorAll("a, button")].find(x => /không cần tài khoản/i.test(x.textContent || ""));
