@@ -153,6 +153,23 @@ export interface CareMemory {
 
 export interface StressMap extends Partial<Record<StressKind, number>> {}
 
+/**
+ * Presentation event for the visible gardener (docs/26 §5, docs/27 §7.3).
+ *
+ * Published by the store strictly *after* a care action succeeds — never a
+ * source of XP/reward itself, never persisted into the save. `seq` is
+ * presentation ordering for the actor's queue; the simulation's own ordering
+ * lives in plant memory.
+ */
+export interface GardenerWorkEvent {
+  id: string;
+  plantId: string;
+  action: string;
+  occurredAt: number;
+  source: "live" | "catchup";
+  seq: number;
+}
+
 export interface MutationEntry {
   at: number;
   tier: MutationTier;

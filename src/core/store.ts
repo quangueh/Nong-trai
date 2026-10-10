@@ -5,7 +5,7 @@
  */
 
 import { Rng, clamp, round2, seedToken } from "./rng";
-import type { Plant } from "./types";
+import type { GardenerWorkEvent, Plant } from "./types";
 import { DEFAULT_PLAYER_NAME, STAGE_ORDER, STAGE_SECONDS, emptyArchetype } from "./types";
 import { createSeedPlant, breedPlants, genomeSignature, validateGenome, estimatePower, type BreedingContext, type BreedingResult } from "../genetics/genomeGenerator";
 import { applyCatalyst, getProtocol, protocolDiversity, protocolUnlocked, type ProtocolId } from "../genetics/protocols";
@@ -428,6 +428,41 @@ export class GameStore {
 
   private noticeListeners = new Set<(n: Notice) => void>();
   private noticeSeq = 0;
+
+  /*
+   * The visible gardener's event feed (docs/27 §7.3). Per-instance like
+   * `noticeListeners` — there is deliberately no shared callback registry a
+   * second GameStore could leak into.
+   */
+  private gardenerListeners = new Set<(e: GardenerWorkEvent) => void>();
+  private gardenerSeq = 0;
+
+  /** Subscribe to successful auto-care actions. Returns an unsubscribe. */
+  onGardenerWork(fn: (e: GardenerWorkEvent) => void): () => void {
+    this.gardenerListeners.add(fn);
+    return () => this.gardenerListeners.delete(fn);
+  }
+
+  private pushGardenerWork(plant: Plant, action: string, at: number, source: "live" | "catchup"): void {
+    this.gardenerSeq++;
+    const ev: GardenerWorkEvent = {
+      // Issued once here at publish — never recomputed from a list index, so a
+      // repaint or queue reorder can never rename a job.
+      id: `gw:${this.gardenerSeq}:${at}:${plant.plantId.slice(-6)}:${Math.random().toString(36).slice(2, 8)}`,
+      plantId: plant.plantId,
+      action,
+      occurredAt: at,
+      source,
+      seq: this.gardenerSeq,
+    };
+    for (const fn of [...this.gardenerListeners]) {
+      try {
+        fn(ev);
+      } catch {
+        // Presentation listeners must never break the domain tick.
+      }
+    }
+  }
 
   /**
    * Nonzero while a stage settle is running.
@@ -992,7 +1027,7 @@ export class GameStore {
    * Returns how many actions actually ran, so the caller can skip a repaint
    * and a save on an idle round.
    */
-  autoCareTick(now = Date.now()): number {
+  autoCareTick(now = Date.now(), source: "live" | "catchup" = "live"): number {
     if (now >= (this.state.autoCareUntil ?? 0)) return 0;
     let did = 0;
     for (const plant of this.state.plants) {
@@ -1011,6 +1046,10 @@ export class GameStore {
           // stream "chăm cây N lần" quests count. Otherwise the buff visibly
           // waters the garden while the daily swears nothing happened.
           this.questEvent({ name: "care", amount: 1, species: plant.baseLineage });
+          // The presentation event fires only here, after res.ok — a rejected
+          // action publishes nothing, so the actor can never act out work the
+          // engine refused.
+          this.pushGardenerWork(plant, action, now, source);
           did++;
           break;
         }
@@ -1034,7 +1073,7 @@ export class GameStore {
     // ~150 rounds covers a 15-minute buff with headroom; the loop also stops
     // the moment the simulated clock passes the expiry.
     for (let t = Math.max(from, until - AUTO_CARE_CATCHUP_MS); t <= until; t += AUTO_CARE_TICK_MS) {
-      did += this.autoCareTick(t);
+      did += this.autoCareTick(t, "catchup");
     }
     return did;
   }

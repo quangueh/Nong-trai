@@ -10056,6 +10056,176 @@ button.qachip:active {
   font-size: 15px;
 }
 
+/* ==== the visible gardener (docs/26 §5, docs/27 §7, docs/28 §9) ====
+   A small rigged figure that walks between plot anchors and acts out the
+   hired-gardener work events. pointer-events:none on the figure — only the
+   badge is interactive. */
+
+.gdr {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 44px;
+  height: 58px;
+  z-index: 3;
+  pointer-events: none;
+  will-change: transform;
+}
+.gdr svg {
+  display: block;
+  overflow: visible;
+  transform-origin: 50% 100%;
+}
+.gdr .gd-shadow { fill: rgba(40, 60, 30, 0.28); }
+.gdr .gd-leg { fill: #4d6a5a; }
+.gdr .gd-shirt { fill: #2f8f83; }
+.gdr .gd-apron { fill: #cf7a5a; }
+.gdr .gd-head { fill: #f2c9a0; }
+.gdr .gd-hat { fill: #f3e3a1; }
+.gdr .gd-hat ellipse { fill: #e9d489; }
+.gdr .gd-arm rect { fill: #2f8f83; }
+.gdr .gd-can rect { fill: rgba(160, 210, 235, 0.75); stroke: rgba(80, 130, 160, 0.7); stroke-width: 1; }
+.gdr .gd-spout { stroke: rgba(80, 130, 160, 0.8); }
+.gdr .gd-handle { stroke: rgba(80, 130, 160, 0.8); }
+
+/* work markers — hidden until a w-* clip activates them */
+.gdr .gd-fx > * { opacity: 0; }
+.gdr .fx-drops circle { fill: #7ec4ea; }
+.gdr .fx-feed circle { fill: #d9a94a; }
+.gdr .fx-snip path { stroke: #8899aa; stroke-width: 1.6; }
+.gdr .fx-note { fill: #b78ae0; font-size: 12px; }
+.gdr .fx-sun path { stroke: #f4c95d; stroke-width: 1.6; stroke-linecap: round; }
+
+/* --- states --- */
+.gdr[data-state="walk"] .gd-fig { animation: gdr-bob 0.55s ease-in-out infinite; }
+.gdr[data-state="walk"] .gd-leg.l { animation: gdr-step-l 0.55s ease-in-out infinite; }
+.gdr[data-state="walk"] .gd-leg.r { animation: gdr-step-r 0.55s ease-in-out infinite; }
+.gdr[data-state="idle"] .gd-fig { animation: gdr-breathe 4.6s ease-in-out infinite; }
+.gdr[data-state="idle"] .gd-can { animation: gdr-restcan 4.6s ease-in-out infinite; transform-origin: 34px 38px; }
+.gdr[data-state="arrive"] .gd-fig { animation: gdr-bob 0.55s ease-in-out infinite; }
+.gdr[data-state="leave"] .gd-fig { animation: gdr-bob 0.5s ease-in-out infinite; }
+.gdr[data-state="ack"] .gd-fig { animation: gdr-nod 0.22s ease-out; }
+.gdr.gd-fade { opacity: 0; transition: opacity 0.15s ease; }
+.gdr { transition: opacity 0.15s ease; }
+
+/* --- work clips --- */
+.gdr[data-state="work"] .gd-arm { animation: gdr-tilt 0.4s ease-out forwards; transform-origin: 29px 30px; }
+.gdr.w-water[data-state="work"] .fx-drops { opacity: 1; animation: gdr-drops 0.5s ease-in infinite; }
+.gdr.w-fertilizer[data-state="work"] .fx-feed { opacity: 1; animation: gdr-drops 0.45s ease-in infinite; }
+.gdr.w-pruning[data-state="work"] .fx-snip { opacity: 1; animation: gdr-snip 0.35s ease-out 2; }
+.gdr.w-music[data-state="work"] .fx-note { opacity: 1; animation: gdr-note 0.55s ease-out; }
+.gdr.w-sunlight[data-state="work"] .fx-sun { opacity: 1; animation: gdr-sunglow 0.55s ease-out; }
+
+@keyframes gdr-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.6px); }
+}
+@keyframes gdr-step-l {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.8px); }
+}
+@keyframes gdr-step-r {
+  0%, 100% { transform: translateY(-1.8px); }
+  50% { transform: translateY(0); }
+}
+@keyframes gdr-breathe {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(0.4px) scaleY(0.99); }
+}
+@keyframes gdr-restcan {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-4deg); }
+}
+@keyframes gdr-nod {
+  0% { transform: translateY(0); }
+  40% { transform: translateY(1.6px); }
+  100% { transform: translateY(0); }
+}
+@keyframes gdr-tilt {
+  to { transform: rotate(26deg); }
+}
+@keyframes gdr-drops {
+  0% { transform: translateY(-4px); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: translateY(7px); opacity: 0; }
+}
+@keyframes gdr-snip {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(1.5px, -1px); }
+}
+@keyframes gdr-note {
+  0% { transform: translate(0, 4px); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translate(5px, -10px); opacity: 0; }
+}
+@keyframes gdr-sunglow {
+  0% { opacity: 0; }
+  40% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* badge — the one interactive part; minutes-left pill above the figure */
+.gdr-badge {
+  position: absolute;
+  top: -14px;
+  right: -16px;
+  pointer-events: auto;
+  border: 1px solid rgba(80, 130, 160, 0.5);
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 9px;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1.5px 5px;
+  cursor: pointer;
+  color: #3a5a4a;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(60, 100, 80, 0.2);
+}
+.gdr-badge:hover { border-color: var(--accent); }
+.gdr-status {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: rgba(60, 90, 70, 0.85);
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 6px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.gdr-status:empty { display: none; }
+
+/* detail sheet rows */
+.gdr-log-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border-bottom: 1px solid rgba(120, 160, 130, 0.14);
+}
+.gdr-log-ico { flex: none; width: 20px; text-align: center; }
+.gdr-log-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+
+@media (min-width: 1024px) {
+  .gdr { width: 56px; height: 74px; }
+  .gdr svg { width: 56px; height: 74px; }
+  .gdr-status { top: 76px; }
+}
+
+/* reduced motion — still present, still working, just not travelling */
+.gdr.rm .gd-fig,
+.gdr.rm .gd-leg,
+.gdr.rm .gd-can,
+.gdr.rm .gd-arm { animation: none !important; }
+.gdr.rm .gd-fx > * { animation-duration: 0.25s !important; }
+@media (prefers-reduced-motion: reduce) {
+  .gdr .gd-fig,
+  .gdr .gd-leg,
+  .gdr .gd-can,
+  .gdr .gd-arm { animation: none !important; }
+}
+
 /* The attendance sheet. */
 .ci-sheet {
   display: grid;

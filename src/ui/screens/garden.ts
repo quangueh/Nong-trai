@@ -30,6 +30,7 @@ import { createSeedPlant } from "../../genetics/genomeGenerator";
 import type { Navigate, Screen } from "./types";
 import { gardenBar } from "./gardenBar";
 import { gardenerRow } from "../checkin";
+import { mountGardener } from "../gardener";
 import { fetchWhisper } from "../../account/api";
 
 // The ceremony renders real plant art, so it needs the renderer. Wiring it here
@@ -232,6 +233,13 @@ function paintPlots(body: HTMLElement, nav: Navigate, shell: Element, goTab: (t:
   );
   body.appendChild(scene);
   body.appendChild(qaBar.root);
+
+  /*
+   * The visible gardener rides the scene, not the repaint: mountGardener
+   * re-attaches the same actor element into each fresh scene, so a repaint
+   * mid-walk costs it nothing and it never lives outside the garden.
+   */
+  mountGardener(scene, store);
 }
 
 /**
