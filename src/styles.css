@@ -5456,7 +5456,7 @@ body.planting {
   font-weight: 800;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: #5c6b52;
+  color: #505e47; /* 5.03:1 on the lock tint — #5c6b52 measured 4.15 */
   margin-bottom: 5px;
 }
 
@@ -5472,12 +5472,13 @@ body.planting {
 /* A met requirement is struck back but stays visible, so an "any of these" gate
    shows which route the player has already satisfied. */
 .unlock-rule.is-met {
-  color: #2f7a4a;
+  color: #276a3e; /* 4.74:1 on the lock tint — #2f7a4a measured 3.81 */
 }
 
+/* The strike and the ✓ already carry "met"; dimming the label below 1.0
+   opacity is what pushed it under AA, so it stays at full ink. */
 .unlock-rule.is-met .grow {
   text-decoration: line-through;
-  opacity: 0.72;
 }
 
 .unlock-mark {
@@ -5485,14 +5486,12 @@ body.planting {
   flex: none;
   text-align: center;
   font-size: 11px;
-  opacity: 0.8;
 }
 
 .unlock-rule .mono {
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   font-size: 11px;
-  opacity: 0.85;
 }
 
 /* A button that cannot be pressed should not look pressable. */
@@ -5565,7 +5564,7 @@ body.planting {
   font-size: 10.5px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  color: #8a6a20;
+  color: #795c15; /* 5.49:1 on the locked-plot card — #8a6a20 measured 4.43 */
 }
 
 /* Affordable and cleared: the cap greens back up while the root stays dim, so
@@ -10039,7 +10038,7 @@ button.qachip:active {
   padding: 2px 5px;
   border-radius: 5px;
   background: rgba(255, 200, 60, 0.18);
-  color: #ffca4f;
+  color: #6e4912; /* amber ink — #ffca4f on the pale button measured 1.20:1 */
   flex: none;
 }
 .gardener-btn.active {

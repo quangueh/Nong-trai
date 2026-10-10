@@ -29,7 +29,7 @@ Spec liên quan: `docs/26` §5 (gardener design), `docs/27` §7.3 (ACT-01…09),
 |---|---|---|---|---|
 | ACT-01 | H0 | Tick thành công phát đúng N event unique (id `gw:{seq}:{at}:{plant}:{rand}`), action bị cooldown/expiry phát 0 event | `test-gardener.ts` case "exactly one event per successful action" + "no event after expiry" + "no event from rejected action" | **pass** |
 | ACT-02 | H0 | Actor walk/work/done/cancel không gọi `applyCare`, không XP/reward/save-write; assert bằng spy + state equality | `test-gardener-actor.ts` "actor work never calls care/reward again" (spy `applyCare` + snapshot `state.plants`, wallet, quest log) | **pass** |
-| ACT-03 | H1 | Figure `pointer-events:none` (không click-block); actor neo vào plot qua `.garden-scene` transform, re-attach sau repaint. Chưa đo "0 teleport qua label" ở 24 plot bằng video | `test-gardener-actor.ts` "figure never intercepts input", "repaint keeps exactly one actor"; `shots/gardener/*-zoom.png` (actor đứng tại ô 8, ô 2). F03 24-plot resize/scroll chưa quay video chuyên | **in-progress** — phần blocker/repaint pass; phần path-video 24 plot chưa đủ bằng chứng |
+| ACT-03 | H1 | Figure `pointer-events:none` (không click-block); actor neo vào plot qua `.garden-scene` transform, re-attach sau repaint. **Video 24-plot đã quay** (`recordVideo`, F03 24/24 ô, mobile 390×844 + desktop 1366×768): actor đi bộ giữa các ô, work→done→walk chu kỳ kế tiếp trên bãi đầy | `test-gardener-actor.ts` "figure never intercepts input", "repaint keeps exactly one actor"; `shots/gardener-video/mobile-24plot.webm`, `desktop-24plot.webm` | **pass** — cơ chế + video path đủ bằng chứng |
 | ACT-04 | H1 | Queue cap `MAX_JOBS`, dedup `id`, fold quá `MAX_AGE`+overflow vào `summary`, catch-up giữ ≤1 job minh họa | `test-gardener.ts` queue cases (overflow fold, dedup, age fold, catchup summary, drain) | **pass** |
 | ACT-05 | H0 | Battle-locked bị domain skip (không event, không care); sau `autoCareUntil` tick trả 0 — actor không thể chăm trái policy vì event chỉ sinh từ domain | `test-gardener.ts` "battle-locked plant skipped", "no event after expiry" | **pass** |
 | ACT-06 | H1 | 20 chu kỳ rời/vào Vườn: listener count về baseline, 0 actor thừa, 0 RAF/leak | `test-gardener-actor.ts` "leaving and returning 20 times leaves no extra listeners" (đếm `gardenerListeners.size` + số `.gdr`) | **pass** |
@@ -45,5 +45,5 @@ Spec liên quan: `docs/26` §5 (gardener design), `docs/27` §7.3 (ACT-01…09),
 ## Chưa giao (không tự tuyên bố pass)
 
 - ACT-08/ACT-09 — hai tiêu chí Q cần panel người + slow-motion video review.
-- ACT-03 phần "24 plot resize/scroll path video" — cơ chế đã có (actor neo plot, không intercept input, re-attach sau repaint) nhưng chưa quay video path qua 24 ô.
+- ~~ACT-03 phần "24 plot resize/scroll path video"~~ — **đã quay** `tools/shot-gardener-video.ts`: F03 24/24 ô, hai viewport, walk→work→done→walk chu kỳ liên tiếp + pan toàn vườn. Files `shots/gardener-video/*.webm`.
 - Screenshot ở `shots/gardener/` là evidence tĩnh; chưa có video loop cho motion-review.
