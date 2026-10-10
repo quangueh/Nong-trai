@@ -286,6 +286,15 @@ export function sustainMultiplier(phase: BattlePhase): number {
   }
 }
 
+/**
+ * Wire-received stances are untrusted: a forged or corrupt `stance` message
+ * would otherwise land in `STANCE_EFFECTS[...]` lookups mid-fight and throw.
+ * Unknown values degrade to the neutral stance rather than crashing the fight.
+ */
+function safeStance(stance: Stance | undefined): Stance {
+  return stance && stance in STANCE_EFFECTS ? stance : "aggressive";
+}
+
 function initSide(snap: BattleSideSnapshot, stance: Stance, now: number, stancePinned = false): BattleSideState {
   return {
     snap,
@@ -1031,8 +1040,8 @@ export class BattleSession {
     this.rng = new Rng(config.seed);
     const snapA = snapshotFromPlant(plantA);
     const snapB = snapshotFromPlant(plantB);
-    this.a = initSide(snapA, config.stances?.a ?? "aggressive", 0, config.stances?.a != null);
-    this.b = initSide(snapB, config.stances?.b ?? "aggressive", 0, config.stances?.b != null);
+    this.a = initSide(snapA, safeStance(config.stances?.a), 0, config.stances?.a != null);
+    this.b = initSide(snapB, safeStance(config.stances?.b), 0, config.stances?.b != null);
     this.a.nextActionAt = 1.0 + this.rng.float(0, 0.6);
     this.b.nextActionAt = 1.0 + this.rng.float(0, 0.6);
     this.push({ seq: 0, type: "BATTLE_START", t: 0, text: `${snapA.name} VS ${snapB.name}` });
@@ -1129,7 +1138,7 @@ export class BattleSession {
   changeStance(which: "a" | "b", stance: Stance): boolean {
     const self = this.side(which);
     if (this.time - self.lastStanceChange < 10) return false;
-    self.stance = stance;
+    self.stance = safeStance(stance);
     self.lastStanceChange = this.time;
     return true;
   }
