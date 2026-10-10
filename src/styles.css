@@ -10096,6 +10096,7 @@ button.qachip:active {
 .gdr .fx-sun path { stroke: #f4c95d; stroke-width: 1.6; stroke-linecap: round; }
 
 /* --- states --- */
+.gdr[data-state="hidden"] { opacity: 0; visibility: hidden; }
 .gdr[data-state="walk"] .gd-fig { animation: gdr-bob 0.55s ease-in-out infinite; }
 .gdr[data-state="walk"] .gd-leg.l { animation: gdr-step-l 0.55s ease-in-out infinite; }
 .gdr[data-state="walk"] .gd-leg.r { animation: gdr-step-r 0.55s ease-in-out infinite; }

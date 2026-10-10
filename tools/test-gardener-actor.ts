@@ -147,6 +147,24 @@ try {
     assert.equal(did, 0);
   });
 
+  await test("hidden state is actually invisible — no ghost gardener without a buff", async () => {
+    // DEF: for the longest time no CSS rule matched data-state="hidden", so the
+    // actor rendered at the spawn point forever — a figure standing stock-still
+    // in the corner looked like a gardener that refused to work.
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector(".gdr")!).opacity === "0",
+      { timeout: 3000 },
+    );
+    const cs = await gdr().evaluate((n) => {
+      const s = getComputedStyle(n);
+      return { opacity: s.opacity, visibility: s.visibility };
+    });
+    assert.equal(cs.visibility, "hidden", `hidden actor still rendered: ${JSON.stringify(cs)}`);
+    assert.equal(cs.opacity, "0");
+    const badgePe = await page.locator(".gdr-badge").evaluate((n) => getComputedStyle(n).visibility);
+    assert.equal(badgePe, "hidden", "invisible badge remains a tap target");
+  });
+
   await test("re-grant wakes the actor from hidden", async () => {
     await page.evaluate(() => {
       const store = (window as any).__game.store;
@@ -172,6 +190,45 @@ try {
     await page.evaluate(() => (window as any).__game.navigate("garden"));
     await page.waitForTimeout(300);
     assert.equal(await gdr().count(), 1, "repaint duplicated the actor");
+  });
+
+  await test("boot catch-up reaches the actor — overnight work folds to summary + illustration", async () => {
+    // DEF: autoCareCatchUp used to fire before the first paint, so every work
+    // event published to zero subscribers — the player who "left the gardener
+    // working overnight" saw no summary and no illustration at all.
+    await page.addInitScript(() => {
+      try {
+        const key = "mutant-sprout-save-v1";
+        const raw = localStorage.getItem(key);
+        if (!raw) return;
+        const sv = JSON.parse(raw);
+        sv.autoCareUntil = Date.now() + 5 * 60_000;
+        sv.lastSeen = Date.now() - 4 * 12_000; // ~4 missed tick windows
+        for (const p of (sv.plants ?? []).slice(0, 3)) {
+          p.careMemory = { recent: [], counts: {}, lastUse: {}, lastAction: null };
+        }
+        localStorage.setItem(key, JSON.stringify(sv));
+      } catch {
+        /* no save / guest slot — the assertion below will fail loudly anyway */
+      }
+    });
+    await page.reload();
+    await page.waitForFunction(() => Boolean((window as any).__game));
+    await page.waitForSelector(".gdr", { timeout: 10000 });
+    // arrive → walk → perform the one illustration; summarized counts the rest.
+    await page.waitForFunction(
+      () => {
+        const g = (window as any).__gardener;
+        if (!g) return false;
+        return (g.done?.length ?? 0) + (g.queue?.catchupSummarized ?? 0) + (g.queue?.jobs?.length ?? 0) + (g.job ? 1 : 0) > 0;
+      },
+      { timeout: 20000 },
+    );
+    const seen = await page.evaluate(() => {
+      const g = (window as any).__gardener;
+      return { done: g?.done?.length ?? 0, summarized: g?.queue?.catchupSummarized ?? 0 };
+    });
+    assert.ok(seen.done + seen.summarized > 0, `catch-up vanished: ${JSON.stringify(seen)}`);
   });
 
   await test("leaving and returning 20 times leaves no extra listeners (ACT-06)", async () => {

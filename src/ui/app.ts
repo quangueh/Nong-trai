@@ -1264,7 +1264,6 @@ export function boot(root: HTMLElement) {
    * 2. The live tick: one round per AUTO interval while the buff is up, riding
    *    the existing growth poll rather than adding a timer of its own.
    */
-  store.autoCareCatchUp(store.state.lastSeen);
   maybeAutoOpenCheckIn();
 
   // Growth polling.
@@ -1296,4 +1295,12 @@ export function boot(root: HTMLElement) {
   }, 2000).unref?.();
 
   paint();
+
+  /*
+   * Catch-up must run after the first paint: the Gardener actor mounts with
+   * the garden and is the only subscriber to these work events. Firing them
+   * before it exists published them to zero listeners — the whole overnight
+   * summary and its one allowed illustration silently vanished.
+   */
+  store.autoCareCatchUp(store.state.lastSeen);
 }
