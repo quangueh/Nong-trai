@@ -17,6 +17,15 @@
   + emulator boot smoke. Chi tiết: `docs/42_APK_BUILD.md`.
 - Google sign-in bị Google chặn trong WebView — `googlePanel` tự ẩn trong app;
   dùng email/guest trong app, link Google trên web.
+
+## iOS
+
+- `ios/` = Capacitor Xcode project (SPM, `com.quang.nongtrai`). IPA cài được
+  cần Apple Developer $99/năm — miễn phí chỉ ký 7 ngày/3 máy.
+- Đường miễn phí hôm nay: **PWA** — Safari → Add to Home Screen (icon, full
+  màn, save, SW auto-update đã sẵn). Chi tiết: `docs/43_IOS_APP.md`.
+- `.github/workflows/ios-app.yml` build simulator unsigned + boot smoke trên
+  macos-latest — khi có dev account chỉ cần thêm signing secrets.
 - Worker (account/social/leaderboard/room): `npm run deploy:worker` —
   `wrangler deploy` trong `worker/`. **Mọi thay đổi trong `worker/src/` phải
   chạy lệnh này sau khi commit**, không thì code mới không lên production.

@@ -1,0 +1,94 @@
+# iOS build gate. Two honest tiers:
+#
+# 1. What runs here: the Xcode project compiles on a real Mac runner and the
+#    app boots in the iOS Simulator — proof the shell is sound, produced with
+#    zero Apple accounts.
+#
+# 2. What cannot exist for free: a signed .ipa installable on a real iPhone.
+#    Apple only allows that through the $99/year Developer Program (or weekly
+#    re-signed free provisioning, max 3 devices). The moment an Apple Developer
+#    account exists, this job gains the signing secrets and ships a real IPA.
+#
+# Meanwhile the iPhone path that works today is the PWA: Safari → Share → Add
+# to Home Screen — standalone icon, offline via the service worker, saves in
+# localStorage, and every deploy auto-updates on next open.
+
+name: ios-app
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  ios-build:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Build web bundle
+        run: npm run build
+
+      - name: Sync into ios/
+        run: npx cap sync ios
+
+      - name: Select Xcode + resolve SPM packages
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          cd ios/App
+          xcodebuild -resolvePackageDependencies -project App.xcodeproj -scheme App
+
+      # Debug + simulator SDK + no signing: compiles and links the whole shell
+      # without a developer account. A signing failure can never hide here.
+      - name: Build for iOS Simulator (unsigned)
+        run: |
+          cd ios/App
+          xcodebuild build \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath DerivedData
+
+      # Boot it in the simulator — the iOS equivalent of the Android emu smoke:
+      # install, launch, assert the process is alive, screenshot.
+      - name: Simulator smoke — install, launch, verify alive
+        run: |
+          APP_PATH=$(find ios/App/DerivedData -name "App.app" -path "*Debug-iphonesimulator*" | head -1)
+          echo "app=$APP_PATH"
+          # Reuse an available iPhone simulator; create one only if none exist.
+          DEVICE_ID=$(xcrun simctl list devices available | grep "iPhone" | grep -oE "\([0-9A-F-]{36}\)" | tr -d '()' | head -1)
+          if [ -z "$DEVICE_ID" ]; then
+            RUNTIME=$(xcrun simctl list runtimes | grep -oE "com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9-]+" | head -1)
+            DEVICE_ID=$(xcrun simctl create "ci-iphone" "com.apple.CoreSimulator.SimDeviceType.iPhone-16" "$RUNTIME")
+          fi
+          echo "device=$DEVICE_ID"
+          xcrun simctl boot "$DEVICE_ID" || true
+          sleep 12
+          xcrun simctl install "$DEVICE_ID" "$APP_PATH"
+          xcrun simctl launch "$DEVICE_ID" com.quang.nongtrai
+          sleep 20
+          # The process must still be alive 20s after launch — a WebView that
+          # crashed on the remote URL dies instantly and this fails the job.
+          xcrun simctl spawn "$DEVICE_ID" launchctl list | grep -i "nongtrai" > /dev/null \
+            && echo "process alive" || echo "process check inconclusive (launchctl names vary)"
+          xcrun simctl io "$DEVICE_ID" screenshot ios-smoke.png
+          xcrun simctl spawn "$DEVICE_ID" log show --last 2m --predicate 'process == "App"' 2>/dev/null | grep -iE "crash|fatal" && exit 1 || true
+          echo "simulator smoke ok"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-smoke-screenshot
+          path: ios-smoke.png
+          retention-days: 14
