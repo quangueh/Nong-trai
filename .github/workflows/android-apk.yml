@@ -112,10 +112,20 @@ jobs:
 
       - name: Create AVD and boot emulator
         run: |
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
           IMG="system-images;android-34;google_apis;x86_64"
           AVDM="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
-          (echo no | "$AVDM" create avd -n smoke -k "$IMG" -d pixel_6 --force) || \
-            (echo no | "$AVDM" create avd -n smoke -k "$IMG" --force)
+          # The runner image can set ANDROID_SDK_HOME elsewhere; pinning
+          # ANDROID_AVD_HOME keeps create + boot on one avd dir.
+          if ! (echo no | "$AVDM" create avd -n smoke -k "$IMG" -d pixel_6 --force) > avd-create.log 2>&1; then
+            (echo no | "$AVDM" create avd -n smoke -k "$IMG" --force) >> avd-create.log 2>&1
+          fi
+          "$AVDM" list avd > avd-list.txt 2>&1
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list_installed > sdk-installed.txt 2>&1 || true
+          if ! grep -q "Name: smoke" avd-list.txt; then
+            echo "AVD create failed"; cat avd-create.log; exit 1
+          fi
           nohup "$ANDROID_HOME/emulator/emulator" -avd smoke -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim > emulator.log 2>&1 &
           timeout 180 adb wait-for-device || true
           for i in $(seq 1 84); do
