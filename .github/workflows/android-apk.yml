@@ -112,19 +112,22 @@ jobs:
           profile: pixel_6
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
+            set -x
             adb install -r apk/app-debug.apk
             adb shell am start -n com.quang.nongtrai/.MainActivity
             sleep 35
             adb shell dumpsys activity activities > dumpsys.txt || true
             adb logcat -d -v brief > logcat.txt || true
             adb exec-out screencap -p > apk-smoke.png || true
-            RESUMED=$(grep -oE "com\.quang\.nongtrai[^ ]*" dumpsys.txt | head -1)
-            PID=$(adb shell pidof -s com.quang.nongtrai || true)
-            # Only OUR app's fatal crash counts — a bare "FATAL" grep matches
-            # unrelated emulator processes and fails healthy runs.
-            CRASH=$(grep "AndroidRuntime" logcat.txt | grep "FATAL" | grep "com.quang.nongtrai" || true)
-            echo "resumed=$RESUMED pid=$PID crash=$CRASH"
-            [ -n "$RESUMED" ] && [ -z "$CRASH" ]
+            # `if`-guarded checks only — a `grep | head` pipeline in $() can die
+            # by SIGPIPE under the action's pipefail and abort the script even
+            # when the app is healthy. Explicit exit keeps intent unambiguous.
+            RESUMED=no
+            if grep -qE "(topResumedActivity|ResumedActivity):.*com\.quang\.nongtrai" dumpsys.txt; then RESUMED=yes; fi
+            CRASH=no
+            if grep -A40 "FATAL EXCEPTION" logcat.txt | grep -q "com\.quang\.nongtrai"; then CRASH=yes; fi
+            echo "resumed=$RESUMED crash=$CRASH"
+            if [ "$RESUMED" = "yes" ] && [ "$CRASH" = "no" ]; then exit 0; else exit 1; fi
 
       # ci-reports is an orphan branch — readable via the public API, unlike
       # Actions logs which need repo auth.
@@ -132,11 +135,15 @@ jobs:
         if: failure()
         run: |
           git config user.email "ci@local" && git config user.name "ci-bot"
-          git checkout --orphan ci-reports-dump
-          git rm -rf . >/dev/null 2>&1 || true
-          mkdir -p "reports/${GITHUB_SHA::7}"
+          git fetch origin ci-reports 2>/dev/null || true
+          if git show-ref --verify --quiet refs/remotes/origin/ci-reports; then
+            git checkout -B ci-reports-local origin/ci-reports
+          else
+            git checkout --orphan ci-reports-local && git rm -rf . >/dev/null 2>&1 || true
+          fi
+          mkdir -p "reports/${GITHUB_SHA::7}-apk-smoke"
           for f in dumpsys.txt logcat.txt apk-smoke.png; do
-            [ -f "$f" ] && cp "$f" "reports/${GITHUB_SHA::7}/"
+            [ -f "$f" ] && cp "$f" "reports/${GITHUB_SHA::7}-apk-smoke/"
           done
           git add -A reports && git commit -qm "smoke diag ${GITHUB_SHA::7}" \
             && git push -qf origin HEAD:ci-reports || echo "diag push failed"

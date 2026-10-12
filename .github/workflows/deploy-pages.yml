@@ -59,9 +59,15 @@ jobs:
           report_dir=$(ls -td artifacts/technical-tests/*/ 2>/dev/null | head -1)
           if [ -z "${report_dir:-}" ]; then echo "no report dir produced"; exit 0; fi
           git config user.email "ci@local" && git config user.name "ci-bot"
-          git checkout --orphan ci-reports-dump
-          git rm -rf . >/dev/null 2>&1 || true
-          mkdir -p reports && cp -r "${report_dir}" "reports/${GITHUB_SHA::7}"
+          # Reuse the branch when it exists — a fresh --orphan per failure
+          # force-overwrites and clobbers reports from other failing jobs.
+          git fetch origin ci-reports 2>/dev/null || true
+          if git show-ref --verify --quiet refs/remotes/origin/ci-reports; then
+            git checkout -B ci-reports-local origin/ci-reports
+          else
+            git checkout --orphan ci-reports-local && git rm -rf . >/dev/null 2>&1 || true
+          fi
+          mkdir -p reports && cp -r "${report_dir}" "reports/${GITHUB_SHA::7}-deploy-pages"
           git add -A reports && git commit -qm "gate report ${GITHUB_SHA::7}" \
             && git push -qf origin HEAD:ci-reports || echo "report push failed"
 
