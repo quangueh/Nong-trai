@@ -49,7 +49,7 @@ const GOOGLE_G = `<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
  * not leave the app.
  */
 import { isAppShell } from "../account/platform";
-import { openBrowserSignIn } from "../account/appAuth";
+import { nativeAuthSupported, openBrowserSignIn } from "../account/appAuth";
 
 const inAppShell = isAppShell();
 
@@ -127,7 +127,9 @@ export function googlePanel(
     el("div", { class: "gpanel-title" }, ["Tiếp tục với Google"]),
     el("div", { class: "gpanel-sub" }, [
       inAppShell
-        ? "Mở trình duyệt để đăng nhập, xong tự quay về app. Không cần mật khẩu."
+        ? nativeAuthSupported()
+          ? "Mở trình duyệt để đăng nhập, xong tự quay về app. Không cần mật khẩu."
+          : "Bản app cũ — bấm để tải APK mới rồi quay lại đăng nhập."
         : "Tạo tài khoản hoặc quay lại. Không cần mật khẩu, không cần nhớ mật khẩu.",
     ]),
   ]);

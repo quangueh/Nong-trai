@@ -15,7 +15,7 @@ import { boot } from "./ui/app";
 import { sfx } from "./audio/audio";
 import { music } from "./audio/music";
 import { initErrorReporting } from "./core/errors";
-import { armAppAuthBounce, listenForAuthDeepLink } from "./account/appAuth";
+import { armAppAuthBounce, checkNativeUpdate, listenForAuthDeepLink } from "./account/appAuth";
 
 boot(document.getElementById("app")!);
 initErrorReporting();
@@ -28,6 +28,10 @@ initErrorReporting();
  */
 listenForAuthDeepLink();
 armAppAuthBounce();
+/* The JS is always the newest build from the site; the APK underneath it is
+   not. When they drift, an update chip points at the rolling release — only
+   ever appears inside a stale shell. */
+checkNativeUpdate();
 
 /*
  * The service worker is the offline story and the instant-second-load story:

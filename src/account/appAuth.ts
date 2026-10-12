@@ -21,6 +21,76 @@ import { issuePairCode, onAccountStatus, signInWithPairCode } from "./sync";
 
 const APPAUTH_FLAG = "appauth";
 const DEEP_SCHEME = "com.quang.nongtrai";
+const APK_URL =
+  "https://github.com/quangueh/Nong-trai/releases/download/apk-latest/app-debug.apk";
+
+/**
+ * Does this APK carry the native Browser plugin the bounce needs? The JS
+ * bundle always ships fresh from the site; the plugin lives in the APK, so an
+ * old build renders the new button but can never answer it. This is the
+ * version check that matters for *this* feature — a build old enough to miss
+ * the plugin is by definition outdated.
+ */
+export function nativeAuthSupported(): boolean {
+  const cap = (
+    window as {
+      Capacitor?: { Plugins?: { Browser?: { open?: unknown } } };
+    }
+  ).Capacitor;
+  return Boolean(cap?.Plugins?.Browser?.open);
+}
+
+/**
+ * Open the rolling-release APK outside the WebView. A plain anchor to a
+ * foreign host is enough — the Capacitor WebViewClient hands external URLs to
+ * the system browser, which downloads the file, and Android takes it from
+ * there. The install confirmation Android always asks for is the user's tap,
+ * so a sideload "auto update" can never be fully silent anyway.
+ */
+export function openApkUpdate(): void {
+  const a = document.createElement("a");
+  a.href = APK_URL;
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.click();
+}
+
+/**
+ * Boot check for stale native builds. Two signals: the Browser plugin check
+ * above (capability), and `versionCode` from `App.getInfo()` against
+ * `/app-version.json` (covers future native changes that keep every plugin).
+ * Either one short → a tappable chip offers the download. Silent on the web
+ * half and on up-to-date builds.
+ */
+export function checkNativeUpdate(): void {
+  if (!isAppShell()) return;
+  void (async () => {
+    let stale = !nativeAuthSupported();
+    if (!stale) {
+      try {
+        const [info, meta] = await Promise.all([
+          App.getInfo(),
+          fetch("/app-version.json").then((r) => (r.ok ? r.json() : null)),
+        ]);
+        const want = Number(meta?.minCode ?? 0);
+        if (want > 0 && Number(info?.build ?? 0) < want) stale = true;
+      } catch {
+        /* update check is advisory — never punish a flake */
+      }
+    }
+    if (!stale) return;
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.textContent = "⬆ Có bản app mới — bấm để cập nhật";
+    chip.style.cssText =
+      "position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:2147483000;" +
+      "padding:10px 20px;border-radius:999px;border:1px solid #3f7d4f;" +
+      "background:#12351c;color:#bfe9c8;font:600 14px/1 inherit;" +
+      "box-shadow:0 4px 18px rgba(0,0,0,.35);cursor:pointer";
+    chip.addEventListener("click", () => openApkUpdate());
+    document.body.append(chip);
+  })();
+}
 
 /**
  * App half: open this very site in the system browser with the bounce flag,
@@ -33,12 +103,20 @@ const DEEP_SCHEME = "com.quang.nongtrai";
  * right below works on every build.
  */
 export async function openBrowserSignIn(): Promise<void> {
+  if (!nativeAuthSupported()) {
+    /* The button rendered from fresh JS on an old APK — turn the dead tap
+       into the download that fixes it. */
+    openApkUpdate();
+    const { toast } = await import("../ui/components");
+    toast("Bản app cũ — đang mở trang tải APK mới. Cài xong mở lại app để đăng nhập Google.", 6000);
+    return;
+  }
   try {
     await Browser.open({ url: `${location.origin}/?${APPAUTH_FLAG}=1` });
   } catch (e) {
     const { toast } = await import("../ui/components");
     toast(
-      "Bản app này cũ — cập nhật APK mới nhất rồi thử lại, hoặc dùng 'Nhập mã liên kết từ web' bên dưới.",
+      "Không mở được trình duyệt — thử 'Nhập mã liên kết từ web' bên dưới.",
       6000,
     );
     throw e;

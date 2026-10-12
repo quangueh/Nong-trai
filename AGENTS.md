@@ -15,6 +15,12 @@
   APK chỉ cần rebuild khi `android/` hoặc config đổi.
 - Build qua `.github/workflows/android-apk.yml` → artifact `nong-trai-debug-apk`
   + emulator boot smoke. Chi tiết: `docs/42_APK_BUILD.md`.
+- **Self-update**: `checkNativeUpdate` (`src/account/appAuth.ts`) chạy khi boot
+  trong app — stale nếu thiếu plugin Browser hoặc `versionCode` < `minCode`
+  trong `public/app-version.json` → chip "Có bản app mới" mở link APK ra
+  browser ngoài. Khi đổi native (plugin/manifest), **phải bump `versionCode`
+  trong `android/app/build.gradle` + `minCode` trong `public/app-version.json`**
+  để bản cũ tự nhắc cập nhật.
 - Google sign-in bị Google chặn trong WebView — trong app nút Google mở
   Chrome Custom Tab (`src/account/appAuth.ts`): web ký `?appauth=1`, sau
   đăng nhập mint pair-code rồi deep-link `com.quang.nongtrai://pair?code=X`
