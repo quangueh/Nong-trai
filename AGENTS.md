@@ -15,8 +15,12 @@
   APK chỉ cần rebuild khi `android/` hoặc config đổi.
 - Build qua `.github/workflows/android-apk.yml` → artifact `nong-trai-debug-apk`
   + emulator boot smoke. Chi tiết: `docs/42_APK_BUILD.md`.
-- Google sign-in bị Google chặn trong WebView — `googlePanel` tự ẩn trong app;
-  dùng email/guest trong app, link Google trên web.
+- Google sign-in bị Google chặn trong WebView — trong app nút Google mở
+  Chrome Custom Tab (`src/account/appAuth.ts`): web ký `?appauth=1`, sau
+  đăng nhập mint pair-code rồi deep-link `com.quang.nongtrai://pair?code=X`
+  quay về app. Auto-jump hay bị Chrome chặn (không user gesture) → overlay
+  "Mở lại app" là đường chính. Email/guest/mã liên kết vẫn là fallback.
+  iOS đã khai CFBundleURLTypes cùng scheme.
 
 ## iOS
 
