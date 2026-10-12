@@ -21,6 +21,11 @@ concurrency:
   group: pages-deploy
   cancel-in-progress: true
 
+# contents:write lets the failure-report step push the orphan `ci-reports`
+# branch — Actions logs need repo auth to fetch, the branch is readable via API.
+permissions:
+  contents: write
+
 jobs:
   ship:
     runs-on: ubuntu-latest
@@ -44,6 +49,21 @@ jobs:
 
       - name: Technical gates (core)
         run: npm run test:technical
+
+      # The technical runner writes artifacts/technical-tests/<ts>/report.json
+      # with every suite's full log before exiting. On failure, push that dir to
+      # the orphan `ci-reports` branch so the cause is visible without log auth.
+      - name: Publish gate report on failure
+        if: failure()
+        run: |
+          report_dir=$(ls -td artifacts/technical-tests/*/ 2>/dev/null | head -1)
+          if [ -z "${report_dir:-}" ]; then echo "no report dir produced"; exit 0; fi
+          git config user.email "ci@local" && git config user.name "ci-bot"
+          git checkout --orphan ci-reports-dump
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p reports && cp -r "${report_dir}" "reports/${GITHUB_SHA::7}"
+          git add -A reports && git commit -qm "gate report ${GITHUB_SHA::7}" \
+            && git push -qf origin HEAD:ci-reports || echo "report push failed"
 
       - name: Deploy dist/ to Cloudflare Pages
         env:
