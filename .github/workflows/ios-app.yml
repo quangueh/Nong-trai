@@ -57,7 +57,7 @@ jobs:
             -scheme App \
             -configuration Debug \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
             -derivedDataPath DerivedData
 
@@ -75,7 +75,7 @@ jobs:
           fi
           echo "device=$DEVICE_ID"
           xcrun simctl boot "$DEVICE_ID" || true
-          sleep 12
+          xcrun simctl bootstatus "$DEVICE_ID" -b || sleep 15
           xcrun simctl install "$DEVICE_ID" "$APP_PATH"
           xcrun simctl launch "$DEVICE_ID" com.quang.nongtrai
           sleep 20

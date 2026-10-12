@@ -49,10 +49,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       # Runner images lag the newest compileSdk — install exactly what the
-      # project targets so AGP never fails on a missing platform.
+      # project targets so AGP never fails on a missing platform. sdkmanager
+      # prompts for licenses interactively, which kills non-interactive CI —
+      # accept them up front, and skip the download when already present.
       - name: Ensure Android SDK platform 36
         run: |
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null
+          ls "$ANDROID_HOME/platforms" | grep -qx "android-36" || \
+            "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
       - name: Assemble debug APK
         working-directory: android

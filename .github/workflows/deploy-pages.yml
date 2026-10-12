@@ -35,6 +35,10 @@ jobs:
 
       - run: npm ci --no-audit --no-fund
 
+      # The technical gate typechecks worker/tsconfig.json — it needs the
+      # worker's own node_modules, which the root `npm ci` does not install.
+      - run: npm --prefix worker ci --no-audit --no-fund
+
       - name: Build + typecheck
         run: npm run build
 
