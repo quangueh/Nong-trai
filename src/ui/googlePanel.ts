@@ -128,7 +128,7 @@ export function googlePanel(
     el("div", { class: "gpanel-sub" }, [
       inAppShell
         ? nativeAuthSupported()
-          ? "Mở trình duyệt để đăng nhập, xong tự quay về app. Không cần mật khẩu."
+          ? "Mở trình duyệt để đăng nhập, xong bấm nút quay lại app. Không cần mật khẩu."
           : "Bản app cũ — bấm để tải APK mới rồi quay lại đăng nhập."
         : "Tạo tài khoản hoặc quay lại. Không cần mật khẩu, không cần nhớ mật khẩu.",
     ]),

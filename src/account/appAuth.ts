@@ -1,10 +1,12 @@
 /**
  * Browser-bounce sign-in for the app shell.
  *
- * Google refuses OAuth inside a WebView — that is their anti-phishing policy,
- * not something application code can route around. What Google does allow is a
- * real browser. So the app opens the site itself in a Chrome Custom Tab, the
- * player signs in there exactly like a web visit (an already-signed-in browser
+ * Google refuses OAuth inside any embedded browser — WebView *and* Custom
+ * Tabs both earn disallowed_useragent; that is their anti-phishing policy,
+ * not something application code can route around. What Google does allow is
+ * the real browser app. So the app opens the site itself in a full browser
+ * tab via `window.open`, the player signs in there exactly like a web visit
+ * (an already-signed-in browser
  * needs no taps at all), and the site fires a deep link back into the app
  * carrying a one-time pairing code. The app redeems it for the same session —
  * same account, same save, whichever kind the account is.
@@ -15,7 +17,6 @@
  */
 
 import { App, type URLOpenListenerEvent } from "@capacitor/app";
-import { Browser } from "@capacitor/browser";
 import { isAppShell } from "./platform";
 import { issuePairCode, onAccountStatus, signInWithPairCode } from "./sync";
 
@@ -34,10 +35,16 @@ const APK_URL =
 export function nativeAuthSupported(): boolean {
   const cap = (
     window as {
-      Capacitor?: { Plugins?: { Browser?: { open?: unknown } } };
+      Capacitor?: { Plugins?: { Browser?: unknown; App?: unknown } };
     }
   ).Capacitor;
-  return Boolean(cap?.Plugins?.Browser?.open);
+  /*
+   * `App` delivers the returning deep link (appUrlOpen/getLaunchUrl); its
+   * presence also proxies for the manifest's intent filter, added in the same
+   * build. `Browser` stays in the check because every APK that has it also
+   * has the rest — it is the marker of the post-auth build generation.
+   */
+  return Boolean(cap?.Plugins?.App && cap?.Plugins?.Browser);
 }
 
 /**
@@ -111,15 +118,17 @@ export async function openBrowserSignIn(): Promise<void> {
     toast("Bản app cũ — đang mở trang tải APK mới. Cài xong mở lại app để đăng nhập Google.", 6000);
     return;
   }
-  try {
-    await Browser.open({ url: `${location.origin}/?${APPAUTH_FLAG}=1` });
-  } catch (e) {
+  /*
+   * `window.open` — not the Browser plugin's Custom Tab. Google counts a CCT
+   * as an embedded browser and answers OAuth inside it with
+   * disallowed_useragent; the bridge hands `window.open` a VIEW intent, which
+   * lands in the real browser where the web sign-in is allowed. The bounce
+   * page carries the pairing code home the same way either way.
+   */
+  const win = window.open(`${location.origin}/?${APPAUTH_FLAG}=1`, "_blank");
+  if (!win) {
     const { toast } = await import("../ui/components");
-    toast(
-      "Không mở được trình duyệt — thử 'Nhập mã liên kết từ web' bên dưới.",
-      6000,
-    );
-    throw e;
+    toast("Không mở được trình duyệt — thử 'Nhập mã liên kết từ web' bên dưới.", 6000);
   }
 }
 
