@@ -18,6 +18,10 @@ const g = globalThis as unknown as Record<string, unknown>;
 g.window = w;
 g.document = w.document;
 g.localStorage = w.localStorage;
+/* Without this the app's bare `sessionStorage` hits Node (undefined → throws →
+   the checkin nudge treats the flag as unset) — and its try/catch then leaves
+   maybeAutoOpenCheckIn free to fire ~900ms after boot, mid-suite. */
+g.sessionStorage = w.sessionStorage;
 // Node 24 defines `navigator` as a getter-only global, so it cannot be assigned.
 Object.defineProperty(globalThis, "navigator", { value: w.navigator, configurable: true, writable: true });
 g.HTMLElement = w.HTMLElement;
@@ -88,6 +92,13 @@ const click = (e: Element | null): void => {
 // --- boot the app ---------------------------------------------------------
 const { boot } = await import("../src/ui/app");
 const { store, navigate } = await import("../src/ui/app");
+const { dayKey } = await import("../src/core/store");
+/* The check-in nudge polls ~900ms after boot and opens its sheet whenever the
+   garden is showing and no overlay is up. On a fast machine the suite finishes
+   the sheet assertions first; on a loaded runner it lands mid-section and every
+   later `$( ".sheet" )` read hits the check-in sheet instead of the one under
+   test. `ci-shown:<day>` is the app's own once-per-session suppression flag. */
+w.sessionStorage.setItem(`ci-shown:${dayKey(Date.now())}`, "1");
 
 section("0. Boot");
 await render("app boots", () => boot(w.document.getElementById("app")!));

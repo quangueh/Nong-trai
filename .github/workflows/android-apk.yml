@@ -100,34 +100,50 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
-      # target:google_apis — the 'default' image can ship a stubbed WebView,
-      # and Capacitor needs a real one. Diagnostics are captured BEFORE the
-      # checks so a failure publishes dumpsys/logcat/screenshot to ci-reports.
-      - name: Boot smoke — install, launch, verify resumed + no fatal
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          arch: x86_64
-          target: google_apis
-          profile: pixel_6
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: |
-            set -x
-            adb install -r apk/app-debug.apk
-            adb shell am start -n com.quang.nongtrai/.MainActivity
-            sleep 35
-            adb shell dumpsys activity activities > dumpsys.txt || true
-            adb logcat -d -v brief > logcat.txt || true
-            adb exec-out screencap -p > apk-smoke.png || true
-            # `if`-guarded checks only — a `grep | head` pipeline in $() can die
-            # by SIGPIPE under the action's pipefail and abort the script even
-            # when the app is healthy. Explicit exit keeps intent unambiguous.
-            RESUMED=no
-            if grep -qE "(topResumedActivity|ResumedActivity):.*com\.quang\.nongtrai" dumpsys.txt; then RESUMED=yes; fi
-            CRASH=no
-            if grep -A40 "FATAL EXCEPTION" logcat.txt | grep -q "com\.quang\.nongtrai"; then CRASH=yes; fi
-            echo "resumed=$RESUMED crash=$CRASH"
-            if [ "$RESUMED" = "yes" ] && [ "$CRASH" = "no" ]; then exit 0; else exit 1; fi
+      # Manual emulator drive, not a third-party action — every line is ours,
+      # every artifact self-reports. google_apis ships a real WebView (the
+      # 'default' target's can be stubbed, and Capacitor needs a real one).
+      - name: Install emulator + system image
+        run: |
+          mkdir -p "$ANDROID_HOME/licenses"
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "emulator" "platform-tools" "system-images;android-34;google_apis;x86_64"
+
+      - name: Create AVD and boot emulator
+        run: |
+          IMG="system-images;android-34;google_apis;x86_64"
+          AVDM="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
+          (echo no | "$AVDM" create avd -n smoke -k "$IMG" -d pixel_6 --force) || \
+            (echo no | "$AVDM" create avd -n smoke -k "$IMG" --force)
+          nohup "$ANDROID_HOME/emulator/emulator" -avd smoke -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim > emulator.log 2>&1 &
+          timeout 180 adb wait-for-device || true
+          for i in $(seq 1 84); do
+            st=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            [ "$st" = "1" ] && break
+            sleep 5
+          done
+          [ "${st:-}" = "1" ] || { echo "emulator never booted"; tail -50 emulator.log; exit 1; }
+          adb shell input keyevent 82 || true
+
+      - name: Smoke — install, launch, verify resumed + no fatal
+        run: |
+          set -x
+          adb install -r apk/app-debug.apk && INSTALL=ok || INSTALL=fail
+          adb shell am start -n com.quang.nongtrai/.MainActivity || true
+          sleep 35
+          adb shell dumpsys activity activities > dumpsys.txt || true
+          adb logcat -d -v brief > logcat.txt || true
+          adb exec-out screencap -p > apk-smoke.png || true
+          # `if`-guarded checks only — a `grep | head` pipeline in $() can die
+          # by SIGPIPE under pipefail and abort the script even when the app is
+          # healthy. Explicit exit keeps intent unambiguous.
+          RESUMED=no
+          if grep -qE "(topResumedActivity|ResumedActivity):.*com\.quang\.nongtrai" dumpsys.txt; then RESUMED=yes; fi
+          CRASH=no
+          if grep -A40 "FATAL EXCEPTION" logcat.txt | grep -q "com\.quang\.nongtrai"; then CRASH=yes; fi
+          echo "install=$INSTALL resumed=$RESUMED crash=$CRASH" | tee smoke-status.txt
+          if [ "$INSTALL" = "ok" ] && [ "$RESUMED" = "yes" ] && [ "$CRASH" = "no" ]; then exit 0; else exit 1; fi
 
       # ci-reports is an orphan branch — readable via the public API, unlike
       # Actions logs which need repo auth.
@@ -142,7 +158,7 @@ jobs:
             git checkout --orphan ci-reports-local && git rm -rf . >/dev/null 2>&1 || true
           fi
           mkdir -p "reports/${GITHUB_SHA::7}-apk-smoke"
-          for f in dumpsys.txt logcat.txt apk-smoke.png; do
+          for f in dumpsys.txt logcat.txt apk-smoke.png smoke-status.txt emulator.log; do
             [ -f "$f" ] && cp "$f" "reports/${GITHUB_SHA::7}-apk-smoke/"
           done
           git add -A reports && git commit -qm "smoke diag ${GITHUB_SHA::7}" \

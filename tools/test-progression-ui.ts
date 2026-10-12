@@ -51,6 +51,13 @@ async function boot(b: Browser, w: number, h: number): Promise<Page> {
   page.on("console", (m) => {
     if (m.type() === "error" && !/GSI_LOGGER|403/.test(m.text())) errs.push(m.text().slice(0, 200));
   });
+  // ci-shown:<day> — the check-in nudge fires ~900ms after boot; suppress it so
+  // its sheet cannot sit on top of the UI these assertions measure.
+  await page.addInitScript(() => {
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    try { sessionStorage.setItem(`ci-shown:${day}`, "1"); } catch { /* fine */ }
+  });
   await page.goto(URL, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
   await page.waitForTimeout(600);
@@ -322,6 +329,11 @@ const b = await chromium.launch();
   console.log("\nreduced motion:");
   const ctx = await b.newContext({ viewport: { width: 1180, height: 900 }, reducedMotion: "reduce" });
   const page = await ctx.newPage();
+  await page.addInitScript(() => {
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    try { sessionStorage.setItem(`ci-shown:${day}`, "1"); } catch { /* fine */ }
+  });
   await page.goto(URL, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
   await page.waitForTimeout(600);

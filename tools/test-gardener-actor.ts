@@ -40,6 +40,13 @@ async function tick(): Promise<number> {
 }
 
 async function boot(p: Page): Promise<void> {
+  // ci-shown:<day> — the check-in nudge polls ~900ms after boot and would open
+  // its sheet mid-suite on a slow runner, stealing .sheet/overlay hit-tests.
+  await p.addInitScript(() => {
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    try { sessionStorage.setItem(`ci-shown:${day}`, "1"); } catch { /* fine */ }
+  });
   await p.goto(URL);
   await applyFixture(p, "F02");
   await p.reload();

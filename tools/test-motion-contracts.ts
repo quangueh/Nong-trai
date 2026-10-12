@@ -31,6 +31,13 @@ async function boot() {
   const page = await browser.newPage();
   const errs: string[] = [];
   page.on("pageerror", (e) => errs.push(e.message));
+  // ci-shown:<day> — keep the timed check-in nudge from opening its sheet
+  // mid-suite; motion assertions read specific overlays, not whichever is on top.
+  await page.addInitScript(() => {
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    try { sessionStorage.setItem(`ci-shown:${day}`, "1"); } catch { /* fine */ }
+  });
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 15000 });
   return { page, errs };

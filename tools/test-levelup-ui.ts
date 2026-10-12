@@ -41,6 +41,13 @@ async function boot(b: Browser, reduced = false): Promise<Page> {
   page.on("console", (m: { type: () => string; text: () => string }) => {
     if (m.type() === "error" && !/GSI_LOGGER|403/.test(m.text())) errs.push(m.text().slice(0, 200));
   });
+  // ci-shown:<day> — suppress the timed check-in nudge; on a loaded runner it
+  // opens mid-suite and its sheet intercepts hit-tests meant for the target UI.
+  await page.addInitScript(() => {
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    try { sessionStorage.setItem(`ci-shown:${day}`, "1"); } catch { /* fine */ }
+  });
   await page.goto(URL, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean((window as unknown as { __game?: unknown }).__game), { timeout: 20000 });
   await page.waitForTimeout(600);
