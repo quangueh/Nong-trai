@@ -1,0 +1,1 @@
+/home/runner/work/_temp/d88ab5f8-576e-4148-8cc6-0d6194a4671c.sh: line 33: adb: command not found

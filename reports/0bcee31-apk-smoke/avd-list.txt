@@ -1,0 +1,7 @@
+Available Android Virtual Devices:
+    Name: smoke
+  Device: pixel_6 (Google)
+    Path: /home/runner/.android/avd/smoke.avd
+  Target: Google APIs (Google Inc.)
+          Based on: Android 14.0 ("UpsideDownCake") Tag/ABI: google_apis/x86_64
+  Sdcard: 512 MB
