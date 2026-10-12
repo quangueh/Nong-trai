@@ -131,6 +131,9 @@ console.log("\nBAT-02 — a loss still settles once, then allows the next attemp
   weak.stats.hp = 60;
   weak.stats.attack = 8; weak.stats.defense = 5;
   weak.stats.speed = 8; weak.stats.skillPower = 5;
+  /* plantSeed rolls the skill kit from Math.random() — a lucky kit beats the
+     stage-2 enemy even on 8 attack. Zero it too, or this assertion flakes. */
+  weak.skills = [];
   const r = s.runAscentStage(weakId, 2);
   if (r.ok && r.won === false) {
     const attempts = s.state.ascent.attempts;

@@ -66,9 +66,12 @@ jobs:
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           mkdir -p "$ANDROID_HOME/licenses"
-          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
+          printf '%s\n' \
+            "24333f8a63b6825ea9c5514f83c2829b004d1fee" \
+            "d56f5187479451eabf01fb78af6dfcb131a6481e" \
+            "8933bad161af4178b1185d1a37fbf41ea5269c55" > "$ANDROID_HOME/licenses/android-sdk-license"
           echo "84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
-          "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0" "platform-tools"
+          yes | "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0" "platform-tools"
 
       - name: Assemble debug APK
         working-directory: android
@@ -103,12 +106,21 @@ jobs:
       # Manual emulator drive, not a third-party action — every line is ours,
       # every artifact self-reports. google_apis ships a real WebView (the
       # 'default' target's can be stubbed, and Capacitor needs a real one).
+      # google_apis images carry their own license (android-googledk-license) —
+      # pre-seed every known hash AND pipe `yes` so no prompt can block.
       - name: Install emulator + system image
         run: |
           mkdir -p "$ANDROID_HOME/licenses"
-          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
+          printf '%s\n' \
+            "24333f8a63b6825ea9c5514f83c2829b004d1fee" \
+            "d56f5187479451eabf01fb78af6dfcb131a6481e" \
+            "8933bad161af4178b1185d1a37fbf41ea5269c55" > "$ANDROID_HOME/licenses/android-sdk-license"
           echo "84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "emulator" "platform-tools" "system-images;android-34;google_apis;x86_64"
+          echo "601085b94e77f3850ca1508e1f9d0be9c7c2a1a9" > "$ANDROID_HOME/licenses/android-googledk-license"
+          echo "859f317696f67ef3d7f30a50a5560e7834b43903" > "$ANDROID_HOME/licenses/android-sdk-arm-dbt-license"
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" "emulator" "platform-tools" "system-images;android-34;google_apis;x86_64" || \
+            { sleep 10; yes | "$SDKM" "emulator" "platform-tools" "system-images;android-34;google_apis;x86_64"; }
 
       - name: Create AVD and boot emulator
         run: |
