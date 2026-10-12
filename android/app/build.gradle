@@ -16,7 +16,26 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        /*
+         * Pinned debug keystore — without this every CI runner and every dev
+         * machine mints its own ~/.android/debug.keystore, every apk-latest
+         * gets a different signature, and each "update" install fails with
+         * INSTALL_FAILED_UPDATE_INCOMPATIBLE unless the player uninstalls —
+         * wiping the WebView's local save. Same well-known debug credentials
+         * as the SDK's generated key, just fixed, so updates install over.
+         */
+        debug {
+            storeFile file("../debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
