@@ -1,0 +1,30 @@
+
+AUX-01 — owned and discovered are separate questions:
+PASS selling the last owned plant keeps the species discovered
+PASS a species never owned is absent from discovery — and honest about it
+
+AUX-02 — the shelf is a page of the registry, not the registry:
+PASS a page never returns more than perPage, whatever the registry size
+PASS pages partition the shelf: no species on two pages, none skipped
+PASS accent-insensitive search finds an accented species by its plain letters
+PASS locked filter never yields an empty page while the pager claims more
+PASS affordable filter compares price to the right purse, not one balance
+PASS price sort orders before slicing: the page boundary is monotone
+PASS the species pin narrows the shelf to exactly one card, gate and all
+
+AUX-03 — a refused transaction moves nothing:
+PASS buying past the purse refuses with no debit, no seed, no ledger
+PASS a locked species refuses without touching the purse
+PASS exchange over the daily cap refuses — no debit, no credit, no cap drift
+PASS exchange into ember is refused outright — it is earned, not bought
+PASS a same-currency exchange is refused, not a free ledger entry
+PASS an order cannot be fulfilled with a plant that does not satisfy it
+
+Covered elsewhere (reference, not re-run):
+ok   AUX-05 account-A late response cannot write account B — sync.ts sessionRev + test-signin-flow §8
+ok   AUX-06 offline/error/retry/empty states — test-aux-wp08-view.ts
+ok   AUX-07 save conflict is a choice, not a guess — test-signin-flow §6–8
+ok   AUX-08 prefs effects — test-prefs.ts + test-aux-wp08-view.ts
+ok   AUX-04 quest pin — test-aux-wp08-view.ts
+
+15 passed, 0 failed

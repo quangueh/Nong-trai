@@ -1,0 +1,35 @@
+
+BAT-01 — same seed + same snapshot => identical full log:
+ok   stage 1 settles
+ok   replayed log matches the settled log event-for-event
+ok   replayed winner matches the settled winner
+ok   replayAs is a frozen copy, not the live plant
+
+BAT-02 — a cleared stage can never pay twice:
+ok   first run wins or at least settles
+ok   re-running a cleared stage refuses
+ok   no second stage reward line exists
+ok   balance unchanged by the refused re-run
+
+BAT-02 — reward lines are written exactly once per settle:
+ok   battle counter moves once
+ok   win or loss recorded exactly once on the fighter
+
+BAT-02/05 — replayAs freezes pre-settle stats; payout can't rewrite the fight:
+ok   settle moved plant XP/level on the live plant
+ok   replayAs kept the pre-settle level
+
+BAT-02 — a loss still settles once, then allows the next attempt:
+ok   loss increments attempts exactly once
+
+BAT-05 — settle ordering: rewards land before the replay exists:
+ok   ledger already holds the reward when the receipt returns
+ok   settling flag unwound — notices may flow again
+ok   receipt carries everything the screen needs to replay
+
+BAT-05 — gate failures move nothing:
+ok   immature fighter refuses
+ok   closed stage refuses
+ok   nothing was charged or settled
+
+19 passed, 0 failed

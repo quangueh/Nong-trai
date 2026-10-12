@@ -1,0 +1,39 @@
+
+worker contracts — malformed inputs fail, never crash
+  ok   unparseable body fails clean
+  ok   bad code refused
+  ok   unknown action refused
+  ok   send without msg refused
+
+worker contracts — oversize and full-room limits
+  ok   oversize message refused 413 — status=413
+  ok   241st message refused room_full/429 — status=429
+
+worker contracts — poll cursor and atomic reset boundary
+  ok   poll returns rows after the cursor
+  ok   and none before it
+  ok   reset wipes the stale join, keeps the marker — msgs=create
+  ok   a join sent after the reset boundary survives — msgs=create,join
+
+F07 — dropped first join: the reannounce loop lands it remotely
+  ok   join reached the remote mailbox despite the dropped announce — kv joins=1
+
+F07 — duplicated poll rows dispatch each message once
+  ok   one state broadcast dispatches exactly once under duped rows — states=1
+
+F07 — out-of-order rows: the cursor is a key-set, not a sequence
+  ok   every shuffled mailbox row still arrived — states=3
+
+F07 — relay 500s: local wire unaffected, remote heals itself
+  ok   local wire delivers while the relay is dead
+  ok   client keeps retrying the dead relay without crashing — calls=14
+  ok   remote delivery resumes after the relay recovers
+
+F07 — slow wire: publish never blocks on the network
+  ok   send returns immediately on a 600ms wire (fire-and-forget) — elapsed=0ms
+
+F07 — leave stops the poller (no timer leak)
+  ok   poller armed while in room
+  ok   poller cleared after leave
+
+19 passed, 0 failed

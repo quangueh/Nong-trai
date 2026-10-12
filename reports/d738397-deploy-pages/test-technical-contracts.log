@@ -1,0 +1,57 @@
+PASS purchase rejects -1 atomically
+PASS purchase rejects 0 atomically
+PASS purchase rejects 0.5 atomically
+PASS purchase rejects NaN atomically
+PASS purchase rejects Infinity atomically
+PASS purchase rejects -Infinity atomically
+PASS purchase 1: charged exactly once and seeds conserved
+PASS purchase 9: charged exactly once and seeds conserved
+PASS purchase 10: charged exactly once and seeds conserved
+PASS purchase 11: charged exactly once and seeds conserved
+PASS purchase 100: charged exactly once and seeds conserved
+PASS insufficient funds do not change seeds, ledger or quest progress
+PASS batch planting respects both capacity and seed conservation
+PASS breeding same-parent rejection preserves complete state
+PASS breeding battle-lock rejection preserves complete state
+PASS breeding immature rejection preserves complete state
+PASS breeding no-money rejection preserves complete state
+PASS breeding spends two parents once and creates one owned child
+PASS exchange quote and inverse price obey independent integer arithmetic
+PASS exchange boundary and reload do not reset daily allowance
+PASS exchange round trip cannot print money
+PASS save reload preserves plant identity, wallet and server timestamp
+PASS malformed save recovers without borrowing another account
+PASS storage write failure is visible and recovers on next successful save
+PASS care water: preview is pure and cooldown refusal is atomic
+PASS care sunlight: preview is pure and cooldown refusal is atomic
+PASS care fertilizer: preview is pure and cooldown refusal is atomic
+PASS care pruning: preview is pure and cooldown refusal is atomic
+PASS care music: preview is pure and cooldown refusal is atomic
+PASS care moonlight: preview is pure and cooldown refusal is atomic
+PASS care gene_serum: preview is pure and cooldown refusal is atomic
+PASS battle seed=0: replay, snapshot purity, ordered finite events
+PASS battle seed=1: replay, snapshot purity, ordered finite events
+PASS battle seed=2: replay, snapshot purity, ordered finite events
+PASS battle seed=3: replay, snapshot purity, ordered finite events
+PASS battle seed=4: replay, snapshot purity, ordered finite events
+PASS battle seed=5: replay, snapshot purity, ordered finite events
+PASS battle seed=6: replay, snapshot purity, ordered finite events
+PASS battle seed=7: replay, snapshot purity, ordered finite events
+PASS battle seed=8: replay, snapshot purity, ordered finite events
+PASS battle seed=9: replay, snapshot purity, ordered finite events
+PASS battle seed=10: replay, snapshot purity, ordered finite events
+PASS battle seed=11: replay, snapshot purity, ordered finite events
+PASS battle seed=12: replay, snapshot purity, ordered finite events
+PASS battle seed=13: replay, snapshot purity, ordered finite events
+PASS battle seed=14: replay, snapshot purity, ordered finite events
+PASS battle seed=15: replay, snapshot purity, ordered finite events
+PASS battle seed=16: replay, snapshot purity, ordered finite events
+PASS battle seed=17: replay, snapshot purity, ordered finite events
+PASS battle seed=18: replay, snapshot purity, ordered finite events
+PASS battle seed=19: replay, snapshot purity, ordered finite events
+PASS battle seed=20: replay, snapshot purity, ordered finite events
+PASS battle seed=21: replay, snapshot purity, ordered finite events
+PASS battle seed=22: replay, snapshot purity, ordered finite events
+PASS battle seed=23: replay, snapshot purity, ordered finite events
+PASS plant rendering is deterministic and does not mutate game data
+Technical contracts: 56 passed, 0 failed

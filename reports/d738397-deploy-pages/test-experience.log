@@ -1,0 +1,67 @@
+curves:
+
+1. a grant too small to level:
+  ok   no level is crossed
+  ok   the whole grant is banked
+  ok   and the bar reads just under full
+  ok   level 1 starts from zero experience
+  ok   exactly enough crosses exactly one level
+  ok   and banks nothing over
+  ok   the next level costs more than the last
+
+2. the boundary from one short, and the case just over it:
+  ok   one XP short stays put
+  ok   one XP over levels and banks the extra
+  ok   the extra XP is not lost
+
+3. a grant spanning many levels at once:
+  ok   grant 1459: level and banked XP account for every XP (lv5 -> lv7, 388 left)
+  ok   grant 1459: the preview agrees with what happened
+  ok   grant 1459: the reported level count matches
+  ok   grant 1459: and the bar is inside its own range
+  ok   grant 5000: level and banked XP account for every XP (lv5 -> lv11, 106 left)
+  ok   grant 5000: the preview agrees with what happened
+  ok   grant 5000: the reported level count matches
+  ok   grant 5000: and the bar is inside its own range
+  ok   grant 40000: level and banked XP account for every XP (lv5 -> lv24, 2190 left)
+  ok   grant 40000: the preview agrees with what happened
+  ok   grant 40000: the reported level count matches
+  ok   grant 40000: and the bar is inside its own range
+  ok   grant 250000: level and banked XP account for every XP (lv5 -> lv51, 4700 left)
+  ok   grant 250000: the preview agrees with what happened
+  ok   grant 250000: the reported level count matches
+  ok   grant 250000: and the bar is inside its own range
+  ok   the breeder curve conserves experience too
+  ok   and its snapshot stays in range
+  ok   a capped breeder reports a full bar rather than a broken one
+  ok   exactly the cap's worth of experience reaches the cap (needs 100,301)
+  ok   one XP short stops at the level below it
+  ok   a capped preview reports the experience the store will actually hold
+  ok   and it is not zero, which is what it used to claim
+  ok   while the bar still reads full at the cap
+
+4. experience sources read a real fight:
+  ok   a combo is read from the recorded events
+  ok   and it is the same every time
+  ok   four objectives per stage
+  ok   each met objective pays experience
+  ok   the bonus is exactly the sum of what was met
+  ok   the star count is the number met
+  ok   a loss can meet the non-win-gated ones only
+  ok   objectives scale with depth
+  ok   but never without bound past the ladder's end
+
+5. skill mastery:
+  ok   a fresh skill reads as empty
+  ok   and says so
+  ok   a maxed skill reads full
+  ok   and the percentage stays inside its bar
+
+6. it survives a save and reload:
+  ok   the level survived
+  ok   and so did the banked remainder — no XP lost on reload
+  ok   and the breeder's level
+  ok   and its experience
+  ok   and the snapshot still reads as in-range
+
+experience adds up, and survives

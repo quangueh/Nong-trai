@@ -1,0 +1,208 @@
+
+[1m0. Boot[0m
+  [32mPASS[0m app boots — 4619 chars
+  [32mPASS[0m shell is created
+  [32mPASS[0m bottom nav has 5 tabs — 5
+  [32mPASS[0m and the nav is sized for as many columns as it has tabs — tabs 5, columns 5
+  [32mPASS[0m every tab lands on one row — 1 distinct rows
+  [32mPASS[0m topbar shows currency
+  [32mPASS[0m the leaderboard is not pinned in the rail
+  [32mPASS[0m no floating 🏆 button anywhere
+  [32mPASS[0m the Đấu tab is in the bottom nav
+  [32mPASS[0m no board is mounted until the tab is opened
+  [32mPASS[0m leaderboard tab opens — 320 chars
+  [32mPASS[0m the combat hub shows the board segment
+  [32mPASS[0m the board segment is the selected one
+  [32mPASS[0m the Đấu dock tab is lit for the board
+  [32mPASS[0m the board is the screen
+  [32mPASS[0m leaderboard shows the power board
+  [32mPASS[0m leaderboard shows the level board
+  [32mPASS[0m the player sees their own row even offline
+
+[1m1. Garden screen[0m
+  [32mPASS[0m garden renders — 4619 chars
+  [32mPASS[0m shows nursery capacity — Vườn1/6 · 36 ô
+  [32mPASS[0m shows a plot for the starting plant
+  [32mPASS[0m the garden screen opens on the plots tab — no active tab
+  [32mPASS[0m the active tab is the garden, not the seed bag — Vườn
+  [32mPASS[0m the seed belt is not on the plots tab — the belt is still mixed in with the plots
+  [32mPASS[0m open the seed tab — 2192 chars
+  [32mPASS[0m shows the seed belt on its own tab
+  [32mPASS[0m the belt explains how to use it — Túi hạtBấm ô đất trống, chọn hạt trong túi là cây được gieo.Cửa hàng1R
+  [32mPASS[0m the belt does not advertise the removed long press
+  [32mPASS[0m the belt lists seeds with the count held — 10
+  [32mPASS[0m back to the plots tab — 4619 chars
+  [32mPASS[0m the plots are on the garden tab — 36
+  [32mPASS[0m open the quests tab — 4143 chars
+  [32mPASS[0m the quests tab shows quest progress — VườnNhiệm vụTúi hạt1/6 · ◐ TrăngNhà kính hôm nayĐêm trăng: d
+  [32mPASS[0m quests repainted — 4157 chars
+  [32mPASS[0m claim-all button appears
+  [32mPASS[0m claim all — 3934 chars
+  [32mPASS[0m claim-all collected both quests
+  [32mPASS[0m claim-all paid out — +50
+  [32mPASS[0m claim-all button is gone once nothing is claimable
+  [32mPASS[0m return to the plots tab — 4950 chars
+  [32mPASS[0m plots use the 2-column plot grid
+  [32mPASS[0m each plot renders a plant
+  [32mPASS[0m plant art is rendered large enough to read — 150px
+  [32mPASS[0m plot has a rarity ribbon
+  [32mPASS[0m plot has a name
+  [32mPASS[0m distinct plants render distinct art
+  [32mPASS[0m growing plants show a progress ring
+  [32mPASS[0m empty slot invites planting
+
+[1m2. Plant detail sheet[0m
+  [32mPASS[0m detail opens — 6984 chars
+  [32mPASS[0m sheet appears
+  [31mFAIL[0m detail shows the plant name
+  [31mFAIL[0m detail shows stats
+  [32mPASS[0m detail shows the archetype radar
+  [31mFAIL[0m detail shows skills
+  [31mFAIL[0m detail shows gene balance
+  [32mPASS[0m detail offers a care button
+
+[1m3. Care sheet[0m
+  [32mPASS[0m care sheet opens — 5855 chars
+  [32mPASS[0m care sheet lists all 7 actions — 7
+  [32mPASS[0m water button applies care — 5909 chars
+  [32mPASS[0m care changed a real stat
+  [32mPASS[0m care sheet re-renders after caring
+  [31mFAIL[0m combo hints are shown
+
+[1m4. Collection screen[0m
+  [32mPASS[0m collection renders — 1800 chars
+  [32mPASS[0m shows filters
+  [32mPASS[0m shows a sell section
+  [32mPASS[0m shows stats section
+  [32mPASS[0m filter: ready — 456 chars
+  [32mPASS[0m filter applies without error
+
+[1m5. Breeding screen[0m
+  [32mPASS[0m at least 2 plants available for breeding — 4
+  [32mPASS[0m breeding renders — 685 chars
+  [32mPASS[0m shows two parent slots
+  [32mPASS[0m breed button starts disabled
+  [32mPASS[0m select parent A — 6470 chars
+  [32mPASS[0m parent picker opens
+  [32mPASS[0m choose parent A — 2173 chars
+  [32mPASS[0m slot A is filled — 1
+  [32mPASS[0m select parent B — 7973 chars
+  [32mPASS[0m choose parent B — 3791 chars
+  [32mPASS[0m both slots are filled — 2
+  [32mPASS[0m shows rarity probability preview
+  [32mPASS[0m shows all 6 rarity bands
+  [32mPASS[0m shows breeding fee
+  [32mPASS[0m shows average parent level
+  [32mPASS[0m breed button is now enabled
+  [32mPASS[0m breed asks for confirmation — 3946 chars
+  [32mPASS[0m the destructive confirm appears
+  [32mPASS[0m confirming breeds — 9176 chars
+  [32mPASS[0m the fusion ceremony plays — overlay fusion-overlay
+  [32mPASS[0m it names the child it produced — Mào Rừng Nóng
+  [32mPASS[0m tapping the ceremony continues — 9939 chars
+  [32mPASS[0m tapping it moves on to the report
+  [32mPASS[0m a child plant was created and both parents were spent — 4 -> 3
+
+[1m6. Mutation report[0m
+  [32mPASS[0m mutation report sheet opened
+  [32mPASS[0m report names the child
+  [32mPASS[0m report lists mutations
+  [32mPASS[0m report lists skills
+  [32mPASS[0m report shows gene packages and trade-offs
+  [32mPASS[0m report shows strength/weakness
+  [32mPASS[0m report shows an estimated price
+  [32mPASS[0m report auto-locks A+ plants
+  [32mPASS[0m report closes — 4761 chars
+  [32mPASS[0m sheet is gone
+
+[1m7. Arena screen (PvE)[0m
+  [32mPASS[0m arena menu renders — 7821 chars
+  [32mPASS[0m offers PvE
+  [32mPASS[0m offers room creation
+  [32mPASS[0m offers code entry
+  [32mPASS[0m shows the record
+  [32mPASS[0m code input uppercases
+  [32mPASS[0m code input normalises to 6 uppercase — AB12CD
+  [32mPASS[0m pick plant for battle — 12114 chars
+  [32mPASS[0m plant picker opens
+  [32mPASS[0m choose plant — 5837 chars
+  [32mPASS[0m opponent preview renders
+  [32mPASS[0m compares power ratings
+  [32mPASS[0m shows opponent traits
+  [32mPASS[0m battle starts — 7196 chars
+  [32mPASS[0m set 8x speed — 7196 chars
+  [32mPASS[0m battlefield is rendered
+  [32mPASS[0m both HP bars exist
+  [32mPASS[0m HP bars have a fill
+  [32mPASS[0m both fighters are rendered
+  [32mPASS[0m battle clock is shown
+  [32mPASS[0m battle phase is shown
+  [32mPASS[0m skill buttons exist — 2
+  [32mPASS[0m stance buttons exist
+  [32mPASS[0m battle log exists
+  [32mPASS[0m focus button exists
+  [32mPASS[0m auto-skill toggle exists
+  [32mPASS[0m focus skill is usable — 7221 chars
+  [32mPASS[0m focus button becomes disabled after use
+  [32mPASS[0m battle resolves to a result screen — Đấu trườngVượt ảiXếp hạng🏆 THẮNG!Dây Sét non VS Đối Thủ Ao5
+  [32mPASS[0m result shows damage dealt
+  [32mPASS[0m result shows HP remaining
+  [32mPASS[0m reward is granted — +60
+  [32mPASS[0m rematch button exists
+  [32mPASS[0m return-to-garden button exists
+
+[1m8. Room battle (server-authoritative)[0m
+  [32mPASS[0m create a room — 7809 chars
+  [32mPASS[0m open room creation — 12103 chars
+  [32mPASS[0m plant picker opens for rooms
+  [32mPASS[0m pick room plant — 4511 chars
+  [32mPASS[0m room code is displayed
+  [32mPASS[0m room code is 6 characters — AGM3DV
+  [32mPASS[0m room code avoids ambiguous glyphs — AGM3DV
+  [32mPASS[0m copy button exists
+  [32mPASS[0m lobby lists the host
+  [32mPASS[0m ready button exists
+  [32mPASS[0m start button is hidden until a guest joins
+  [32mPASS[0m leave button exists
+  [32mPASS[0m host marks ready — 4514 chars
+  [32mPASS[0m ready state is reflected
+
+[1m9. Shop / lab screen[0m
+  [32mPASS[0m lab renders — 29761 chars
+  [32mPASS[0m shows the 5 base seeds
+  [32mPASS[0m states the shop sells no high rarity
+  [32mPASS[0m offers seed packs — per-card bulk buy, 5% off
+  [32mPASS[0m the shelf offers at least one purchasable seed — 10 enabled
+  [32mPASS[0m buy a seed — 29797 chars
+  [32mPASS[0m buying deducts coins — 50231 -> 50131
+  [32mPASS[0m switch to items tab — 4639 chars
+  [32mPASS[0m items tab lists supplies
+  [32mPASS[0m items tab explains the refund sink
+  [32mPASS[0m switch to land tab — 8622 chars
+  [32mPASS[0m land tab shows the garden size — Hạt cơ bảnVật tưVườn💱 Quy đổiĐơn hàng🌿 Vườn: 6/36 ôĐang trồng 3 cây. Mỗi ô mới có điều kiện riêng 
+  [32mPASS[0m land tab lists locked plots — no plot rows
+  [32mPASS[0m land tab prices the next plot — no price shown
+  [32mPASS[0m land tab says what blocks a plot — no requirement shown
+  [32mPASS[0m land tab has no ungated shortcut — the old +2 button is still there
+  [32mPASS[0m land tab shows converted prices — no equivalent price line
+  [32mPASS[0m switch to exchange tab — 4744 chars
+  [32mPASS[0m exchange tab shows the rate table — Hạt cơ bảnVật tưVườn💱 Quy đổiĐơn hàngMọi loại tiền đổi qua lại được — riêng 🔥 Mảnh lửa chỉ đổi ra, không đổi vào. Đổi mất 20% giá trị, tối
+  [32mPASS[0m the rates come from the table — Hạt cơ bảnVật tưVườn💱 Quy đổiĐơn hàngMọi loại tiền đổi qua lại được — riêng 🔥 Mảnh lửa chỉ đổi ra, không đổi vào. Đổi mất 20% giá trị, tối
+  [32mPASS[0m the fee and the daily cap are printed — Hạt cơ bảnVật tưVườn💱 Quy đổiĐơn hàngMọi loại tiền đổi qua lại được — riêng 🔥 Mảnh lửa chỉ đổi ra, không đổi vào. Đổi mất 20% giá trị, tối
+  [32mPASS[0m the desk offers two non-ember targets — 🍯 Mật ong,🌼 Phấn hoa
+  [32mPASS[0m and ember is never one of them — 🍯 Mật ong,🌼 Phấn hoa
+  [32mPASS[0m the desk has an amount box
+  [32mPASS[0m the preview quotes the payout — ôm nay còn đổi được ~3000🪙 giá trịĐổi tiền🪙 Xu lá — có 50.131🍯 Mật ong — có 43🌼 Phấn hoa — có 7🔥 Mảnh lửa — có 0→🍯 Mật ong🌼 Phấn hoaTối đa→ Nhận 80 🍯Đổi
+  [32mPASS[0m run the exchange — 4766 chars
+  [32mPASS[0m the exchange paid out — 43 -> 123
+  [32mPASS[0m and the cap counted it — 2900
+  [32mPASS[0m switch to orders tab — 4946 chars
+  [32mPASS[0m orders tab explains the bonus
+  [32mPASS[0m orders tab lists at least one order
+  [32mPASS[0m orders tab has a plant selector
+
+[1m10. No runtime errors during the whole run[0m
+  [31mFAIL[0m no unhandled failures recorded — detail shows the plant name, detail shows stats, detail shows skills, detail shows gene balance, combo hints are shown
+
+[1mResult: 177 passed, 6 failed[0m
+

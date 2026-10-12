@@ -1,0 +1,21 @@
+Google sign-in: does a token ever get dropped?
+
+  (Google sign-in enabled: yes)
+
+  ok   Google sign-in is reachable with a client id present
+  ok   onGoogleCredential is exported for the panel to subscribe
+  ok   GIS was initialised before renderButton, not on click
+  ok   and the button painted
+  ok   a credential delivered with nobody waiting still reaches a listener
+  ok   an unsubscribed listener stops receiving, so a reopened sheet cannot stack them
+  ok   a credential that arrived before anyone listened is delivered on subscribe
+  ok   an empty credential is not handed on as a token
+  ok   a credential in the URL fragment is picked up
+  ok   and removed from the address bar afterwards
+  ok   a credential in the query string is picked up too
+  ok   a token field is reduced to its length
+  ok   so is a JWT hiding under another name
+  ok   ordinary fields are left readable
+  ok   the redaction says how much was there
+
+no credential is dropped

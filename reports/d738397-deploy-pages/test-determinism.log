@@ -1,0 +1,105 @@
+
+[1m1. RNG determinism (docs/06 §5)[0m
+  [32mPASS[0m same seed produces the same stream
+  [32mPASS[0m different seed diverges
+  [32mPASS[0m seedToken is stable
+  [32mPASS[0m fork() gives an independent stream
+
+[1m2. Breeding determinism (docs/02 §7, Definition of Done)[0m
+  [32mPASS[0m same parents + same seed + same attempt => identical child
+  [32mPASS[0m stats are identical
+  [32mPASS[0m skills are identical
+  [32mPASS[0m rarity is identical
+  [32mPASS[0m different attempt => different child
+  [32mPASS[0m different server nonce => different child
+  [32mPASS[0m generation increments
+
+[1m3. Uniqueness across many generations (Definition of Done: 20 distinct plants)[0m
+  [32mPASS[0m 60 breeds produced 60 distinct genomes — 60/60 unique
+  [32mPASS[0m names are mostly distinct (near-infinite variation) — 59 unique names
+
+[1m4. No NaN / invalid stats (docs/09 QA)[0m
+  [32mPASS[0m no NaN / non-positive stats in 300 plants — 0 violations
+  [32mPASS[0m build value stays within +/-15% of tier budget — 0 outliers
+  [32mPASS[0m no invalid ranked combos in 300 plants — 0 invalid
+
+[1m5. Skill genes generate varied skills (Definition of Done)[0m
+  [32mPASS[0m skill names are generated and varied — 466 distinct names
+  [32mPASS[0m multiple deliveries appear — aura, channel, melee, projectile, summon, morph, trap
+  [32mPASS[0m multiple effects appear — damage, stun, heal, dot, shield, root, regen, slow
+
+[1m6. Battle determinism (docs/03 §10, docs/09)[0m
+  [32mPASS[0m same seed => same winner — a
+  [32mPASS[0m same seed => same HP after
+  [32mPASS[0m same seed => same damage
+  [32mPASS[0m event stream is identical length — 101 events
+  [32mPASS[0m different seed can produce a different result (seed actually used) — a vs a
+  [32mPASS[0m battle emits a BATTLE_FINISHED event
+  [32mPASS[0m no side ends with negative HP
+  [32mPASS[0m event sequence numbers are monotonic
+  [32mPASS[0m damage is bounded (no one-shot from full HP)
+
+[1m7. Battle completes in reasonable time (docs/09 timeout)[0m
+  [32mPASS[0m timeout rate under 8% (docs/15 §15) — 0/40 timed out
+
+[1m8. ECR measurement (docs/15 §14)[0m
+  [32mPASS[0m median win rate across generated plants is near 50% — avg 60.4%
+  [32mPASS[0m no matchup win rate is impossible
+  [32mPASS[0m the typical plant is not hyper-polar — median 0.38, max 0.45 — docs/15 target is <= 0.09, still open
+  [32mPASS[0m ECR is deterministic for a given plant — ECR 0.18
+
+[1m9. Rarity table integrity (docs/16 §8, §9, acceptance)[0m
+  [32mPASS[0m rarity weights sum to exactly 10000 for every level 1-100
+  [32mPASS[0m base table SSS is exactly 0.10% at level 1 — 10 bp
+  [32mPASS[0m rarity odds improve with parent level
+  [32mPASS[0m two SSS parents do not guarantee SSS — 19 bp (0.19%)
+  [32mPASS[0m SSS parents improve odds slightly
+  [32mPASS[0m level 1 + level 100 behaves like effective level 50 — 1854 vs 1854
+
+[1m10. Economy (docs/16 §18, acceptance: C plant has small positive profit)[0m
+  [32mPASS[0m a well-cared C plant sells above its seed cost — 122 LeafCoin
+  [32mPASS[0m a C plant does not print money (price < 3x seed) — 122 LeafCoin
+  [32mPASS[0m SSS sells far above C — 7327 vs 122
+  [32mPASS[0m SSS price is capped — 7327
+  [32mPASS[0m A+ plants auto-lock
+
+[1m11. Care actually changes stats (docs/12 acceptance, Definition of Done)[0m
+  [32mPASS[0m care produces stat gains
+  [32mPASS[0m care changes the plant's real stats
+  [32mPASS[0m repeating one care action has diminishing returns — 5 -> 4
+  [32mPASS[0m care cooldown is enforced — Cây cần nghỉ thêm 44s
+  [32mPASS[0m different care styles diverge — hp 296/307, atk 47/63
+
+[1m12. Two different parents => different children (docs/01 §6)[0m
+  [32mPASS[0m self-breed is possible at the sim level (UI blocks it)
+  [32mPASS[0m cross-breed differs from self-breed
+
+[1m13. Trait validity (docs/15 §8)[0m
+  [32mPASS[0m all generated traits exist in the registry and are unique — 0 bad
+
+[1m14. Benchmark roster is sane (docs/15 §14)[0m
+  [32mPASS[0m benchmark plants are well-formed
+
+[1m15. Validator keeps power budget (docs/15 §15)[0m
+  [32mPASS[0m validator reports a build value — 190.4
+  [32mPASS[0m validator reports synergy tax >= 0 — 0
+  [32mPASS[0m ranked legality is decided
+  [32mPASS[0m re-validating is stable
+  [32mPASS[0m power rating is positive and finite
+
+[1m16. Growth catch-up keeps elapsed time (offline progress)[0m
+  [32mPASS[0m partial catch-up lands in the next stage — young
+  [32mPASS[0m overshoot carries into the new stage — 60000 → 240000
+  [32mPASS[0m progress shows the carried time — 0.778
+  [32mPASS[0m multi-boundary catch-up reaches mature — mature
+  [32mPASS[0m single entry reports the final stage — mature
+  [32mPASS[0m mid-stage tick is a no-op
+  [32mPASS[0m high growthRate shortens the next stage — 144s
+
+[1m17. Every announced care gain lands somewhere real[0m
+  [32mPASS[0m moonlight raises the real mutation chance — 0.09 → 0.1
+  [32mPASS[0m sunlight raises the real growth rate — 0.35 → 0.36
+  [32mPASS[0m preview announces real stats — [{"stat":"speed","amount":1,"label":"Tốc độ"},{"stat":"crit","amount":1,"label":"Chí mạng"},{"stat":"evasion","amount":1,"label":"Né"},{"stat":"attack","amount":1,"label":"Công"}]
+
+[1mResult: 68 passed, 0 failed[0m
+

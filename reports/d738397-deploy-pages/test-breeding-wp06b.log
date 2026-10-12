@@ -1,0 +1,45 @@
+
+fee boundary ±1 — under refuses clean, exact settles once:
+ok   fee−1 refuses
+ok   fee−1 moves nothing: no child, both parents, no debit
+ok   fee exact settles
+ok   exactly one fee debit lands in the ledger
+ok   wallet reconciles with leafCoin ledger lines (fee + level-ups only)
+
+corrupt ids — every bad pair refuses without spending:
+ok   refuses with both missing
+ok   refuses with B missing
+ok   refuses with A missing
+ok   refuses with same id
+ok   refuses with empty ids
+ok   no corrupt call moved state
+
+nursery semantics — at cap breeds (net −1), over-cap refuses:
+ok   at-cap breed is legal and lands a child
+ok   over-cap refuses with the full-garden reason
+ok   over-cap refusal spent nothing
+
+every unlocked protocol settles exactly once:
+ok   all protocols settle atomically
+
+duplicate rapid settle — the second call sees spent parents:
+ok   first call settles
+ok   second identical call refuses — no double settle
+ok   exactly one child and one fee after the duplicate
+ok   pity moved exactly once
+
+pity thresholds — soft boosts at exact counters, hard guarantee at sssHard:
+ok   A weight lifts once past sinceA=20 (soft pity on)
+ok   S weight lifts once past sinceS=60
+ok   sssHard−1 does NOT guarantee
+ok   sssHard publishes SSS=10000 bps exactly
+ok   sssHard roll produces the guaranteed SSS child
+ok   the hit resets the SSS counter
+
+save/reload — a settled result survives without the ceremony:
+ok   child persisted across reload
+ok   parents stayed spent across reload
+ok   pity counters persisted
+ok   a post-reload breed cannot re-spend the parents
+
+29 passed, 0 failed

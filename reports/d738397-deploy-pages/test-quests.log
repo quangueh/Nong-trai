@@ -1,0 +1,134 @@
+
+[1m1. Catalogue sanity[0m
+  [32mPASS[0m catalogue covers all four tabs
+  [32mPASS[0m quest ids are unique
+  [32mPASS[0m every quest has title, objective, icon and a target
+  [32mPASS[0m every quest pays something
+  [32mPASS[0m every quest reference resolves — 14 refs
+  [32mPASS[0m the main line is a chain — 8 mains
+  [32mPASS[0m daily pool exceeds the shelf size
+  [32mPASS[0m dailies are repeatable
+
+[1m2. Engine — unlocks and sync[0m
+  [32mPASS[0m first main quest starts active
+  [32mPASS[0m second main quest starts locked
+  [32mPASS[0m a stage-gated daily unlocks past its stage
+  [32mPASS[0m daily shelf rolled — daily_win_3,daily_combo_8,daily_exp_500
+  [32mPASS[0m daily entries exist for the roll
+  [32mPASS[0m daily roll is deterministic
+  [32mPASS[0m another player gets a shelf too — other roll: daily_stage_3,daily_items_20,daily_win_3
+  [32mPASS[0m a claimed prerequisite opens the next main
+  [32mPASS[0m locked reasons are readable
+  [32mPASS[0m measurable quest seeds itself from state — status=completed
+  [32mPASS[0m care given before the quest opened counts — status=completed
+  [32mPASS[0m a breed spent before the quest opened counts — status=completed
+  [32mPASS[0m lifetime breeds feed the achievement too — progress=3
+  [32mPASS[0m a new day re-rolls the shelf
+  [32mPASS[0m stale daily entries are dropped
+
+[1m3. Engine — advance and claim[0m
+  [32mPASS[0m plant event completes the first main — main_01_plant
+  [32mPASS[0m progress is reported for the toast
+  [32mPASS[0m an untracked event moves nothing
+  [32mPASS[0m a non-boss clear does not feed the boss quest
+  [32mPASS[0m a boss clear completes the boss quest
+  [32mPASS[0m an active quest cannot be claimed
+  [32mPASS[0m an unknown quest is rejected
+  [32mPASS[0m a completed quest claims
+  [32mPASS[0m a claimed quest cannot be claimed again
+  [32mPASS[0m a claimed daily is marked claimed for the day
+  [32mPASS[0m a claimed daily cannot be claimed twice the same day
+  [32mPASS[0m sync never resurrects a claimed daily
+  [32mPASS[0m the next day wipes the claimed daily entry
+  [32mPASS[0m a lower combo does not raise the high-water mark
+  [32mPASS[0m a higher combo completes the quest
+
+[1m4. Views, tracker, badge[0m
+  [32mPASS[0m views cover the whole catalogue's active set
+  [32mPASS[0m every view carries a fraction
+  [32mPASS[0m locked views explain themselves
+  [32mPASS[0m the tracker names the main line — main_01_plant
+  [32mPASS[0m the tracker carries at most two extras
+
+[1m5. Store — real actions move real quests[0m
+  [32mPASS[0m planting completes the first main quest
+  [32mPASS[0m the badge counts it — 1 claimable
+  [32mPASS[0m the planting is recorded, by species — 1
+  [32mPASS[0m caring while the care quest is locked is still recorded
+  [32mPASS[0m the locked quest's stream stays at zero
+  [32mPASS[0m the first main quest claims
+  [32mPASS[0m its coin reward lands
+  [32mPASS[0m it cannot be claimed twice
+  [32mPASS[0m the care already done completed the next main — status=completed
+  [32mPASS[0m an unclaimed main is the tracked one
+  [32mPASS[0m the tracker tracks the next main — main_03_stage
+
+[1m6. Persistence[0m
+  [32mPASS[0m quest entries survive a reload
+  [32mPASS[0m lifetime exp survives a reload — 4242
+  [32mPASS[0m the daily shelf survives a reload
+  [32mPASS[0m a broken entry is repaired, not trusted
+  [32mPASS[0m a good entry is kept
+  [32mPASS[0m a legacy save's garden seeds the planting record — planted=1 living=1
+  [32mPASS[0m the recorded history is not backfilled twice — recorded=1 loaded=1
+
+[1m7. Weather and streak survive[0m
+  [32mPASS[0m weather covers all four states
+  [32mPASS[0m every weather has a name, icon and note
+  [32mPASS[0m day 1 has no multiplier
+  [32mPASS[0m streak grows the multiplier
+  [32mPASS[0m multiplier is capped at 2x
+  [32mPASS[0m every streak has a label
+  [32mPASS[0m a week of days still generates
+
+[1m8. The generated main line — it never runs out[0m
+  [32mPASS[0m a cycle appears once the fixed line is done — 4
+  [32mPASS[0m the opener unlocks off the last fixed main
+  [32mPASS[0m the rest wait on the chain
+  [32mPASS[0m all four quests are about one species — mx0a_sp10272,mx0b_sp10272,mx0c_sp10272,mx0d_sp10272
+  [32mPASS[0m and its rewards pay something real
+  [32mPASS[0m the acquire hint says the card is one tap away — Chạm thẻ này → Chợ mở sẵn thẻ Trụ Gió Lùa Lá → mua hạt (giá 
+  [32mPASS[0m the acquire hint names the price and currency — 5706🍯
+  [32mPASS[0m the acquire hint names the real gate — tiến độ từng điều kiện. con lai mang dòng Trụ Gió Lùa Lá cũng tính là đã sở hữu.
+  [32mPASS[0m the care hint admits the hired gardener — Tab Vườn → chạm cây Trụ Gió Lùa Lá → Chăm → bấm hành động bấ
+  [32mPASS[0m sync creates the cycle's entries
+  [32mPASS[0m the opener is active, the rest locked
+  [32mPASS[0m the species pick is pinned by the entry
+  [32mPASS[0m already owning the seed finishes the opener
+  [32mPASS[0m and it claims
+  [32mPASS[0m claiming it opens the planting ask
+  [32mPASS[0m a different species does not count
+  [32mPASS[0m the right species counts
+  [32mPASS[0m events fired at the locked quest add nothing to the entry
+  [32mPASS[0m the garden grown while locked completes `b` when it opens — status=completed
+  [32mPASS[0m care earned while `c` was locked counts when it opens — status=completed
+  [32mPASS[0m the care ask listens to the care stream — care
+  [32mPASS[0m the care ask filters by bloodline — sp10272
+  [32mPASS[0m a full cycle can be claimed through — 12
+  [32mPASS[0m claiming the last quest opens the next cycle — mx0a_sp10272,mx0b_sp10272,mx0c_sp10272,mx0d_sp10272,mx1a_sp2621,mx1b_sp2621,mx1c_sp2621,mx1d_sp2621
+  [32mPASS[0m the old cycle keeps its definitions — 8
+  [32mPASS[0m the new cycle's opener is unlocked
+  [32mPASS[0m and the work got heavier — 6 -> 8
+  [32mPASS[0m the finale rotates — cycle 1 is new stages, not the same ask — stage_completed
+  [32mPASS[0m the stage finale says 'new' plainly — Đấu → Vượt ải → chọn cây dòng Rỗng Tế làm đấu sĩ → đánh từ ả
+  [32mPASS[0m cycle 2 exists once cycle 1 is done — mx0a_sp10272,mx0b_sp10272,mx0c_sp10272,mx0d_sp10272,mx1a_sp2621,mx1b_sp2621,mx1c_sp2621,mx1d_sp2621,mx2a_sp1254,mx2b_sp1254,mx2c_sp1254,mx2d_sp1254
+  [32mPASS[0m the finale rotates again — cycle 2 hunts a boss — {"species":"sp1254","boss":true}
+  [32mPASS[0m the boss hint names the next real boss stage — Boss nằm ở mỗi ải thứ 10 — boss tiếp theo của bạn ở ải 30. Đ
+  [32mPASS[0m the generated line waits for the tutorial — 4
+  [32mPASS[0m the chain aims at the one untamed species — mx0a_emberleaf
+  [32mPASS[0m a fully-tamed registry still generates deterministically — 4
+
+[1m9. Reported bug — a claimed reward must not pay again[0m
+  [32mPASS[0m the daily claims once
+  [32mPASS[0m claiming a daily marks it claimed for the day
+  [32mPASS[0m the shelf shows it claimed, not claimable
+  [32mPASS[0m the badge stops counting it
+  [32mPASS[0m rapid duplicate claims all refuse — extra=0
+  [32mPASS[0m same-day events cannot re-complete a claimed daily
+  [32mPASS[0m and it still refuses to pay
+  [32mPASS[0m a reload keeps the daily claimed
+  [32mPASS[0m a reloaded view agrees
+  [32mPASS[0m claimed dailies stay out of the quest-claim count — 1
+
+[1mResult: 113 passed, 0 failed[0m
+

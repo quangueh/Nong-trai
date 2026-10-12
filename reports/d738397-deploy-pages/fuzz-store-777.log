@@ -1,0 +1,3 @@
+fuzz-store: seed=777 iters=2000
+
+Result: 2000 ops clean (seed 777)

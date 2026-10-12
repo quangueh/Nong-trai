@@ -1,0 +1,92 @@
+
+[1m1. An empty plot offers a real choice[0m
+  [32mPASS[0m empty plots are offered — 23
+  [32mPASS[0m the plot invites a choice instead of naming a species — 2🌱Chọn hạt để gieoBấm vào ô đất này
+  [32mPASS[0m the seed belt no longer advertises a long press — Túi hạtBấm ô đất trống, chọn hạt trong túi là cây được gieo.Cửa hàng5R
+  [32mPASS[0m tapping a plot opens the chooser
+  [32mPASS[0m and plants nothing yet
+  [32mPASS[0m and consumes no seed yet
+  [32mPASS[0m the chooser lists the seeds held — 10 rows
+  [32mPASS[0m with a preview of one
+  [32mPASS[0m and it opens as a sheet with a scrim
+  [32mPASS[0m tapping outside closes it
+  [32mPASS[0m the plot still opens the chooser again
+  [32mPASS[0m escape closes it
+
+[1m2. Choosing a seed runs the ceremony[0m
+  [32mPASS[0m a seed was consumed
+  [32mPASS[0m a plant was added
+  [32mPASS[0m the ceremony overlay appears
+  [32mPASS[0m it is announced as a dialog
+  [32mPASS[0m it is labelled with the new plant — Gieo Rễ Gai mầm
+  [32mPASS[0m the page behind cannot scroll
+  [32mPASS[0m there is a skip control
+  [32mPASS[0m the soil is present
+  [32mPASS[0m the seed is present
+
+[1m3. The ritual beats fire in order[0m
+  [32mPASS[0m the soil has not opened yet
+  [32mPASS[0m the soil opens
+  [32mPASS[0m the seed starts falling
+  [32mPASS[0m the soil closes over the seed
+  [32mPASS[0m the dust puffs on the bury beat
+  [32mPASS[0m the sprout emerges
+  [32mPASS[0m the sprout carries the real plant art — 30491 chars of svg
+  [32mPASS[0m no reveal while the ritual is running
+
+[1m4. The reveal reports the roll, not a guess[0m
+  [32mPASS[0m the reveal appears
+  [32mPASS[0m the stage dims behind it
+  [32mPASS[0m it names the plant — Rễ Gai mầm
+  [32mPASS[0m it names the source species
+  [32mPASS[0m it labels the growth stage
+  [32mPASS[0m all four hidden genes are shown — 4
+  [32mPASS[0m the roll shows "Bất ổn"
+  [32mPASS[0m the roll shows "Độ thuần"
+  [32mPASS[0m the roll shows "Hoang dã"
+  [32mPASS[0m the roll shows "May mắn hiếm"
+  [32mPASS[0m the displayed value matches the genome — panel Bất ổn18Cao = dễ đột biến, dễ nở đặc tính vs genome 18
+  [32mPASS[0m it says traits are not yet unlocked
+  [32mPASS[0m it explains what to do next
+  [32mPASS[0m every stat is shown with its ceiling — 7
+  [32mPASS[0m the ceiling shown is the real one — panel "HP116→ 146" vs softCap 146
+  [32mPASS[0m there is a confirm button — Vào vườn
+
+[1m5. Confirming hands the screen back[0m
+  [32mPASS[0m the overlay is gone
+  [32mPASS[0m the page can scroll again
+  [32mPASS[0m the garden re-rendered with the new plot
+  [32mPASS[0m the new plot shows the planted name — Rễ Gai mầm
+
+[1m6. Skipping the ritual still lands on the reveal[0m
+  [32mPASS[0m the ritual started
+  [32mPASS[0m skipping jumps straight to the reveal
+  [32mPASS[0m and drops the empty stage
+  [32mPASS[0m the skip control is gone
+  [32mPASS[0m and it still confirms cleanly
+
+[1m7. The chooser is reachable by tapping, and by nothing else[0m
+  [32mPASS[0m holding alone does nothing
+  [32mPASS[0m and plants nothing — 1
+  [32mPASS[0m tapping opens the chooser
+  [32mPASS[0m it is titled
+  [32mPASS[0m it lists the seeds actually held
+  [32mPASS[0m each row says how many are held — 5
+  [32mPASS[0m Escape closes it
+
+[1m8. Planting with an empty bag buys the seed first[0m
+  [32mPASS[0m an empty bag offers seeds to buy
+  [32mPASS[0m and the row states its price — price=100
+  [32mPASS[0m the buy row updates the CTA to purchase
+  [32mPASS[0m the seed was bought and sown from that card — 2
+  [32mPASS[0m and nothing was left in the bag — {"thornroot":0}
+  [32mPASS[0m coins were deducted exactly once — 100 vs 100
+  [32mPASS[0m and the ceremony ran
+
+[1m9. Nothing leaks between plantings[0m
+  [32mPASS[0m closing the chooser leaves nothing behind
+  [32mPASS[0m exactly one overlay, cleaned up
+  [32mPASS[0m no orphan timers left the page planting
+
+[1mResult: 71 passed, 0 failed[0m
+

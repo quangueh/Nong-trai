@@ -1,0 +1,17 @@
+PASS tick emits exactly one event per performed action, ids unique
+PASS expired buff: tick performs nothing and emits nothing
+PASS rejected actions emit nothing — cooldown round publishes zero events
+PASS battle-locked plant is skipped and emits nothing for itself
+PASS catchup marks events as catchup source
+PASS seq is monotonic across ticks
+PASS unsubscribe stops delivery; throwing listener cannot break the tick
+PASS work events never persist into the save
+PASS gardener care still lands in the quest care stream
+PASS queue caps at MAX_JOBS and folds the overflow into the summary
+PASS duplicate event id cannot enqueue twice
+PASS jobs older than MAX_AGE fold into the summary rather than replaying
+PASS catchup events summarize except a single illustration
+PASS catchup illustration still respects a full queue
+PASS drainQueue folds every pending job, keeps performed work done
+
+15 passed, 0 failed

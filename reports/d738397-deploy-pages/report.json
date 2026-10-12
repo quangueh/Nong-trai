@@ -1,0 +1,321 @@
+{
+  "startedAt": "2026-10-12T02-23-38-312Z",
+  "profile": "core",
+  "timeoutMs": 300000,
+  "head": "d7383977c3a776e5bfe94280db62486a79d23828",
+  "dirty": "",
+  "node": "v24.21.0",
+  "platform": "linux",
+  "plannedSuites": 44,
+  "completed": true,
+  "results": [
+    {
+      "name": "typecheck-worker-tsconfig-json",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 634,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/typecheck-worker-tsconfig-json.log"
+    },
+    {
+      "name": "typecheck-tsconfig-tools-json",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 2748,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/typecheck-tsconfig-tools-json.log"
+    },
+    {
+      "name": "typecheck-tsconfig-json",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1790,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/typecheck-tsconfig-json.log"
+    },
+    {
+      "name": "test-ads-contracts",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 544,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-ads-contracts.log"
+    },
+    {
+      "name": "test-art",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 952,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-art.log"
+    },
+    {
+      "name": "test-ascent",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1506,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-ascent.log"
+    },
+    {
+      "name": "test-audit-fixes",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 926,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-audit-fixes.log"
+    },
+    {
+      "name": "test-auth-google",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 137,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-auth-google.log"
+    },
+    {
+      "name": "test-aux-wp08",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1154,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-aux-wp08.log"
+    },
+    {
+      "name": "test-battle-sim-matrix",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 724,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-battle-sim-matrix.log"
+    },
+    {
+      "name": "test-battle-wp07",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1360,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-battle-wp07.log"
+    },
+    {
+      "name": "test-breeding-wp06",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1496,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-breeding-wp06.log"
+    },
+    {
+      "name": "test-breeding-wp06b",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1591,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-breeding-wp06b.log"
+    },
+    {
+      "name": "test-checkin",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 2216,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-checkin.log"
+    },
+    {
+      "name": "test-determinism",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 907,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-determinism.log"
+    },
+    {
+      "name": "test-economy",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 901,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-economy.log"
+    },
+    {
+      "name": "test-experience",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 886,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-experience.log"
+    },
+    {
+      "name": "test-gardener",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1121,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-gardener.log"
+    },
+    {
+      "name": "test-gate",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 150,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-gate.log"
+    },
+    {
+      "name": "test-google-token",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 246,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-google-token.log"
+    },
+    {
+      "name": "test-journey",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1001,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-journey.log"
+    },
+    {
+      "name": "test-juice",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 935,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-juice.log"
+    },
+    {
+      "name": "test-levels",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1049,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-levels.log"
+    },
+    {
+      "name": "test-morph",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 790,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-morph.log"
+    },
+    {
+      "name": "test-names",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 725,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-names.log"
+    },
+    {
+      "name": "test-planting",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 8719,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-planting.log"
+    },
+    {
+      "name": "test-protocols",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 943,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-protocols.log"
+    },
+    {
+      "name": "test-quests",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 859,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-quests.log"
+    },
+    {
+      "name": "test-room-faults",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1605,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-room-faults.log"
+    },
+    {
+      "name": "test-room",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 3608,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-room.log"
+    },
+    {
+      "name": "test-schema-contracts",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 140,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-schema-contracts.log"
+    },
+    {
+      "name": "test-service-worker",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 162,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-service-worker.log"
+    },
+    {
+      "name": "test-slots",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 758,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-slots.log"
+    },
+    {
+      "name": "test-social",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 812,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-social.log"
+    },
+    {
+      "name": "test-species",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 4222,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-species.log"
+    },
+    {
+      "name": "test-streak",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 738,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-streak.log"
+    },
+    {
+      "name": "test-technical-contracts",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1141,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-technical-contracts.log"
+    },
+    {
+      "name": "test-ui",
+      "status": "failed",
+      "exitCode": 1,
+      "durationMs": 8172,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/test-ui.log"
+    },
+    {
+      "name": "fuzz-store-1337",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1288,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/fuzz-store-1337.log"
+    },
+    {
+      "name": "fuzz-store-42",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 874,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/fuzz-store-42.log"
+    },
+    {
+      "name": "fuzz-store-20261010",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 878,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/fuzz-store-20261010.log"
+    },
+    {
+      "name": "fuzz-store-777",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1191,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/fuzz-store-777.log"
+    },
+    {
+      "name": "fuzz-store-999999",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 900,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/fuzz-store-999999.log"
+    },
+    {
+      "name": "production-build",
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 1101,
+      "log": "/home/runner/work/Nong-trai/Nong-trai/artifacts/technical-tests/2026-10-12T02-23-38-312Z/production-build.log"
+    }
+  ]
+}

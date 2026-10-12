@@ -1,0 +1,27 @@
+
+1. Protocol table
+
+2. Gating by breeder level
+
+3. Odds arithmetic
+
+4. The preview reflects the protocol
+
+5. A locked protocol is refused
+
+6. Published odds match realised outcomes
+
+6. Published odds match realised outcomes
+  published shifts over 400 protocols:
+    Cộng hưởng  0.0426
+    Ổn định     -0.0637
+    Bùng nổ     0.0890
+    Dị dân      0.0683
+    Thổi luyện  0.0234
+  Cộng hưởng  published 1.010  realised 0.912   major 13%  micro 52%  minor 35%
+  Ổn định     published 0.809  realised 0.742   major 5%  micro 58%  minor 37%
+  Bùng nổ     published 1.081  realised 0.973   chaotic 21%  major 39%  micro 7%  minor 33%
+  Dị dân      published 1.035  realised 0.927   chaotic 11%  major 14%  micro 43%  minor 32%
+  Thổi luyện  published 1.005  realised 0.912   chaotic 8%  major 15%  micro 40%  minor 37%
+
+40 passed, 0 failed

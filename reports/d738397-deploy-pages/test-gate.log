@@ -1,0 +1,16 @@
+
+1. No Worker configured opens the gate
+
+2. A configured service with no session closes the gate
+
+3. The grace period
+
+4. A session signed in before the gate existed
+
+5. The bypass is session-scoped
+
+6. Signing out forgets the sign-in
+
+7. Storage that throws
+
+28 passed, 0 failed

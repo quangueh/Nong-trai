@@ -1,0 +1,92 @@
+  [32mPASS[0m the fixed sample is six distinct species
+
+[1m1. Geometry primitives[0m
+  [32mPASS[0m leaf path is a closed curve
+  [32mPASS[0m leaf has both margins — 2 cubics
+  [32mPASS[0m serration adds teeth
+  [32mPASS[0m tapered outline closes
+  [32mPASS[0m a different taper gives different geometry
+  [32mPASS[0m blob is a closed smooth curve
+  [32mPASS[0m different radii give different blobs
+  [32mPASS[0m shard is a polygon
+  [32mPASS[0m petal is a closed teardrop
+  [32mPASS[0m degenerate spine does not throw
+
+[1m2. Every plant renders[0m
+  [32mPASS[0m all plants render — 10/10
+  [32mPASS[0m no NaN/undefined leaks into the markup — 10/10
+
+[1m3. Distinctness — the whole point of procedural art[0m
+  [32mPASS[0m every plant renders a unique silhouette — 10/10 unique
+  [32mPASS[0m geometry differs even without defs ids
+  [32mPASS[0m plants have varied path counts — 10 distinct counts
+  [32mPASS[0m habit grammar covers at least six families — crown:77 fan:23 spire:125 spiral:80 rosette:70 arch:64 bush:45 cluster:57
+  [32mPASS[0m no habit is vanishingly rare — crown:77 fan:23 spire:125 spiral:80 rosette:70 arch:64 bush:45 cluster:57
+
+[1m4. Determinism[0m
+  [32mPASS[0m same plant renders identically
+  [32mPASS[0m different plants do not collide
+
+[1m5. Visual genes actually reach the art[0m
+  [32mPASS[0m higher complexity adds parts
+  [32mPASS[0m hue change changes colours
+  [32mPASS[0m thorn gene changes the silhouette
+  [32mPASS[0m flower gene adds petals
+  [32mPASS[0m pattern gene adds markings
+
+[1m6. Growth stages read as different sizes[0m
+  [32mPASS[0m each stage renders differently
+  [32mPASS[0m seed stage is smaller than mature — 28604 vs 33801
+  [32mPASS[0m seed stage has no bloom
+  [32mPASS[0m height never decreases with each stage — 27.4 → 41.4 → 67.0 → 67.0 → 67.0
+  [32mPASS[0m mature fills most of the frame — 67.0 of 100
+  [32mPASS[0m seed stays a sprout — 27.4 vs 67.0
+
+[1m7. Structural integrity[0m
+  [32mPASS[0m every SVG tag is closed
+  [32mPASS[0m gradient ids are namespaced per plant
+  [32mPASS[0m aria-label is set for screen readers
+  [32mPASS[0m gradient references resolve
+
+[1m8. Palette[0m
+  [32mPASS[0m palette exposes leaf depth stops
+  [32mPASS[0m leaf depth is actually ordered light to dark
+  [32mPASS[0m stem has a shade for the gradient
+  [32mPASS[0m bloom has a shade
+  [32mPASS[0m palette follows hue
+
+[1m9. Animation opt-in[0m
+  [32mPASS[0m static markup carries no animation class
+  [32mPASS[0m animated markup opts in
+  [32mPASS[0m animation adds stagger delays
+  [32mPASS[0m both variants still render valid SVG
+  [32mPASS[0m geometry is identical whether animated or not
+
+[1m10. Geometry stays inside the 100x100 frame[0m
+  [32mPASS[0m leaf coordinates are finite — 14 numbers
+  [32mPASS[0m leaf stays within a sane span — range -6.99..18.79
+  [32mPASS[0m soil line leaves room for a mound — 84
+  [32mPASS[0m canopy reserve is positive — 24
+  [32mPASS[0m tallest stem still clears the canopy line — top 48
+  [32mPASS[0m root budget fits below the soil — 15 units
+  [32mPASS[0m root coordinates are finite
+  [32mPASS[0m root y stays under the frame bottom — max 97.18
+  [32mPASS[0m blob stays local
+
+[1m11. Scale parameter is honoured[0m
+  [32mPASS[0m size attribute is applied
+  [32mPASS[0m viewBox stays constant so art scales
+
+[1m11. Silhouette fits the frame at every stage[0m
+  [32mPASS[0m untransformed path vertices stay inside the frame
+  [32mPASS[0m enough untransformed geometry was actually checked — 2512 paths
+  [32mPASS[0m curve control points stay within a sane bound — worst 50.0
+  [32mPASS[0m stage heights stay within the frame — 27, 41, 67, 67, 67
+  [32mPASS[0m growth never reverses — 27.4 -> 41.4 -> 67.0 -> 67.0 -> 67.0
+
+[1m12. Fresh plant from a seed[0m
+  [32mPASS[0m a brand-new seed plant renders
+  [32mPASS[0m brand-new plant has no NaN
+
+[1mResult: 63 passed, 0 failed[0m
+
