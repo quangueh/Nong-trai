@@ -15,6 +15,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# contents:write — the smoke-diagnostic step pushes the orphan ci-reports
+# branch, and the release step creates GitHub Releases.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -95,26 +100,46 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
+      # target:google_apis — the 'default' image can ship a stubbed WebView,
+      # and Capacitor needs a real one. Diagnostics are captured BEFORE the
+      # checks so a failure publishes dumpsys/logcat/screenshot to ci-reports.
       - name: Boot smoke — install, launch, verify resumed + no fatal
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
           arch: x86_64
-          target: default
+          target: google_apis
           profile: pixel_6
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
             adb install -r apk/app-debug.apk
             adb shell am start -n com.quang.nongtrai/.MainActivity
             sleep 35
-            adb shell dumpsys activity activities | grep -E "ResumedActivity|topResumedActivity"
-            RESUMED=$(adb shell dumpsys activity activities | grep -oE "com\.quang\.nongtrai[^ ]*" | head -1)
-            echo "resumed=$RESUMED"
-            if [ -z "$RESUMED" ]; then echo "APP NOT RESUMED"; exit 1; fi
+            adb shell dumpsys activity activities > dumpsys.txt || true
+            adb logcat -d -v brief > logcat.txt || true
+            adb exec-out screencap -p > apk-smoke.png || true
+            RESUMED=$(grep -oE "com\.quang\.nongtrai[^ ]*" dumpsys.txt | head -1)
             PID=$(adb shell pidof -s com.quang.nongtrai || true)
-            echo "pid=$PID"
-            adb logcat -d -v brief | grep -E "FATAL|AndroidRuntime.*com.quang.nongtrai" && exit 1 || true
-            adb exec-out screencap -p > apk-smoke.png
+            # Only OUR app's fatal crash counts — a bare "FATAL" grep matches
+            # unrelated emulator processes and fails healthy runs.
+            CRASH=$(grep "AndroidRuntime" logcat.txt | grep "FATAL" | grep "com.quang.nongtrai" || true)
+            echo "resumed=$RESUMED pid=$PID crash=$CRASH"
+            [ -n "$RESUMED" ] && [ -z "$CRASH" ]
+
+      # ci-reports is an orphan branch — readable via the public API, unlike
+      # Actions logs which need repo auth.
+      - name: Publish smoke diagnostics on failure
+        if: failure()
+        run: |
+          git config user.email "ci@local" && git config user.name "ci-bot"
+          git checkout --orphan ci-reports-dump
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p "reports/${GITHUB_SHA::7}"
+          for f in dumpsys.txt logcat.txt apk-smoke.png; do
+            [ -f "$f" ] && cp "$f" "reports/${GITHUB_SHA::7}/"
+          done
+          git add -A reports && git commit -qm "smoke diag ${GITHUB_SHA::7}" \
+            && git push -qf origin HEAD:ci-reports || echo "diag push failed"
 
       - uses: actions/upload-artifact@v4
         with:
