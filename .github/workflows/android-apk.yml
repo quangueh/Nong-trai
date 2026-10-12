@@ -138,32 +138,36 @@ jobs:
           if ! grep -q "Name: smoke" avd-list.txt; then
             echo "AVD create failed"; cat avd-create.log; exit 1
           fi
+          # Absolute adb — bare `adb` is NOT on PATH on this runner image;
+          # every call must pin $ANDROID_HOME/platform-tools/adb.
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          "$ADB" version || true
           # adb server FIRST — the emulator registers with :5037 once at
           # launch; if the daemon isn't listening yet it can sit 'offline'
           # forever regardless of reconnect kicks.
-          adb start-server || true
+          "$ADB" start-server || true
           nohup "$ANDROID_HOME/emulator/emulator" -avd smoke -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics > emulator.log 2>&1 &
-          timeout 180 adb -s emulator-5554 wait-for-device || true
+          timeout 180 "$ADB" -s emulator-5554 wait-for-device || true
           for i in $(seq 1 120); do
-            st=$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            st=$("$ADB" -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
             [ "$st" = "1" ] && break
             # adbd handshakes AFTER boot — on a cold adb server the device can
             # sit 'offline' even though the guest finished booting.
-            adb -s emulator-5554 reconnect offline > /dev/null 2>&1 || true
+            "$ADB" -s emulator-5554 reconnect offline > /dev/null 2>&1 || true
             if [ $((i % 12)) -eq 0 ]; then
-              adb kill-server > /dev/null 2>&1 || true
-              adb start-server > /dev/null 2>&1 || true
+              "$ADB" kill-server > /dev/null 2>&1 || true
+              "$ADB" start-server > /dev/null 2>&1 || true
             fi
             sleep 5
           done
-          adb devices > adb-devices.txt 2>&1 || true
+          "$ADB" devices > adb-devices.txt 2>&1 || true
           [ "${st:-}" = "1" ] || { echo "emulator never booted"; cat adb-devices.txt; tail -50 emulator.log; exit 1; }
-          adb -s emulator-5554 shell input keyevent 82 || true
+          "$ADB" -s emulator-5554 shell input keyevent 82 || true
 
       - name: Smoke — install, launch, verify resumed + no fatal
         run: |
           set -x
-          ADB="adb -s emulator-5554"
+          ADB="$ANDROID_HOME/platform-tools/adb -s emulator-5554"
           $ADB install -r apk/app-debug.apk && INSTALL=ok || INSTALL=fail
           $ADB shell am start -n com.quang.nongtrai/.MainActivity || true
           sleep 35
