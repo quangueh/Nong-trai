@@ -1,0 +1,31 @@
+
+§17.3 — full-log invariants across 120 seeded fights
+  ok   event seq unique — 120/120 — 120
+  ok   timestamps monotonic — 120/120 — 120
+  ok   hpAfter inside bounds — 120/120 — 120
+  ok   exactly one BATTLE_FINISHED — 120/120 — 120
+  ok   and it is the last event — 120/120 — 120
+  ok   event winner === result winner — 120/120 — 120
+  ok   DEATH only on the losing side — 120/120 — 120
+  ok   ≥80% of events carry a narratable line — 120/120 — 120
+
+§17.3 — determinism: the same seed replays the same fight
+  ok   20/20 re-runs produce byte-identical event logs — 20
+
+§17.3 — stances still run through the one engine
+  ok   stanced fight is deterministic too
+  ok   and settles once
+  ok   a forged stance degrades instead of crashing — finished=1
+
+§11.3 — balance telemetry: TTK, draws, CC chains, energy starvation
+  TTK p50=8.4s  p90=16.7s  min=1.1s  max=22.2s
+  draws=0 (0%)  timeouts=0  decisive=120
+  CC chains (≥2 controls back-to-back): 21/120 fights
+  energy-starved losses (0 skills, peak<25): 0/120
+  ok   at least half the matrix is decisive — decisive=120
+  ok   draws stay rare (≤30%) — draws=0
+  ok   median TTK inside the 90s cap — p50=8.4s
+  ok   no fight exceeds the cap in the log — max=22.2s
+  ok   starved losses stay rare (≤20%) — starved=0
+
+17 passed, 0 failed

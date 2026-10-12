@@ -1,0 +1,35 @@
+
+[1m1. Hitstop actually stops the simulation[0m
+  [32mPASS[0m light hit freezes the simulation — 41.7ms left
+  [32mPASS[0m heavy hit freezes the simulation — 72.0ms left
+  [32mPASS[0m crit hit freezes the simulation — 108.0ms left
+  [32mPASS[0m kill hit freezes the simulation — 168.0ms left
+  [32mPASS[0m a killing blow freezes longer than a chip — 42ms vs 168ms
+  [32mPASS[0m two simultaneous crits do not double the pause — 108ms then 108ms
+  [32mPASS[0m the freeze releases
+
+[1m2. Every channel is expressed in one call[0m
+  [32mPASS[0m the draw callback runs inside the impact — 1 call(s)
+  [32mPASS[0m the arena is shaken on the same call
+  [32mPASS[0m reset clears the shake — ""
+  [32mPASS[0m reset clears the freeze
+
+[1m3. Weight comes from real damage, not from a constant[0m
+  [32mPASS[0m a sliver of damage is light
+  [32mPASS[0m a solid hit is heavy
+  [32mPASS[0m a crit is a crit whatever the damage
+  [32mPASS[0m a kill outranks everything
+  [32mPASS[0m a kill outranks a crit
+  [32mPASS[0m every channel increases with weight
+  [32mPASS[0m hitstop stays inside the readable band — 42/72/108/168ms
+  [32mPASS[0m a crit is dramatic but not nauseating — 0.58
+  [32mPASS[0m debris stays countable — 26
+
+[1m4. Reduced motion is honoured[0m
+  [32mPASS[0m the helper is safe to call with no matchMedia
+  [32mPASS[0m reduced motion is detected
+  [32mPASS[0m no freeze under reduced motion
+  [32mPASS[0m and none on a second hit either
+
+[1mResult: 24 passed, 0 failed[0m
+

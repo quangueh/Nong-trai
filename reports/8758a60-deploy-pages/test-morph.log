@@ -1,0 +1,29 @@
+
+[1m1. The delivery is fully declared[0m
+  [32mPASS[0m morph has a delivery definition
+  [32mPASS[0m it has a name a player can read
+  [32mPASS[0m it costs more budget than any other strike
+  [32mPASS[0m its windup is the longest of the striking deliveries
+  [32mPASS[0m only body-bearing genes may learn it
+  [32mPASS[0m every delivery in the union is declared
+
+[1m2. Forms are named from the element[0m
+  [32mPASS[0m fire has a form
+  [32mPASS[0m shadow has a form
+  [32mPASS[0m every element gets a distinct form
+  [32mPASS[0m an unknown element still gets a name
+
+[1m3. The trade is coherent[0m
+  [32mPASS[0m outgoing is a real bonus
+  [32mPASS[0m incoming is a real reduction
+  [32mPASS[0m the trade is not free
+  [32mPASS[0m it lasts long enough to matter
+
+[1m4. The generator can actually produce one[0m
+  [32mPASS[0m seeds could be bought for the sample
+  [32mPASS[0m enough plants were generated to judge
+  [32mPASS[0m some generated plants carry a morph skill
+  [32mPASS[0m but it is not the common case
+
+[1mResult: 18 passed, 0 failed[0m
+

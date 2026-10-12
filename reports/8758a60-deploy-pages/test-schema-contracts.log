@@ -1,0 +1,7 @@
+PASS schema can be applied twice without losing records
+PASS friend key prevents duplicate edges but isolates different owners
+PASS duel identifier cannot produce two inbox/outbox records
+PASS inbox/outbox lookup uses indexed owner and timestamp
+PASS replay and whisper identifiers stay unique under retries
+PASS transaction rollback preserves migration marker and relational records
+Schema contracts: 6 passed, 0 failed

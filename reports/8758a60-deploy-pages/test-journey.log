@@ -1,0 +1,86 @@
+
+[1m1. New player bootstrap[0m
+  [32mPASS[0m a new save is created
+  [32mPASS[0m player starts with coins
+  [32mPASS[0m player starts with some seeds
+  [32mPASS[0m nursery has a capacity
+  [32mPASS[0m economy ledger exists
+
+[1m2. Buy seeds and plant them[0m
+  [32mPASS[0m planting a seed works
+  [32mPASS[0m nursery grows
+  [32mPASS[0m seed is consumed — 1 -> 0
+  [32mPASS[0m cannot plant without a seed
+
+[1m3. Care changes the plant[0m
+  [32mPASS[0m care succeeds
+  [32mPASS[0m care changed real stats
+  [32mPASS[0m care awards XP
+  [32mPASS[0m care consumes items
+  [32mPASS[0m care is recorded in memory
+  [32mPASS[0m cooldown blocks an immediate repeat
+  [32mPASS[0m care is rejected without resources — Cây cần nghỉ thêm 6s
+
+[1m4. Growth to maturity[0m
+  [32mPASS[0m plant reaches maturity through stage timers — stage=mature after 3 ticks
+
+[1m5. Breeding two mature plants[0m
+  [32mPASS[0m rarity preview returns basis points summing to 10000 — 10000 bp
+  [32mPASS[0m preview shows SSS at a tiny rate — 12 bp
+  [32mPASS[0m breeding succeeds
+  [32mPASS[0m breeding fee is charged — coins 1200 -> 1751
+  [32mPASS[0m a child is added and both parents are spent — 2 -> 1, parent A false, parent B false
+  [32mPASS[0m child has a distinct genome
+  [32mPASS[0m child is generation+1
+  [32mPASS[0m child has a mutation report
+  [32mPASS[0m child has at least one skill
+  [32mPASS[0m child has an ECR measurement — ECR 0.46
+  [32mPASS[0m child is ranked-legal or flagged
+  [32mPASS[0m cannot breed with an immature plant
+  [32mPASS[0m cannot breed a plant with itself
+  [32mPASS[0m cannot breed a plant that is already spent
+  [32mPASS[0m the garden has stock for the remaining sections — 4 plants
+  [32mPASS[0m cannot breed a plant that is in a live fight
+  [32mPASS[0m a full garden can still breed
+  [32mPASS[0m breeding a full garden frees a plot — cap 4, plants 3
+
+[1m6. Battle and rewards[0m
+  [32mPASS[0m battle produces a winner
+  [32mPASS[0m battle damage is positive
+  [32mPASS[0m player is rewarded — +12
+  [32mPASS[0m battle record updates
+  [32mPASS[0m plant gains battle XP
+  [32mPASS[0m replaying the same seed reproduces the result
+
+[1m7. Selling[0m
+  [32mPASS[0m sell quote is issued — 448 LeafCoin
+  [32mPASS[0m selling succeeds
+  [32mPASS[0m coin is credited — +448
+  [32mPASS[0m the plant leaves the nursery
+  [32mPASS[0m the sale is in the ledger
+  [32mPASS[0m a sold plant cannot be sold twice
+
+[1m8. Locks protect plants from accidents[0m
+  [32mPASS[0m locking a plant blocks selling
+  [32mPASS[0m a locked plant has no sell quote
+  [32mPASS[0m favouriting also blocks selling
+  [32mPASS[0m unlocking restores sellability
+
+[1m9. Persistence[0m
+  [32mPASS[0m save is written to storage
+  [32mPASS[0m state survives a reload
+  [32mPASS[0m coin survives a reload
+  [32mPASS[0m care history survives a reload
+
+[1m10. Economy is not exploitable[0m
+  [32mPASS[0m selling a locked plant pays nothing
+  [32mPASS[0m 12 breeds cost money overall — 151861 -> 151813
+  [32mPASS[0m nursery capacity is respected
+
+[1m11. Many care actions in sequence[0m
+  [32mPASS[0m every care action can be applied — 6/6
+  [32mPASS[0m stats stay finite after many care actions
+  [32mPASS[0m no stat exceeds its hard cap
+
+[1mResult: 61 passed, 0 failed[0m
+

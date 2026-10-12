@@ -1,0 +1,7 @@
+PASS unconfigured production ads grant no reward and load no script
+PASS completed video grants reward
+PASS dismissed video never grants reward
+PASS no-fill ends without granting reward
+PASS duplicate callbacks cannot change an already settled outcome
+PASS blocked ad script returns false instead of throwing
+Ads contracts: 6 passed, 0 failed

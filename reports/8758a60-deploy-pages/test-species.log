@@ -1,0 +1,145 @@
+
+[1m1. Species registry[0m
+  [32mPASS[0m registry holds starters plus the generated pool — 20000
+  [32mPASS[0m the generated pool is at least ten thousand — 19995
+  [32mPASS[0m every id is unique
+  [32mPASS[0m every name is unique — 20000/20000
+  [32mPASS[0m every name is unique ignoring accents
+  [32mPASS[0m no two species share a price in the same currency — 0 duplicates
+  [32mPASS[0m every ember price stays inside the 7–21 day band — 0 out
+  [32mPASS[0m the shelf uses all four currencies
+  [32mPASS[0m the five starters come first
+  [32mPASS[0m every starter id resolves
+  [32mPASS[0m an unknown id falls back instead of throwing
+  [32mPASS[0m hasSpecies rejects an unknown id
+
+[1m2. Species names read as Vietnamese[0m
+  [32mPASS[0m no name repeats a word
+  [32mPASS[0m no name contains a digit
+  [32mPASS[0m every name is at least two words — 0
+  [32mPASS[0m no name runs past 26 characters — 0
+  [32mPASS[0m no name has a blank word
+
+[1m3. Species flavour text[0m
+  [32mPASS[0m blurbs are not copy-pasted across the registry — 20000/20000
+  [32mPASS[0m every blurb has content
+  [32mPASS[0m every blurb ends in a full stop
+
+[1m4. Species distribution is even[0m
+  [32mPASS[0m all six archetypes are used
+  [32mPASS[0m archetypes are within 5% of even — 3334/3334/3334/3333/3333/3332
+  [32mPASS[0m all eight elements are used
+  [32mPASS[0m elements are within 5% of even — 2502/2501/2500/2500/2500/2499/2499/2499
+  [32mPASS[0m every species declares a full stat bias
+  [32mPASS[0m every species declares a full skill bias
+  [32mPASS[0m element affinity sums to 1
+  [32mPASS[0m speciesAffinity normalises to 1
+
+[1m5. Shop tiers and prices[0m
+  [32mPASS[0m TIER_UNLOCK has one rung per tier — 1,8,18,30,45
+  [32mPASS[0m TIER_UNLOCK ascends
+  [32mPASS[0m every tier 0-4 has species — 0,1,2,3,4
+  [32mPASS[0m tiers are roughly equal in size — 4004/3999/3999/3999/3999
+  [32mPASS[0m leafCoin tier 0 median rises within the currency — 0 -> 3412
+  [32mPASS[0m leafCoin tier 1 median rises within the currency — 3412 -> 5941
+  [32mPASS[0m leafCoin tier 2 median rises within the currency — 5941 -> 8323
+  [32mPASS[0m leafCoin tier 3 median rises within the currency — 8323 -> 10739
+  [32mPASS[0m leafCoin tier 4 median rises within the currency — 10739 -> 13174
+  [32mPASS[0m nectar tier 0 median rises within the currency — 0 -> 1109
+  [32mPASS[0m nectar tier 1 median rises within the currency — 1109 -> 3097
+  [32mPASS[0m nectar tier 2 median rises within the currency — 3097 -> 5336
+  [32mPASS[0m nectar tier 3 median rises within the currency — 5336 -> 7352
+  [32mPASS[0m nectar tier 4 median rises within the currency — 7352 -> 8629
+  [32mPASS[0m pollen tier 1 median rises within the currency — 0 -> 4587
+  [32mPASS[0m pollen tier 2 median rises within the currency — 4587 -> 6508
+  [32mPASS[0m pollen tier 3 median rises within the currency — 6508 -> 8401
+  [32mPASS[0m pollen tier 4 median rises within the currency — 8401 -> 10316
+  [32mPASS[0m ember tier 3 median rises within the currency — 0 -> 53
+  [32mPASS[0m ember tier 4 median rises within the currency — 53 -> 61
+  [32mPASS[0m tier 0 has a real spread of prices — 3981 distinct of 4004
+  [32mPASS[0m tier 1 has a real spread of prices — 3613 distinct of 3999
+  [32mPASS[0m tier 2 has a real spread of prices — 3437 distinct of 3999
+  [32mPASS[0m tier 3 has a real spread of prices — 3099 distinct of 3999
+  [32mPASS[0m tier 4 has a real spread of prices — 2596 distinct of 3999
+  [32mPASS[0m no species is priced below cost — min 48
+  [32mPASS[0m grow times are sane
+
+[1m6. Plant names are a pure function of the genome[0m
+  [32mPASS[0m same genome gives the same name
+  [32mPASS[0m different genomes give different names
+  [32mPASS[0m the salt walk finds 40 distinct names for one genome — 40/40
+  [32mPASS[0m salted names never repeat a word
+  [32mPASS[0m salted names are at least two words
+  [32mPASS[0m nameKey folds case and accents — la gai
+
+[1m7. Two plants with the same genome agree on their name[0m
+  [32mPASS[0m the same species and nonce reproduce the plant
+  [32mPASS[0m and therefore the name
+
+[1m8. Breeding produces a new kind every time (through the store)[0m
+  [32mPASS[0m five starter parents are ready to breed — 5
+  [32mPASS[0m every valid pairing produced a child — 39 children from 39 valid pairings
+  [32mPASS[0m no child reuses a name already in the garden — 39 distinct of 39
+  [32mPASS[0m no child duplicates an existing genome — 39 distinct of 39
+  [32mPASS[0m no name repeats more than once — 1x
+  [32mPASS[0m both parents are consumed by the breeding
+  [32mPASS[0m no child reuses a parent's name
+  [32mPASS[0m the starting parents are all gone after the sweep
+
+[1m9. Breeding the same pair repeatedly still varies[0m
+  [32mPASS[0m 25 breeds of one pair give 25 genomes — 25/25
+  [32mPASS[0m the generator alone collides on names only rarely — 25/25 distinct without the store's name pool
+
+[1m9b. Wide sweep without the store (cheap — no ECR per call)[0m
+  [32mPASS[0m the sweep bred a meaningful sample — 400 children from 500 pairings
+  [32mPASS[0m every generator draw gives a new genome — 400/400
+  [32mPASS[0m generator names collide only rarely before the salt walk — 5 of 400 collided (1.3%)
+  [32mPASS[0m the salt walk can always resolve a collision
+
+[1m10. The generator is still deterministic on its own[0m
+  [32mPASS[0m same parents and context reproduce the child
+  [32mPASS[0m a bumped attempt gives a different child
+
+[1m11. Seed tier gate[0m
+  [32mPASS[0m a level-1 player only sees tier 0 — tier 0
+  [32mPASS[0m tier 4 needs the top of the level curve — level 45
+  [32mPASS[0m most of the registry is gated — 19987/20000
+  [32mPASS[0m the opening shelf is not empty — 13
+  [32mPASS[0m and is not a pile of seeds — 13 species open before any levelling
+  [32mPASS[0m a level-1 player sees only the opening shelf, and it fits on a page — 13 species
+  [32mPASS[0m and the level-1 featured rotation draws only from what is open — Rễ Gai, Lá Lửa, Búp Sương, Dây Sét, Nấm U Ám, Thân Lửa, Cành Ngọc Xanh, Lưỡi Rùng, Nhánh Thủy Tinh Núi, Đóa Gió Lùa Quang
+  [32mPASS[0m a level-1 player cannot buy a mid-registry seed — Chưa mở khóa: Vượt ải 10 · 0/10
+  [32mPASS[0m and the refusal says how far off they are — Chưa mở khóa: Vượt ải 10 · 0/10
+  [32mPASS[0m and pays nothing for it
+  [32mPASS[0m meeting the requirement unlocks it
+
+[1m12. Catalogue query[0m
+  [32mPASS[0m the catalogue can page the whole registry — 20000
+  [32mPASS[0m pages are reported — 400
+  [32mPASS[0m paging visits every species exactly once — 20000
+  [32mPASS[0m search is accent-insensitive — "Kép Cát" -> 28
+  [32mPASS[0m archetype filter works — 3334
+  [32mPASS[0m element filter works — 2501
+  [32mPASS[0m tier filter works — 3999
+  [32mPASS[0m the catalogue lists the whole registry, locked stock included
+  [32mPASS[0m an out-of-range page clamps to the last — 400
+  [32mPASS[0m a search with no hits returns an empty page
+
+[1m13. Featured shelf[0m
+  [32mPASS[0m the shelf is stable within a day
+  [32mPASS[0m the shelf changes the next day
+  [32mPASS[0m the shelf holds ten species — 10
+  [32mPASS[0m the shelf has no duplicates
+  [32mPASS[0m the starters lead the shelf
+  [32mPASS[0m a level-1 shelf only shows tier 0
+  [32mPASS[0m different players get different shelves
+
+[1m14. High-rarity signatures[0m
+  [32mPASS[0m a common plant has no signature skills — 0
+  [32mPASS[0m an S plant carries one signature — 1
+  [32mPASS[0m an SSS plant carries three — 3
+  [32mPASS[0m and a fifth move — the chiêu đặc biệt — 5
+  [32mPASS[0m the signature move is an epic one — lifesteal,overgrow,overgrow
+
+[1mResult: 112 passed, 0 failed[0m
+

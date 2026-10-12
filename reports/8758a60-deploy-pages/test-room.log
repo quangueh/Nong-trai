@@ -1,0 +1,66 @@
+
+[1m0. BroadcastChannel availability[0m
+  [32mPASS[0m Node provides BroadcastChannel
+
+[1m1. Two clients join the same room[0m
+  [32mPASS[0m the two stores have different player ids — pl_0odeu9h vs pl_guest_test
+  [32mPASS[0m host created a 6-character code — ZP6JBD
+  [32mPASS[0m code avoids ambiguous glyphs — ZP6JBD
+  [32mPASS[0m host sees the guest join — Nhà Lai Tạo
+  [32mPASS[0m host lobby has two players — 2
+  [32mPASS[0m room state advances to selecting — selecting_plants
+  [32mPASS[0m guest received a snapshot
+
+[1m2. Guest registers its plant and readies up[0m
+  [32mPASS[0m host received the guest's plant — Lá Lửa hạt
+  [32mPASS[0m host knows which plant the guest picked
+  [32mPASS[0m host can now start (both selected) — still needs ready
+  [32mPASS[0m host can start once both are ready — ready_check
+
+[1m3. Host runs the authoritative simulation[0m
+  [32mPASS[0m battle seed is deterministic from the room + plants — 0p2rfkd
+  [32mPASS[0m authoritative battle resolves — winner=b in 10.3s
+  [32mPASS[0m the host reads its own win as a win
+  [32mPASS[0m and the guest reads the same result as a loss
+  [32mPASS[0m the guest's own numbers are the guest's, not the host's
+  [32mPASS[0m the guest reads its own win as a win
+  [32mPASS[0m and the host reads that as a loss
+  [32mPASS[0m a draw is a draw for both
+  [32mPASS[0m replay of the same seed and order gives the same winner — b vs b
+  [32mPASS[0m replay produced identical HP on both sides — 0/3 vs 0/3
+  [32mPASS[0m replay produced an identical event stream — 52 vs 52
+
+[1m4. Intents are relayed, not trusted[0m
+  [32mPASS[0m sender does not receive its own intents — 0
+  [32mPASS[0m the other client receives all three intents — cast,stance,focus
+  [32mPASS[0m intents flow in the other direction too — cast
+
+[1m5. Anti-cheat: the guest cannot dictate the outcome[0m
+  [32mPASS[0m host has a broadcast channel
+  [32mPASS[0m host state is unchanged by a forged message
+
+[1m6. Room lifecycle[0m
+  [32mPASS[0m host drops the player who left — 1
+  [32mPASS[0m room can be reset for a rematch
+  [32mPASS[0m ready flags are cleared on reset
+  [32mPASS[0m clients destroy cleanly
+
+[1m7. The relay carries a room between two devices[0m
+  [32mPASS[0m host received the join over the relay alone — RemoteGuest
+  [32mPASS[0m host received the guest's plant over the relay
+  [32mPASS[0m guest received the room state over the relay — 2
+  [32mPASS[0m the guest's own join is not echoed back at it
+  [32mPASS[0m guest received the authoritative result over the relay — 1
+
+[1m8. Both transports at once deliver exactly once[0m
+  [32mPASS[0m the join reaches the host — 4
+  [32mPASS[0m the guest stops announcing once acknowledged — 5 → 5
+
+[1m9. The reset marker cannot eat a room's first messages[0m
+  [32mPASS[0m reset accepts the marker message
+  [32mPASS[0m the marker survives its own reset
+  [32mPASS[0m the leftover create is wiped — 1 msgs
+  [32mPASS[0m a join to the live room survives — 2 msgs
+
+[1m10. A guest re-announces until the host acknowledges it[0m
+  [32mPASS[0m the join is re-sent while unacknowledged — 4 join msgs

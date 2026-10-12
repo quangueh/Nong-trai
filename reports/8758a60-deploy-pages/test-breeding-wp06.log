@@ -1,0 +1,48 @@
+
+BRD-02 — preview is a real normalised distribution:
+ok   preview returns a weight per rarity band
+ok   weights normalise to the 10_000 bps table
+ok   no weight is negative or NaN
+ok   missing parent yields null, not a bogus table
+
+BRD-02 — roll reads the same table the screen shows:
+ok   breed settles and reports a rarity inside the published table
+
+BRD-01 — settle is atomic: fee once, pollen once, parents spent once:
+ok   breed succeeded on valid parents
+ok   fee debited exactly once in the ledger
+ok   pollen credited once for the act
+ok   parents are gone — exactly once each
+ok   child present in the garden
+ok   breed counter moved once
+
+BRD-01 — a second breed on the same pair cannot double-spend:
+ok   second breed refuses because the parents are spent
+ok   no second debit and no plant churn
+
+BRD-01/04 — every reject path fails clean, nothing half-spent:
+ok   invalid ids refuses and spends nothing
+ok   same parent refuses and spends nothing
+ok   immature parent refuses and spends nothing
+ok   battle-locked parent refuses and spends nothing
+ok   insufficient LeafCoin refuses; parents kept, nothing moved
+ok   protocol stabilise locked at level 1 refuses with the unlock level in the reason
+
+BRD-02 — protocol changes both fee and odds through the same calls:
+ok   protocol fee = base × multiplier
+ok   surge lifts S above the base odds
+ok   surge still normalises
+
+BRD-02 — pity counters move exactly once per settle and reset on hit:
+ok   totalBreeds +1
+ok   at least one pity counter reset on a hit ≥ A, or all incremented on C/B
+
+BRD-03 — settle exists independent of the ceremony:
+ok   result carries the settled child even if the UI never shows it
+ok   child genome is unique against garden + discovery
+ok   discovery records the child
+
+BRD-04 — XP inheritance is real arithmetic, not a label:
+ok   child starts with ~30% of parents' lifetime XP (±level remainder)
+
+28 passed, 0 failed

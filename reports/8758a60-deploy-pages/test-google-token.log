@@ -1,0 +1,14 @@
+
+1. A genuine token is accepted
+
+2. The signature is genuinely checked
+
+3. The claims are checked, not just the signature
+
+4. Malformed input is refused without throwing
+
+5. A rotated key does not lock anyone out
+
+6. Storage keys
+
+30 passed, 0 failed

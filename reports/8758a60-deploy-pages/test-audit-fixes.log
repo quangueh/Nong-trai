@@ -1,0 +1,84 @@
+
+[1mA04 · né theo stance của bên BỊ ĐÁNH, không phải bên đánh[0m
+  [32mPASS[0m swift defender né nhiều hơn aggressive defender (stance bên BỊ ĐÁNH) — 49.2% vs 46.2%
+  [32mPASS[0m stance của ATTACKER không nâng né defender (chỉ còn hiệu ứng acc hợp lệ) — 49.6% vs 46.2%
+
+[1mA05 · Phản Xạ Nhanh né đòn đầu tiên — một lần, đúng bên[0m
+  [32mPASS[0m trait né được ít nhất một trận trong 40 seed — 19/40 trận
+  [32mPASS[0m không bao giờ né hai lần trong cùng trận
+  [32mPASS[0m né xảy ra TRƯỚC đòn trúng đầu tiên
+  [32mPASS[0m cây không có trait thì không EVADED
+
+[1mA14 · event nói đúng thứ đã xảy ra[0m
+  [32mPASS[0m useFocus phát ENERGY_GAINED amount=40
+  [32mPASS[0m useFocus KHÔNG phát HEAL_APPLIED (không vẽ +40 heal giả)
+  [32mPASS[0m skill regen phát STATUS_APPLIED(regen)
+  [32mPASS[0m không còn HEAL_APPLIED báo heal giả 'bật Tái tạo'
+  [32mPASS[0m skill cleanse phát CLEANSED
+  [32mPASS[0m không còn HEAL_APPLIED(0) 'tẩy sạch' vô hình
+  [32mPASS[0m STATUS_EXPIRED.side = bên mang status (trùng side của tick)
+
+[1mA06 · potential crit/evasion cùng đơn vị với stats (decimal)[0m
+  [32mPASS[0m potential.crit lưu decimal (<1), không phải percent — soft=0.06 hard=0.08
+  [32mPASS[0m care không grant crit gain khi đã chạm/vượt hardCap — crit=0.09 cap=0.08
+  [32mPASS[0m hardCap decimal không bị level-up ép về 0 — cap=0.08
+  [32mPASS[0m crit không vượt 0.6 toàn cục
+  [32mPASS[0m crit không vượt 0.6 toàn cục
+
+[1mA07 · phạt lặp hành động hết hạn sau 24h[0m
+  [32mPASS[0m đếm trong cửa sổ = 10 lần
+  [32mPASS[0m trong cửa sổ bị phạt (ít hơn cây mới) — 1 vs fresh 1
+  [32mPASS[0m sau 24h cửa sổ trống — count về 0
+  [32mPASS[0m sau 24h preview quay về mức của cây mới — 1 vs fresh 1
+
+[1mA08 · preview hứa đúng thứ apply làm[0m
+  [32mPASS[0m preview growthRate khớp delta thật (±1 điểm) — hứa 1, được 1
+  [32mPASS[0m ở hardCap preview không hứa growthRate
+
+[1mA15 · cooldown theo action + nhịp nghỉ chung[0m
+  [32mPASS[0m water đầu tiên ok
+  [32mPASS[0m water lặp ngay bị chặn (cooldown riêng)
+  [32mPASS[0m sunlight ngay sau water bị chặn (nghỉ chung 6s)
+  [32mPASS[0m sunlight sau nhịp nghỉ ok
+  [32mPASS[0m water vẫn còn cooldown riêng sau nhịp nghỉ
+  [32mPASS[0m water mở lại đúng mốc 45s
+  [32mPASS[0m careCooldownLeft là nguồn chung cho UI
+
+[1m3.3 · seed plant có potential theo tier seedling[0m
+  [32mPASS[0m potential của seed khớp tier seedling (không phải bloom mặc định) — hp.hardCap=204 vs bloom≈476
+
+[1m3.4 · pity cứng trả đúng SSS đã hứa[0m
+  [32mPASS[0m sinceSSS≥sssHard → 100% SSS — SSS=10000
+  [32mPASS[0m soft pity vẫn là xác suất, không phải 100%
+
+[1m3.5 · trait bố mẹ truyền cho con — 'inherited' không còn rỗng[0m
+  [32mPASS[0m trait bố mẹ truyền xuống ít nhất một lần trong 40 phép lai — 27/40
+  [32mPASS[0m mỗi con tối đa 2 trait thừa hưởng
+
+[1m3.6 · ECR theo build, không theo plantId[0m
+  [32mPASS[0m clone đổi id/tên vẫn cùng ECR — 0.21 vs 0.21
+
+[1m3.7 · XP gộp trả đúng từng cấp — không mất EXP thợ[0m
+  [32mPASS[0m chuỗi +3 cấp trả 3 phần EXP thợ — trả 18 ≠ 18
+
+[1m3.9 · speed giảm dần — không tường cứng ở 102[0m
+  [32mPASS[0m 60→80 vẫn nhanh hơn
+  [32mPASS[0m 100→140 VẪN nhanh hơn (không tường)
+  [32mPASS[0m biên độ giảm dần: Δ(60→80) > Δ(100→140)
+  [32mPASS[0m sàn mềm ~0.9s không phải 0.5
+
+[1m3.11 · campaign không khó hơn vì tuổi tài khoản[0m
+  [32mPASS[0m stageTargetPower bỏ qua dayIndex — 933 vs 933
+
+[1m3.10 · benchmark trả energy như cây người chơi[0m
+  [32mPASS[0m skill heal của benchmark tốn energy 18 — energyCost=18
+
+[1mA13 · save cũ với mood/archetype rác được chữa[0m
+  [32mPASS[0m mood rác → calm — mood=calm
+  [32mPASS[0m archetype rác → vector hợp lệ
+  [32mPASS[0m cây đã chữa đánh được trận thật
+
+[1mA12 · lỗi localStorage không bị nuốt[0m
+  [32mPASS[0m save thất bại → saveFailed=true
+
+48 passed, 0 failed

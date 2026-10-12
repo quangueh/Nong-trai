@@ -1,0 +1,141 @@
+accounts
+
+  fresh    power   254  tier seedling skills 2
+  sprout   power   454  tier sprout   skills 3
+  bloom    power   688  tier bloom    skills 4
+  ancient  power  1020  tier ancient  skills 4
+  ok   the bred accounts are genuinely stronger
+
+target vs actual power
+
+stage    1  target   150  actual   146  x0.973  seedling Phổ thông electric counter  skills 2  affixes 0
+stage    3  target   164  actual   163  x0.994  seedling Phổ thông fire     tempo    skills 2  affixes 0
+stage    5  target   179  actual   179  x1.000  sprout   Không thường electric sustain  skills 3  affixes 0
+stage    8  target   204  actual   203  x0.995  sprout   Không thường electric counter  skills 3  affixes 0
+stage   10  target   249  actual   249  x1.000  sprout   Hiếm fire     sustain  skills 3  affixes 0
+stage   15  target   278  actual   276  x0.993  bloom    Hiếm wood     tank     skills 4  affixes 0
+stage   30  target   600  actual   599  x0.998  bloom    Cực hiếm wood     burst    skills 4  affixes 0
+stage   60  target  1449  actual  1450  x1.001  ancient  Huyền dị water    tempo    skills 4  affixes 1
+stage  120  target  1449  actual  1450  x1.001  ancient  Huyền dị poison   burst    skills 4  affixes 7
+stage  400  target  1449  actual  1448  x0.999  ancient  Độc bản poison   tempo    skills 5  affixes 18
+stage 1000  target  1449  actual  1448  x0.999  ancient  Độc bản electric tempo    skills 5  affixes 18
+  ok   every monster lands within 8% of its target power
+
+  ok   the same player and stage gives the same monster
+  ok   and the same genome, not just the same name
+  ok   a different player meets a different monster
+
+stage 40 across 200 players: 200 distinct names, 48 distinct shapes
+  ok   names are nearly all distinct
+  ok   shapes vary widely
+
+shape spread by stage
+  stage  10: 34 shapes, most common fire|counter in 4/60
+  ok   stage 10 is not dominated by one shape
+  stage  30: 37 shapes, most common electric|sustain in 4/60
+  ok   stage 30 is not dominated by one shape
+  stage  80: 35 shapes, most common electric|sustain in 4/60
+  ok   stage 80 is not dominated by one shape
+  stage 300: 17 shapes, most common fire|counter in 8/60
+  ok   stage 300 is not dominated by one shape
+
+engine limits
+  skill count across 400 stages: 2 to 5
+  ok   every monster has at least the engine's minimum of two skills
+  ok   no monster exceeds the action bar's five
+
+parity: the monster power each account wins half of
+  fresh    power   254  parity   335  (1.32x)
+  sprout   power   454  parity   639  (1.41x)
+  bloom    power   688  parity   928  (1.35x)
+  ancient  power  1020  parity  1373  (1.35x)
+
+side bias, identical twins
+  seat A took 51.0% of 96 identical-twin fights (parity would be near 50%)
+  ok   neither seat is favoured
+
+the curve, fought out (60 different monsters per point)
+  stage      fresh   sprout    bloom  ancient
+      1       100%     100%     100%     100%
+      3       100%     100%     100%     100%
+      5        98%     100%     100%     100%
+      7       100%     100%     100%     100%
+     10        83%     100%     100%     100%
+     14        75%     100%     100%     100%
+     20        22%     100%     100%     100%
+     26         2%     100%     100%     100%
+     32         0%      72%     100%     100%
+     38         0%       3%      97%     100%
+     45         0%       0%      33%     100%
+  ok   a fresh account wins stage 1
+  ok   and stage 3
+  ok   and is eventually stopped
+
+  fresh    power   254  parity   335  clears to stage 18
+  sprout   power   454  parity   639  clears to stage 33
+  bloom    power   688  parity   928  clears to stage 43
+  ancient  power  1020  parity  1373  clears to stage 200
+  ok   the sprout account reaches further than a fresh one
+  ok   bloom further still
+  ok   and ancient further again
+  ok   and the strongest of all is the only one past stage 60
+  ok   every account is stopped somewhere different
+  ok   the deepest stage is a fight, not a wall
+
+the gate
+  ok   stage 1 is open to a new account
+  ok   a new account cannot see past the look-ahead
+  ok   stage 5 opens up once something is cleared
+  ok   and it still stops there
+  ok   a cleared stage never reopens
+  ok   but the frontier's look-ahead still is
+  ok   stage 0 is never a stage
+  ok   a negative stage is never a stage
+
+the endless tail
+  stage   affixes   target power
+     10       0   249
+     20       0   386
+     49       0   1244
+     50       0   1449
+     51       1   1300
+     52       1   1300
+     75       3   1300
+    100       5   1449
+    200      15   1449
+    400      18   1449
+   4000      18   1449
+  ok   the stat ladder carries no affix
+  ok   the very next stage does
+  ok   and they accumulate with depth
+  ok   no gap where the difficulty stalls
+  stage 400: 18 affixes, target 1449, 142% of the account
+  ok   a very deep stage is still a defined thing
+  ok   and it costs about what the last stat stage cost
+  ok   power stops growing past the stat ladder
+  ok   stage 4000 is as defined as stage 400
+
+account-age neutrality
+  day  0: stage 30 target 600
+  day  7: stage 30 target 600
+  day 17: stage 30 target 600
+  day 60: stage 30 target 600
+  ok   target power ignores dayIndex
+  ok   and stays identical a year in
+  ok   a month away changes nothing but which affixes rotate in
+
+entry gates
+  ok   ordinary stages are open to any plant
+  ok   every boss asks for a growth level
+  ok   and the ask climbs with depth
+  ok   trial stages ask for an element
+  ok   bred-plant beats ask for a generation
+  ok   gates are a property of the stage, not the clock
+  ok   every gate can be said out loud
+  ok   a level-1 plant fails the first boss
+  ok   a grown plant passes it
+  ok   a seed plant fails the generation beat
+  ok   a bred descendant passes it
+  ok   a refusal says what is missing
+
+the ladder measures up

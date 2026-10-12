@@ -1,0 +1,9 @@
+PASS install and activation take control and delete obsolete cache
+PASS cross-origin API and non-GET requests never enter cache
+PASS asset online cache miss fetches and stores successful response
+PASS asset cache hit returns stale then refreshes cache
+PASS offline asset hit remains usable
+PASS asset 500 never overwrites last successful cached copy
+PASS navigation network-first then offline shell fallback
+PASS navigation 500 must not poison the cached offline shell
+Service worker: 8 passed, 0 failed
