@@ -25,9 +25,24 @@ const DEEP_SCHEME = "com.quang.nongtrai";
 /**
  * App half: open this very site in the system browser with the bounce flag,
  * so a sign-in there comes back here as a pairing code.
+ *
+ * The Browser plugin lives in the APK, not the bundle — an APK built before
+ * the plugin was added still renders this button (it ships from the site) but
+ * the call rejects with "not implemented". Surface that honestly instead of a
+ * dead button: the player needs the newer APK, and the typed pairing code
+ * right below works on every build.
  */
 export async function openBrowserSignIn(): Promise<void> {
-  await Browser.open({ url: `${location.origin}/?${APPAUTH_FLAG}=1` });
+  try {
+    await Browser.open({ url: `${location.origin}/?${APPAUTH_FLAG}=1` });
+  } catch (e) {
+    const { toast } = await import("../ui/components");
+    toast(
+      "Bản app này cũ — cập nhật APK mới nhất rồi thử lại, hoặc dùng 'Nhập mã liên kết từ web' bên dưới.",
+      6000,
+    );
+    throw e;
+  }
 }
 
 /**
