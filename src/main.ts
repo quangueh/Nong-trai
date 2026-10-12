@@ -15,9 +15,19 @@ import { boot } from "./ui/app";
 import { sfx } from "./audio/audio";
 import { music } from "./audio/music";
 import { initErrorReporting } from "./core/errors";
+import { armAppAuthBounce, listenForAuthDeepLink } from "./account/appAuth";
 
 boot(document.getElementById("app")!);
 initErrorReporting();
+
+/*
+ * Browser-bounce sign-in, both halves. Inside the app `listenForAuthDeepLink`
+ * catches the code the site sends back; inside the Custom Tab
+ * `armAppAuthBounce` sends it — the flag in the URL decides which one is real
+ * and the other is a no-op on its wrong side.
+ */
+listenForAuthDeepLink();
+armAppAuthBounce();
 
 /*
  * The service worker is the offline story and the instant-second-load story:

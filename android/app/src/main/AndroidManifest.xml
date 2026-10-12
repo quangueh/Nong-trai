@@ -23,6 +23,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Deep links back into the app — the browser-bounce Google sign-in
+                 lands on com.quang.nongtrai://pair?code=… after the web tab
+                 finishes. BROWSABLE is what lets a page inside Chrome hand the
+                 intent to us. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.quang.nongtrai" />
+            </intent-filter>
+
         </activity>
 
         <provider

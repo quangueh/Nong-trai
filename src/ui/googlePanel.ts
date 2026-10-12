@@ -42,14 +42,16 @@ const GOOGLE_G = `<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
 
 /**
  * Inside the Android app the sign-in runs in a WebView, and Google refuses to
- * serve its script there (WebView UAs are rejected by policy). Showing the
- * button anyway is a dead end that errors out *after* the tap — so the app
- * shell skips it up front and points at the email form instead.
+ * serve its script there (WebView UAs are rejected by policy). The button
+ * stays, doing a different job: it opens this site in the system browser,
+ * where the ordinary web sign-in runs, and the session comes back through a
+ * deep link. Email and the pairing code remain for players who would rather
+ * not leave the app.
  */
-const inAppShell =
-  (typeof navigator !== "undefined" && /; wv\)/.test(navigator.userAgent)) ||
-  (typeof window !== "undefined" &&
-    Boolean((window as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.()));
+import { isAppShell } from "../account/platform";
+import { openBrowserSignIn } from "../account/appAuth";
+
+const inAppShell = isAppShell();
 
 export interface GooglePanelResult {
   /** Append in order. Kept as an array so the caller decides the surrounding layout. */
@@ -123,7 +125,11 @@ export function googlePanel(
 
   const heading = el("div", { class: "gpanel-text" }, [
     el("div", { class: "gpanel-title" }, ["Tiếp tục với Google"]),
-    el("div", { class: "gpanel-sub" }, ["Tạo tài khoản hoặc quay lại. Không cần mật khẩu, không cần nhớ mật khẩu."]),
+    el("div", { class: "gpanel-sub" }, [
+      inAppShell
+        ? "Mở trình duyệt để đăng nhập, xong tự quay về app. Không cần mật khẩu."
+        : "Tạo tài khoản hoặc quay lại. Không cần mật khẩu, không cần nhớ mật khẩu.",
+    ]),
   ]);
 
   const action = el("button", { class: "gpanel-btn", type: "button" });
@@ -140,7 +146,9 @@ export function googlePanel(
    */
   const inner = el("div", { class: "gpanel-inner" });
   const slot = el("div", { class: "gpanel-slot" }, [action, inner]);
-  action.addEventListener("click", () => void attempt());
+  // In the app shell this button opens the system browser instead of driving
+  // an in-WebView OAuth Google refuses to serve.
+  action.addEventListener("click", () => void (inAppShell ? openBrowserSignIn() : attempt()));
 
   /*
    * The watchdog, and why there is one.
@@ -272,7 +280,21 @@ export function googlePanel(
    * handed back on the result, so a sheet opened repeatedly does not stack listeners.
    */
 
-  if (!googleSignInAvailable || inAppShell) {
+  if (inAppShell) {
+    /*
+     * The button stays — it now opens the browser-bounce sign-in. Only the GIS
+     * render target goes: Google's script cannot paint inside a WebView anyway,
+     * so the empty target would just be a 56px hole in the card.
+     */
+    inner.remove();
+    slot.append(
+      el("div", { class: "gpanel-off" }, [
+        el("div", { class: "tiny muted", style: "margin-top:3px" }, [
+          "App không nhúng được cửa sổ Google — nút trên mở trình duyệt, đăng nhập xong tự quay lại đây.",
+        ]),
+      ]),
+    );
+  } else if (!googleSignInAvailable) {
     // Removes both the styled button and Google's empty target. Replaced the whole
     // slot, which would have left one of the two behind on the next render.
     action.remove();
@@ -281,11 +303,9 @@ export function googlePanel(
       el("div", { class: "gpanel-off" }, [
         el("div", { class: "small", style: "font-weight:700" }, ["Đăng nhập Google"]),
         el("div", { class: "tiny muted", style: "margin-top:3px" }, [
-          inAppShell
-            ? "Bản app chưa mở được đăng nhập Google — dùng email bên dưới, hoặc chơi khách rồi đăng nhập Google trên web để đồng bộ."
-            : `Chưa bố trí đị bềt đế. Thiếu VITE_GOOGLE_CLIENT_ID (hiện có: ${
-                GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID.slice(0, 12) + "…" : "rỗng"
-              }).`,
+          `Chưa bố trí đị bềt đế. Thiếu VITE_GOOGLE_CLIENT_ID (hiện có: ${
+            GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID.slice(0, 12) + "…" : "rỗng"
+          }).`,
         ]),
       ]),
     );
