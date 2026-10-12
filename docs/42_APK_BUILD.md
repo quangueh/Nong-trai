@@ -83,4 +83,14 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Requires JDK 17 + Android SDK (compileSdk 36, minSdk 24, targetSdk 36).
+Requires **JDK 21** (Capacitor 8's android library compiles with
+`JavaVersion.VERSION_21` — JDK 17 fails `assembleDebug` with
+`invalid source release: 21`) + Android SDK with `platforms;android-36` and
+`build-tools;35.0.0` (the version AGP pins — installing 36.0.0 is not enough).
+Licences must be accepted up front; CI pre-seeds
+`$ANDROID_HOME/licenses/android-sdk-license` with the well-known hashes.
+
+On this machine the toolchain lives at `D:\jdk21\jdk` (JAVA_HOME) and
+`D:\android-sdk` (ANDROID_HOME); repo paths containing non-ASCII characters
+(`Nông trại`) break `gradlew` — build from an ASCII-path clone such as
+`D:\ci-repro`.
