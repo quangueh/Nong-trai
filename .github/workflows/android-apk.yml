@@ -126,25 +126,30 @@ jobs:
           if ! grep -q "Name: smoke" avd-list.txt; then
             echo "AVD create failed"; cat avd-create.log; exit 1
           fi
-          nohup "$ANDROID_HOME/emulator/emulator" -avd smoke -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim > emulator.log 2>&1 &
-          timeout 180 adb wait-for-device || true
-          for i in $(seq 1 84); do
-            st=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+          nohup "$ANDROID_HOME/emulator/emulator" -avd smoke -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics > emulator.log 2>&1 &
+          adb start-server || true
+          timeout 180 adb -s emulator-5554 wait-for-device || true
+          for i in $(seq 1 120); do
+            st=$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
             [ "$st" = "1" ] && break
+            # adbd handshakes AFTER boot — on a cold adb server the device can
+            # sit 'offline' even though the guest finished booting.
+            adb -s emulator-5554 reconnect offline > /dev/null 2>&1 || true
             sleep 5
           done
-          [ "${st:-}" = "1" ] || { echo "emulator never booted"; tail -50 emulator.log; exit 1; }
-          adb shell input keyevent 82 || true
+          [ "${st:-}" = "1" ] || { echo "emulator never booted"; adb devices; tail -50 emulator.log; exit 1; }
+          adb -s emulator-5554 shell input keyevent 82 || true
 
       - name: Smoke — install, launch, verify resumed + no fatal
         run: |
           set -x
-          adb install -r apk/app-debug.apk && INSTALL=ok || INSTALL=fail
-          adb shell am start -n com.quang.nongtrai/.MainActivity || true
+          ADB="adb -s emulator-5554"
+          $ADB install -r apk/app-debug.apk && INSTALL=ok || INSTALL=fail
+          $ADB shell am start -n com.quang.nongtrai/.MainActivity || true
           sleep 35
-          adb shell dumpsys activity activities > dumpsys.txt || true
-          adb logcat -d -v brief > logcat.txt || true
-          adb exec-out screencap -p > apk-smoke.png || true
+          $ADB shell dumpsys activity activities > dumpsys.txt || true
+          $ADB logcat -d -v brief > logcat.txt || true
+          $ADB exec-out screencap -p > apk-smoke.png || true
           # `if`-guarded checks only — a `grep | head` pipeline in $() can die
           # by SIGPIPE under pipefail and abort the script even when the app is
           # healthy. Explicit exit keeps intent unambiguous.
@@ -168,7 +173,7 @@ jobs:
             git checkout --orphan ci-reports-local && git rm -rf . >/dev/null 2>&1 || true
           fi
           mkdir -p "reports/${GITHUB_SHA::7}-apk-smoke"
-          for f in dumpsys.txt logcat.txt apk-smoke.png smoke-status.txt emulator.log; do
+          for f in dumpsys.txt logcat.txt apk-smoke.png smoke-status.txt emulator.log avd-create.log avd-list.txt; do
             [ -f "$f" ] && cp "$f" "reports/${GITHUB_SHA::7}-apk-smoke/"
           done
           git add -A reports && git commit -qm "smoke diag ${GITHUB_SHA::7}" \
