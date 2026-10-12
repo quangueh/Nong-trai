@@ -6427,6 +6427,22 @@ body.planting {
   padding: 8px 10px;
 }
 
+/* Device-pairing code — big and letterspaced, readable across a room. */
+.pair-code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 6px;
+  text-align: center;
+  padding: 10px 8px 10px 14px;
+  margin-top: 8px;
+  border-radius: 12px;
+  color: #1f5c38;
+  background: rgba(47, 159, 98, 0.12);
+  border: 1px solid rgba(47, 159, 98, 0.3);
+  user-select: all;
+}
+
 .account-more {
   margin-top: 6px;
   padding-top: 10px;

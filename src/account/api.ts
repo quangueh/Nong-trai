@@ -184,6 +184,29 @@ export async function changePassword(token: string, current: string, next: strin
   await call("/api/password", { method: "POST", token, body: JSON.stringify({ current, next }) });
 }
 
+/**
+ * Mint a device-pairing code for the current session (10-minute TTL).
+ *
+ * The app-side counterpart to `redeemPairCode`: the signed-in browser shows the
+ * code, the app types it in, and the redeemed session is the issuer's own —
+ * same account, same save, even for Google accounts that cannot sign in inside
+ * a WebView at all.
+ */
+export async function issuePairCode(token: string): Promise<{ code: string; expiresAt: number }> {
+  return call("/api/pair", { method: "POST", token, body: "{}" });
+}
+
+/**
+ * Redeem a pairing code. The returned session is identical in kind to the one
+ * that issued the code — a Google session's code redeems into a Google session,
+ * not an email account wearing the same address.
+ */
+export async function redeemPairCode(code: string): Promise<
+  AccountSession & { email?: string; name?: string; kind?: "password" | "google" }
+> {
+  return call("/api/pair/redeem", { method: "POST", body: JSON.stringify({ code }) });
+}
+
 export async function health(): Promise<boolean> {
   try {
     await call("/api/health");

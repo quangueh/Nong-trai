@@ -30,8 +30,10 @@ import {
   changePassword,
   fetchSave,
   googleSignIn as apiGoogleSignIn,
+  issuePairCode as apiIssuePairCode,
   login as apiLogin,
   pushSave,
+  redeemPairCode as apiRedeemPairCode,
   register as apiRegister,
   type AccountSession,
 } from "./api";
@@ -505,6 +507,43 @@ export async function signInWithGoogle(idToken: string): Promise<{ created: bool
   // while a guest fork is undecided: a push would stamp "synced" over the choice.
   if (!pendingGuest && (adoptedInPull || adoptInGameName(email))) void push();
   return { created: session.created, email: session.email ?? "" };
+}
+
+/**
+ * Mint a device-pairing code for the session on this device.
+ *
+ * The web half of "log into the app": Google cannot sign in inside the app's
+ * WebView, so the signed-in browser shows a code and the app types it in. The
+ * redeemed session is this account's own — same playerId, same save.
+ */
+export async function issuePairCode(): Promise<{ code: string; expiresAt: number }> {
+  if (!token) throw new AccountError("unauthorised", "Chưa đăng nhập.");
+  return apiIssuePairCode(token);
+}
+
+/**
+ * Complete sign-in from a pairing code — the app-side half.
+ *
+ * Adopted through the same `adoptSession` + first-pull path every other sign-in
+ * takes, so the gate's session watch stands it down and the garden that lands
+ * is the issuer's own, whichever kind their account is.
+ */
+export async function signInWithPairCode(code: string): Promise<{ email: string }> {
+  const guest = guestSnapshot();
+  const session = await apiRedeemPairCode(code);
+  const kind: SessionKind = session.kind === "google" ? "google" : "password";
+  const email = session.email ?? session.name ?? "Tài khoản";
+  adoptSession(session.token, email, session.playerId, kind);
+  let adoptedInPull = false;
+  await settleWithin(ENTRY_SYNC_TIMEOUT_MS, pull((state) => {
+    const name = adoptableName(email, undefined, state);
+    if (name) {
+      (state as { name?: string }).name = name;
+      adoptedInPull = true;
+    }
+  }, guest));
+  if (!pendingGuest && (adoptedInPull || adoptInGameName(email))) void push();
+  return { email: session.email ?? "" };
 }
 
 /**

@@ -182,6 +182,36 @@ console.log("\n5. google sign-in refuses what it should");
   check("password change still works for an email account", pwOnEmail.status === 200, JSON.stringify(pwOnEmail.body));
 }
 
+console.log("\n5b. device pairing — the app's way in when Google cannot run");
+{
+  const issue = await req("/api/pair", { method: "POST", token, body: {} });
+  check("issue returns a 6-char code", issue.status === 200 && /^[A-Z2-9]{6}$/.test(String(issue.body.code ?? "")), JSON.stringify(issue.body));
+
+  const code = String(issue.body.code ?? "");
+  const redeem = await req("/api/pair/redeem", { method: "POST", body: { code } });
+  check(
+    "redeem returns a session for the same account",
+    redeem.status === 200 && redeem.body.playerId === playerId && Boolean(redeem.body.token),
+    JSON.stringify(redeem.body),
+  );
+  check("redeem reports the password kind", redeem.body.kind === "password", JSON.stringify(redeem.body));
+
+  const again = await req("/api/pair/redeem", { method: "POST", body: { code } });
+  check("a spent code cannot be replayed", again.status === 404 && again.body.error === "pair_bad", JSON.stringify(again.body));
+
+  const garbage = await req("/api/pair/redeem", { method: "POST", body: { code: "ZZZZZZ" } });
+  check("an unknown code is refused", garbage.status === 404 && garbage.body.error === "pair_bad", JSON.stringify(garbage.body));
+
+  const noAuth = await req("/api/pair", { method: "POST", body: {} });
+  check("issuing without a session is refused", noAuth.status === 401, `${noAuth.status}`);
+
+  // The redeemed token must be a real session — it has to read the same save
+  // the issuer pushed in section 3.
+  const withPair = await req("/api/save", { token: String(redeem.body.token ?? "") });
+  const pairedSave = withPair.body.state as { leafCoin?: number } | undefined;
+  check("the paired session reads the issuer's save", pairedSave?.leafCoin === 1234, JSON.stringify(withPair.body));
+}
+
 console.log("\n6. the room relay actually exists");
 {
   // These three routes are the ones a stale deploy loses first: the account routes

@@ -11,6 +11,7 @@ import {
   accountStatus,
   guestChoiceOffered,
   isSignedIn,
+  issuePairCode,
   keepLocal,
   onAccountStatus,
   pull,
@@ -33,7 +34,9 @@ const WHY: Record<string, string> = {
   bad_email: "Email không hợp lệ.",
   weak_password: "Mật khẩu cần ít nhất 8 ký tự.",
   taken: "Email này đã có tài khoản. Thử đăng nhập.",
+  missing: "Nhập đầy đủ thông tin rồi thử lại.",
   bad_credentials: "Email hoặc mật khẩu không đúng.",
+  pair_bad: "Mã liên kết sai hoặc đã hết hạn. Tạo mã mới trên web.",
   too_many: "Thử quá nhiều lần. Chờ một phút rồi thử lại.",
   unauthorised: "Phiên đăng nhập hết hạn.",
   offline: "Không có mạng. Vườn vẫn được lưu trên máy này.",
@@ -338,6 +341,47 @@ function renderSignedIn(body: HTMLElement, close: () => void): void {
     nameErr,
   ]);
 
+  /*
+   * Device pairing — the way a Google-only account reaches the app.
+   *
+   * Google refuses OAuth inside the app's WebView, so "đăng nhập Google" cannot
+   * exist there. This side mints a 10-minute code; the app's gate redeems it for
+   * a session of the same kind — the save that lands is this account's own.
+   */
+  const pairOut = el("div", { class: "pair-out" });
+  const pairErr = el("p", { class: "account-err" });
+  const pairBtn = el("button", { class: "btn ghost wide", type: "button" }, ["Liên kết sang app bằng mã"]);
+  pairBtn.addEventListener("click", () => {
+    pairErr.textContent = "";
+    pairBtn.disabled = true;
+    pairBtn.textContent = "Đang tạo mã…";
+    void issuePairCode()
+      .then(({ code, expiresAt }) => {
+        const left = Math.max(0, Math.round((expiresAt - Date.now()) / 60000));
+        pairOut.replaceChildren(
+          el("div", { class: "pair-code" }, [code]),
+          el("div", { class: "tiny muted", style: "margin-top:4px" }, [
+            `Nhập mã này ở màn đăng nhập trong app. Hết hạn sau ~${left} phút, chỉ dùng được một lần.`,
+          ]),
+        );
+      })
+      .catch((e: unknown) => {
+        pairErr.textContent = explain(e);
+      })
+      .finally(() => {
+        pairBtn.disabled = false;
+        pairBtn.textContent = "Tạo mã mới";
+      });
+  });
+  const pairBlock = el("div", { class: "account-pair", style: "margin:10px 0" }, [
+    el("div", { class: "tiny muted", style: "margin-bottom:4px" }, [
+      "Trong app không đăng nhập Google được — tạo mã ở đây rồi nhập mã trong app.",
+    ]),
+    pairBtn,
+    pairOut,
+    pairErr,
+  ]);
+
   body.append(
     el("div", { class: "account-id" }, [
       el("div", { class: "small", style: "font-weight:700" }, [status.email ?? ""]),
@@ -347,6 +391,7 @@ function renderSignedIn(body: HTMLElement, close: () => void): void {
     syncStrip(status),
     sync,
     pullBtn,
+    pairBlock,
     el("div", { class: "account-warn tiny" }, [
       "Vườn của bạn được lưu ở cả máy này lẫn tài khoản. Nếu chơi trên hai máy cùng lúc, hãy bấm “Lưu lên tài khoản” trước khi chuyển.",
     ]),

@@ -24,10 +24,19 @@
 import { el, toast } from "./components";
 import { sfx } from "../audio/audio";
 import { bypassOnce, gateState, graceDaysLeft, GRACE_DAYS } from "../account/gate";
-import { accountStatus, onAccountStatus } from "../account/sync";
+import { accountStatus, onAccountStatus, signInWithPairCode } from "../account/sync";
 import { googlePanel } from "./googlePanel";
 import { buildEmailSignIn } from "./emailSignIn";
-import { accountServiceAvailable } from "../account/api";
+import { accountServiceAvailable, AccountError } from "../account/api";
+
+/** Worker error codes a pairing attempt can actually produce. */
+const WHY: Record<string, string> = {
+  missing: "Nhập mã liên kết.",
+  pair_bad: "Mã sai hoặc đã hết hạn. Tạo mã mới trên web.",
+  too_many: "Thử quá nhiều lần. Chờ một phút rồi thử lại.",
+  timeout: "Máy chủ không phản hồi.",
+  offline: "Không có mạng.",
+};
 
 export interface SignInGateOptions {
   /** Called once the player is in, so the host can take the overlay down. */
@@ -149,6 +158,60 @@ let destroyGoogle = (): void => {};
   );
   destroyGoogle = google.destroy;
 
+  /*
+   * Pairing-code entry — how a Google-only account gets into the app.
+   *
+   * Google cannot sign in inside a WebView, so the app hides that button; the
+   * player signs in on the web instead, opens their account sheet, takes the
+   * 6-character code it offers, and types it here. The Worker redeems it into
+   * a session of the same kind, so the garden that lands is their own — not a
+   * fresh email account wearing the same address.
+   */
+  const pairToggle = el("button", { class: "btn ghost wide", type: "button", style: "margin-top:8px" }, [
+    "Nhập mã liên kết từ web",
+  ]);
+  const pairForm = el("form", { class: "account-fields", style: "margin-top:8px" }) as HTMLFormElement;
+  const pairInput = el("input", {
+    class: "field",
+    type: "text",
+    placeholder: "Mã 6 ký tự (vd: K3QX7P)",
+    autocomplete: "off",
+    maxlength: "8",
+    style: "text-transform:uppercase;letter-spacing:2px",
+  }) as HTMLInputElement;
+  const pairErr = el("p", { class: "account-err" });
+  const pairSubmit = el("button", { class: "btn primary wide", type: "submit" }, ["Vào bằng mã"]);
+  pairForm.append(pairInput, pairErr, pairSubmit);
+  pairForm.hidden = true;
+  pairToggle.addEventListener("click", () => {
+    pairForm.hidden = !pairForm.hidden;
+    if (!pairForm.hidden) pairInput.focus();
+  });
+  pairForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const code = pairInput.value.trim().toUpperCase();
+    if (!code) {
+      pairErr.textContent = "Nhập mã liên kết.";
+      return;
+    }
+    pairErr.textContent = "";
+    pairSubmit.disabled = true;
+    pairSubmit.textContent = "Đang xử lý…";
+    void signInWithPairCode(code)
+      .then(() => {
+        toast("Đã liên kết tài khoản.");
+        enter();
+      })
+      .catch((err: unknown) => {
+        pairErr.textContent = err instanceof AccountError ? (WHY[err.code] ?? "Mã không dùng được. Tạo mã mới trên web.") : "Không liên kết được. Thử lại.";
+        sfx.play("error");
+      })
+      .finally(() => {
+        pairSubmit.disabled = false;
+        pairSubmit.textContent = "Vào bằng mã";
+      });
+  });
+
   const skip = el("button", { class: "gate-skip", type: "button" }, [
     "Chơi không cần tài khoản (chỉ lần này)",
   ]);
@@ -171,6 +234,8 @@ let destroyGoogle = (): void => {};
     ...google.nodes,
     el("div", { class: "account-sep tiny muted" }, ["hoặc — đăng nhập bằng email"]),
     email.form,
+    pairToggle,
+    pairForm,
     skip,
   );
 

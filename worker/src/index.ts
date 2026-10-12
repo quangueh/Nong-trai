@@ -646,6 +646,67 @@ async function handleChangePassword(req: Request, auth: Session, env: Env): Prom
   return ROK({ ok: true });
 }
 
+// --- device pairing ----------------------------------------------------------
+
+/**
+ * "Log in on the TV" codes.
+ *
+ * Why this exists: Google refuses OAuth inside the Android app's WebView, so a
+ * player whose only credential is Google had no way into the app at all. The
+ * pairing code is the bridge — the signed-in session (on web, where Google
+ * works) mints a short code; the app redeems it for a native session token of
+ * the *same kind*: `{sub}` for Google, `{email}` for password. The save that
+ * lands is the issuer's own, not a new account on the email namespace.
+ */
+const PAIR_TTL_S = 600;
+/** No 0/O/1/I/L — a code typed off another screen must never need a second guess. */
+const PAIR_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const pairKey = (code: string): string => `pair:${code}`;
+
+async function handlePairIssue(auth: Session, env: Env): Promise<Response> {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  let code = "";
+  for (const b of bytes) code += PAIR_ALPHABET[b % PAIR_ALPHABET.length];
+  await env.DB.put(pairKey(code), JSON.stringify({ email: auth.email ?? null, sub: auth.sub ?? null }), {
+    expirationTtl: PAIR_TTL_S,
+  });
+  return ROK({ code, expiresAt: Date.now() + PAIR_TTL_S * 1000 });
+}
+
+async function handlePairRedeem(req: Request, env: Env): Promise<Response> {
+  const body = (await req.json().catch(() => null)) as { code?: string } | null;
+  const code = String(body?.code ?? "").trim().toUpperCase();
+  if (!code) return RKO("missing");
+  // A guessed code is a KV read each — the same fixed-window limit the login
+  // path gets, keyed on caller IP so one player cannot lock another out.
+  const ip = req.headers.get("cf-connecting-ip") ?? "anon";
+  if (await throttled(env, `pair:${ip}`)) return RKO("too_many", 429);
+
+  const raw = await env.DB.get(pairKey(code));
+  // Wrong and expired answer alike — a "this code exists but isn't for you"
+  // split would just be reconnaissance. One-time use either way.
+  if (!raw) return RKO("pair_bad", 404);
+  await env.DB.delete(pairKey(code));
+  const { email, sub } = JSON.parse(raw) as { email?: string | null; sub?: string | null };
+  const key = sub ? googleAccountKey(sub) : email ? accountKey(email) : null;
+  if (!key) return RKO("pair_bad", 404);
+  const acctRaw = await env.DB.get(key);
+  if (!acctRaw) return RKO("pair_bad", 404);
+  const account = JSON.parse(acctRaw) as Account | GoogleAccount;
+  const token = await sign(
+    sub ? { sub, exp: Date.now() + SESSION_MS } : { email: email!, exp: Date.now() + SESSION_MS },
+    env.TOKEN_SECRET,
+  );
+  track(env, "login", sub ? "google" : "password");
+  return ROK({
+    token,
+    playerId: account.playerId,
+    name: account.name,
+    email: account.email,
+    kind: sub ? "google" : "password",
+  });
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     if (!env.TOKEN_SECRET) return RKO("misconfigured", 500);
@@ -686,6 +747,12 @@ export default {
         const auth = await readAuth(req, env);
         if (!auth) res = RKO("unauthorised", 401);
         else res = await handleChangePassword(req, auth, env);
+      } else if (path === "/api/pair" && req.method === "POST") {
+        const auth = await readAuth(req, env);
+        if (!auth) res = RKO("unauthorised", 401);
+        else res = await handlePairIssue(auth, env);
+      } else if (path === "/api/pair/redeem" && req.method === "POST") {
+        res = await handlePairRedeem(req, env);
       } else if (path === "/api/friend" && req.method === "POST") {
         const me = await readIdentity(req, env);
         if (!me) res = RKO("unauthorised", 401);
