@@ -39,25 +39,31 @@ jobs:
       - name: Sync into android/
         run: npx cap sync android
 
-      - name: Set up JDK 17
+      # Capacitor 8's android library compiles with JavaVersion.VERSION_21 —
+      # JDK 17 fails assembleDebug with "invalid source release: 21".
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
       # Runner images lag the newest compileSdk — install exactly what the
-      # project targets so AGP never fails on a missing platform. sdkmanager
-      # prompts for licenses interactively, which kills non-interactive CI —
-      # accept them up front, and skip the download when already present.
+      # project targets so AGP never fails on a missing platform. Two traps:
+      #   1. sdkmanager prompts for licences interactively and Gradle's own
+      #      auto-installer cannot accept them at all — pre-seed the well-known
+      #      licence hashes so both paths are covered.
+      #   2. AGP pins build-tools 35.0.0 (default for this AGP, variables.gradle
+      #      does not override) — installing 36.0.0 still fails the build.
       - name: Ensure Android SDK platform 36
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          yes | "$SDKMANAGER" --licenses > /dev/null
-          ls "$ANDROID_HOME/platforms" | grep -qx "android-36" || \
-            "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          mkdir -p "$ANDROID_HOME/licenses"
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0" "platform-tools"
 
       - name: Assemble debug APK
         working-directory: android
